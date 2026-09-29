@@ -1149,7 +1149,7 @@ class MainWindow(QMainWindow):
             rows = run_sweep(cfg, key, values, base_dir=base, out_dir=cfg["output"]["directory"],
                              continuation=cont, verbose=True, plot=True,
                              callback=lambda s, n: worker.stop_requested, mesh=mesh,
-                             on_point=worker.report)
+                             on_point=lambda row: worker.report(row, force=True))
             return rows
         self.nav.setCurrentRow(6)
         self.tabs.setCurrentIndex(0)
@@ -1171,7 +1171,13 @@ class MainWindow(QMainWindow):
         self.canvas.draw()
 
     def _sweep_done(self, rows):
+        from ..fv2d.sweep import plot_sweep
         self.sweep_btn.setEnabled(True)
+        self.sweep_rows = list(rows)             # tableau complet (référence)
+        if rows:
+            self.canvas.fig.clear()
+            plot_sweep(rows, self._sweep_key, None, fig=self.canvas.fig)
+            self.canvas.draw()
         cols = [k for k in (rows[0] if rows else {}) if not k.startswith(("Cd_p", "Cd_v"))]
         lines = ["\t".join(cols)] + ["\t".join(f"{r.get(c, ''):.5g}" if isinstance(
             r.get(c), float) else str(r.get(c, "")) for c in cols) for r in rows]
