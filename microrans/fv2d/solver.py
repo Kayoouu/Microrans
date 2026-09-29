@@ -82,6 +82,10 @@ class Settings:
     relax_U: float | None = None          # None = auto : 0.9 (maillage ~orthogonal) / 0.7
     relax_p: float = 1.0                  # SIMPLE : ~0.3 ; SIMPLEC : 1
     relax_turb: float = 0.8
+    # stationnaire pseudo-transitoire : pas de pseudo-temps global (remplace relax_U/relax_T ;
+    # conseillé sur maillages très fins et étirés, voir README)
+    pseudo_dt: float | None = None
+    pseudo_cfl: float | None = None
     convection_U: str = "linearUpwind"    # upwind | linearUpwind
     convection_turb: str = "upwind"
     convection_T: str = "linearUpwind"
@@ -124,6 +128,11 @@ def _eval_expr(expr, x, y):
           "maximum": np.maximum}
     val = eval(str(expr), {"__builtins__": {}}, ns)    # expression fournie par l'utilisateur
     return np.broadcast_to(np.asarray(val, dtype=float), x.shape).copy()
+
+
+def _active(a0) -> bool:
+    """Terme temporel (ou pseudo-temporel) présent : scalaire non nul ou tableau par cellule."""
+    return a0 is not None and (not isinstance(a0, (int, float)) or a0 != 0.0)
 
 
 class FlowField2D:
@@ -221,7 +230,7 @@ class Step2D:
         V = fvm.V
         rhs += xp.asarray(source) * V
         diag += xp.asarray(sink) * V
-        if self.a0:
+        if _active(self.a0):
             diag += self.a0 * V
             rhs -= self.hist[name] * V
         if self.relax < 1.0:
@@ -626,7 +635,7 @@ class Solver2D:
                                          phi=self.T, nonorth_limit=s.nonorth_limit)
         if e.get("source"):
             rhs = rhs + float(e["source"]) * fvm.V
-        if a0:
+        if _active(a0):
             diag = diag + a0 * fvm.V
             rhs = rhs - hist * fvm.V
         if relax < 1.0:
@@ -673,7 +682,7 @@ class Solver2D:
                 diag, up, lo, rhs = theta * diag, theta * up, theta * lo, theta * rhs
             if explicit is not None:
                 rhs = rhs + explicit[:, c]
-            if a0:
+            if _active(a0):
                 diag = diag + a0 * V
                 rhs -= hist[:, c] * V
             if relax < 1.0:
@@ -780,7 +789,23 @@ class Solver2D:
         forces = []
         for it in range(1, max_iter + 1):
             self.residuals_now = {}
-            eqs = self._momentum(relax=s.relax_U)
+            if s.pseudo_dt or s.pseudo_cfl:
+                # Pseudo-transitoire. La sous-relaxation implicite équivaut à un pas de
+                # pseudo-temps local ∝ V/a_P, donc ∝ Δy²/ν près des parois : convergence en
+                # O(N²) itérations sur les maillages fins et étirés. pseudo_cfl : pas local
+                # fondé sur le seul Courant CONVECTIF (pas local de SU2 / pseudo-transient
+                # de Fluent) ; pseudo_dt : pas global.
+                if s.pseudo_cfl:
+                    _, _, conv, _ = self.courant(1.0)
+                    a0 = conv / s.pseudo_cfl + 1e-6 * self.U_ref / max(
+                        float(np.sqrt(np.mean(self.mesh.cell_volumes))), 1e-300)
+                    a0v = a0[:, None]
+                else:
+                    a0 = a0v = 1.0 / s.pseudo_dt
+                eqs = self._momentum(a0=a0, hist=-a0v * self.U)
+                a0T = {k: -a0 * v for k, v in self.state.items()}
+            else:
+                eqs = self._momentum(relax=s.relax_U)
             for c, (diag, up, lo, rhs) in enumerate(eqs):
                 A = self.fvm.matrix(diag, up, lo)
                 gp = self.fvm.grad(self.p, self.boundary_p(self.p))[:, c] * self.fvm.V
@@ -790,8 +815,13 @@ class Solver2D:
                 self.U[:, c] = self.fvm.lin.solve(A, b, self.U[:, c], s.solver_U, rtol=0.1,
                                                   tag="U")
             self._pressure_correction(eqs, relax_p=relax_p, rtol=0.01)
-            self._turbulence(relax=s.relax_turb)
-            self._energy_eq(relax=s.relax_T)
+            if s.pseudo_dt or s.pseudo_cfl:
+                self._turbulence(a0=a0, hist=a0T, relax=s.relax_turb)
+                if self.energy is not None:
+                    self._energy_eq(a0=a0, hist=-a0 * self.T)
+            else:
+                self._turbulence(relax=s.relax_turb)
+                self._energy_eq(relax=s.relax_T)
             cont = float(xp.sum(xp.abs(self.fvm.div(self.F_i, self.F_b))) /
                          (self.u_scale * float(np.sum(self.fvm.mesh.magSf)) + 1e-300))
             rec = {"iteration": it, **self.residuals_now, "continuity": cont}

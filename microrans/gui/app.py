@@ -466,6 +466,8 @@ class MainWindow(QMainWindow):
         f.addRow("Tolérance des résidus", B.sci(("solver", "tol"), 1e-5))
         f.addRow("Arrêt sur efforts stabilisés (vide = non)",
                  B.sci(("solver", "monitor_tol"), None, True, "ex. 1e-5"))
+        f.addRow("Pseudo-transitoire local, Courant (vide = non)",
+                 B.sci(("solver", "pseudo_cfl"), None, True, "ex. 200 (canaux très fins)"))
         lay.addWidget(self.box_steady)
         self.box_transient, f = _form("Instationnaire")
         opts = [("auto", "auto — choix automatique (recommandé)")] + [

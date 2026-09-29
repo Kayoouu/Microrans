@@ -195,3 +195,19 @@ def test_wall_functions_rejected_for_low_re_k_epsilon():
     with pytest.raises(ValueError, match="bas-Reynolds"):
         Solver2D(channel_mesh(1.0, 2.0, 2, 16), 1e-3, WALLS, model="ke",
                  settings=Settings(wall_treatment="wall_function"))
+
+
+def test_pseudo_transient_fine_stretched_channel():
+    """Maillage fin et étiré (384 cellules, y⁺ = 0.1) : la sous-relaxation implicite de
+    SIMPLEC y demande O(N²) itérations (> 8 000) ; le pseudo-pas local convectif converge
+    en ~100 itérations vers la même solution."""
+    re_tau = 395.0
+    m = channel_mesh(1.0, 2.0, 2, 384, first_height=0.1 / re_tau)
+    s = Solver2D(m, 1 / re_tau, WALLS, model="sa", body_force=(1.0, 0.0), initial_U=(15.0, 0.0),
+                 turbulence_inflow={"intensity": 0.05, "viscosity_ratio": 50.0},
+                 settings=Settings(pseudo_cfl=200.0, relax_turb=1.0))
+    assert s.run_steady(max_iter=400, tol=1e-7)
+    assert s.iterations < 250
+    ub = np.sum(s.U[:, 0] * m.cell_volumes) / np.sum(m.cell_volumes)
+    r1 = run_rans_channel("sa", re_tau, n_cells=256, y1_plus=0.2).summary
+    assert ub == pytest.approx(r1["Ub_plus"] * r1["u_tau"], rel=2e-3)

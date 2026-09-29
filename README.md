@@ -237,6 +237,14 @@ maillage et la préparation restent sur CPU.
 - **Stationnaire** : SIMPLEC (relaxation U auto 0.9 / 0.7 selon la non-orthogonalité),
   tolérance de pression relâchée (0.01) ; arrêt sur les résidus normalisés ou sur la
   stabilisation des efforts (`monitor_tol`).
+- **Maillages très fins et étirés** : la sous-relaxation implicite équivaut à un pas de
+  pseudo-temps local ∝ Δy²/ν près des parois, d'où O(N²) itérations (canal Re_τ = 395 :
+  1 250 itérations à 96 cellules, 4 900 à 192, > 8 000 à 384 — le solveur linéaire n'y est
+  pour rien, testé avec l'AMG). Option `pseudo_cfl` (pas local fondé sur le seul Courant
+  convectif, comme SU2) + `relax_turb = 1` : 111 itérations (0.8 s) à 384 cellules. **Mais**
+  mesuré sur les cas externes (cavité, cylindre, plaques, NACA, convection naturelle) elle
+  converge plus lentement que SIMPLEC relaxé : elle reste une option, pas le défaut. Le vrai
+  remède général serait un solveur couplé pression-vitesse (non implémenté).
 - **Thermique / Boussinesq** : la force est évaluée **aux faces** dans le flux de Rhie-Chow et
   la condition de pression pariétale vaut ∂p/∂n = f·n (`fixedFluxPressure`) : une cavité
   stablement stratifiée reste au repos (|U| < 1e-6 ; 15 avec un gradient de pression nul, d'où
@@ -318,9 +326,10 @@ depuis longtemps).
    stationnaire (minutes), l'instationnaire long est lent (cylindre Re = 100 : 2 à 16 min).
    Pas de parallélisme multi-cœur.
 2. **GPU non testé sur matériel réel** (§ 5.3).
-3. **SIMPLE** converge lentement sur les maillages très fins et étirés (pas de solveur couplé
-   pression-vitesse) ; sur maillages non orthogonaux les résidus plafonnent souvent vers 1e-5 —
-   utiliser `monitor_tol`.
+3. **SIMPLE** converge lentement sur les maillages très fins et étirés (O(N²) itérations) ;
+   l'option `pseudo_cfl` règle le cas des écoulements dominés par la diffusion (canal) mais
+   pas en général (§ 5.4) : pas de solveur couplé pression-vitesse. Sur maillages non
+   orthogonaux, les résidus plafonnent souvent vers 1e-5 — utiliser `monitor_tol`.
 4. **Incompressible uniquement**, pas de transition, pas de LES/DES.
    **Lois de paroi** : la loi de Spalding impose une loi log universelle (κ = 0.41, B = 5.2) ;
    chaque modèle résolu a la sienne, d'où 2 à 5 % d'écart sur le débit par rapport au même
@@ -367,7 +376,7 @@ microrans/
   gui/                   interface PySide6 (app.py, widgets.py)
   examples/              cas fournis (microrans examples)
 packaging/               PyInstaller (microrans.spec) : exécutables GUI + CLI
-tests/                   pytest (137 tests : vérification, validation, GUI hors écran, faux GPU)
+tests/                   pytest (138 tests : vérification, validation, GUI hors écran, faux GPU)
 .github/workflows/       tests (Python 3.10 / 3.12) ; exécutables Windows / Linux / macOS
 ```
 
