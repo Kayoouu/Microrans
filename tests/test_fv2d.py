@@ -170,3 +170,28 @@ max_iter = 50
     assert s["converged"] and s["iterations"] > 50
     for f in ("fields.vtk", "history.csv", "U.png", "convergence.png"):
         assert (out / f).exists()
+
+
+@pytest.mark.parametrize("model,tol", [("sa", 0.04), ("sst", 0.06), ("kw", 0.02)])
+def test_wall_functions_coarse_channel(model, tol):
+    """Lois de paroi (Spalding) : 1re cellule à y⁺ ≈ 50, Re_τ = 2000 ; débit comparé au même
+    modèle résolu jusqu'à la paroi (1D, y⁺ = 0.2). L'écart vient surtout de la loi log
+    universelle (κ = 0.41, B = 5.2) imposée par la loi de paroi."""
+    re_tau = 2000.0
+    m = channel_mesh(1.0, 2.0, 2, 24, first_height=100.0 / re_tau)
+    s = Solver2D(m, 1 / re_tau, WALLS, model=model, body_force=(1.0, 0.0), initial_U=(20.0, 0.0),
+                 turbulence_inflow={"intensity": 0.05, "viscosity_ratio": 50.0},
+                 settings=Settings(wall_treatment="wall_function"))
+    assert s.run_steady(max_iter=3000, tol=1e-7)
+    _, tau, yp = s.wall_shear("bottom")
+    assert tau.mean() == pytest.approx(1.0, abs=1e-3)
+    assert 40 < yp.mean() < 60
+    ub = np.sum(s.U[:, 0] * m.cell_volumes) / np.sum(m.cell_volumes)
+    r1 = run_rans_channel(model, re_tau, n_cells=256, y1_plus=0.2).summary
+    assert ub == pytest.approx(r1["Ub_plus"] * r1["u_tau"], rel=tol)
+
+
+def test_wall_functions_rejected_for_low_re_k_epsilon():
+    with pytest.raises(ValueError, match="bas-Reynolds"):
+        Solver2D(channel_mesh(1.0, 2.0, 2, 16), 1e-3, WALLS, model="ke",
+                 settings=Settings(wall_treatment="wall_function"))

@@ -103,6 +103,9 @@ class Settings:
     max_dt: float = float("inf")
     cn_theta: float = 0.5                 # Crank-Nicolson : 0.5 (ordre 2), >0.5 plus dissipatif
     ddt_phi_coeff: float | None = 1.0     # correction ddtCorr (None = coefficient OpenFOAM)
+    # traitement pariétal : resolved (y⁺ ≲ 1, défaut) | wall_function (loi de Spalding,
+    # y⁺ ≈ 1 à 300 ; SA, k-ω, SST — pas le k-ε Launder-Sharma bas-Reynolds)
+    wall_treatment: str = "resolved"
     # matériel : cpu (NumPy/SciPy) | gpu (CuPy, expérimental : voir microrans/backend.py)
     backend: str = "cpu"
     n_outer: int = 2
@@ -132,17 +135,29 @@ class FlowField2D:
         self.gradU = gradU               # gradU[:, i, j] = ∂u_i/∂x_j
         self._d2 = None
 
+    def _wall_override(self, val):
+        """Lois de paroi : dans les cellules pariétales, le gradient de Green-Gauss (vitesse
+        nulle à la paroi, sous-couche non résolue) surestime fortement le cisaillement ; on
+        le remplace par celui de la loi de paroi, u_τ²/(ν + κ u_τ y) (comme la production
+        modifiée des cellules pariétales d'OpenFOAM)."""
+        s = self.solver
+        if not s.wall_function:
+            return val
+        mask, sw = s._wall_cell_shear()
+        return s.xp.where(mask, sw, val)
+
     @property
     def strain(self):
         xp = self.solver.xp
         g = self.gradU
-        return xp.sqrt(2 * g[:, 0, 0] ** 2 + 2 * g[:, 1, 1] ** 2 + (g[:, 0, 1] + g[:, 1, 0]) ** 2)
+        return self._wall_override(
+            xp.sqrt(2 * g[:, 0, 0] ** 2 + 2 * g[:, 1, 1] ** 2 + (g[:, 0, 1] + g[:, 1, 0]) ** 2))
 
     @property
     def vorticity(self):
         xp = self.solver.xp
         g = self.gradU
-        return xp.abs(g[:, 1, 0] - g[:, 0, 1])
+        return self._wall_override(xp.abs(g[:, 1, 0] - g[:, 0, 1]))
 
     @property
     def second_derivative_sq(self):
@@ -169,7 +184,8 @@ class Ops2D:
         xp = self.s.xp
         s = self.s
         fb = f[s.fvm.Pb].copy()
-        if name is not None and xp.any(s.is_wall):
+        if name is not None and xp.any(s.is_wall) and not (
+                s.wall_function and name in ("k", "sqrt_k")):
             base = "k" if name == "sqrt_k" else name
             wv = s.model.wall_value(base, s.fvm.dperp[s.is_wall])
             fb[s.is_wall] = xp.sqrt(xp.maximum(wv, 0.0)) if name == "sqrt_k" else wv
@@ -211,6 +227,12 @@ class Step2D:
         if self.relax < 1.0:
             rhs += (1.0 - self.relax) / self.relax * diag * phi
             diag = diag / self.relax
+        if s.wall_function and name == "omega":
+            # valeur imposée dans les cellules pariétales (ligne de matrice remplacée)
+            mask, val = s._omega_wall_cells()
+            up = xp.where(mask[fvm.P], 0.0, up)
+            lo = xp.where(mask[fvm.N], 0.0, lo)
+            rhs = xp.where(mask, diag * val, rhs)
         A = fvm.matrix(diag, up, lo)
         s.residuals_now[name] = normalized_residual(A, phi, rhs, s.freestream.get(name, 0.0))
         new = s.fvm.lin.solve(A, rhs, phi, s.settings.solver_turb,
@@ -270,6 +292,15 @@ class Solver2D:
         self.model.ops = Ops2D(self)
         self.model.d = self.backend.asarray(self.model.d)
         self.model.wall_nodes = self.backend.asarray(self.model.wall_nodes)
+        self.wall_function = self.settings.wall_treatment == "wall_function"
+        if self.settings.wall_treatment not in ("resolved", "wall_function"):
+            raise ValueError("wall_treatment : 'resolved' ou 'wall_function'.")
+        if self.wall_function and self.model_name == "ke":
+            raise ValueError("Lois de paroi incompatibles avec le k-ε Launder-Sharma "
+                             "(modèle bas-Reynolds, y⁺ ≈ 1 obligatoire) : utiliser SST, k-ω "
+                             "ou SA, ou wall_treatment = 'resolved'.")
+        self.nu_wall = xp.full(fvm.nb, self.nu)     # viscosité effective aux faces de paroi
+        self.u_tau_wall = xp.zeros(fvm.nb)
         ti = {"intensity": 0.001, "viscosity_ratio": 0.1, **(turbulence_inflow or {})}
         self.freestream = self.model.freestream_values(uref, ti["intensity"],
                                                        ti["viscosity_ratio"])
@@ -444,6 +475,9 @@ class Solver2D:
         d[fx] = val / dp[fx]
         a[self.kindT == 1] = 1.0
         w = self.kindT == 2
+        if self.wall_function and name == "k":
+            a[w] = 1.0                        # kqRWallFunction : gradient nul
+            w = xp.zeros_like(w)
         if xp.any(w):
             wv = self.model.wall_value(name, dp[w])
             b[w] = wv
@@ -487,6 +521,66 @@ class Solver2D:
         xp = self.xp
         bf = self.body_force
         return xp.asarray(bf(t) if callable(bf) else bf, dtype=float)
+
+    # ------------------------------------------------------------------ lois de paroi
+    KAPPA, B_LOG = 0.41, 5.2
+
+    def _spalding_u_tau(self, Ut, y):
+        """u_τ tel que (y⁺, u⁺) vérifie la loi de Spalding (1961), valable de la sous-couche
+        visqueuse à la zone logarithmique (Newton vectorisé)."""
+        xp = self.xp
+        k, E = self.KAPPA, np.exp(-self.KAPPA * self.B_LOG)
+        nu = self.nu
+        ut = xp.maximum(xp.sqrt(nu * Ut / y), 1e-12 * self.U_ref)       # sous-couche
+        for _ in range(30):
+            up = Ut / ut
+            ku = xp.minimum(k * up, 50.0)
+            ex = xp.exp(ku)
+            g = up + E * (ex - 1 - ku - ku ** 2 / 2 - ku ** 3 / 6)
+            dg = 1 + E * k * (ex - 1 - ku - ku ** 2 / 2)
+            f = y * ut / nu - g
+            df = y / nu + dg * Ut / ut ** 2
+            ut = xp.maximum(ut - f / df, 0.5 * ut)
+        return ut
+
+    def _update_wall_function(self):
+        if not self.wall_function:
+            return
+        xp, fvm = self.xp, self.fvm
+        w = self.is_wall
+        n = fvm.nb_hat
+        du = self.U[fvm.Pb] - self.U_fixed
+        ut = xp.abs(du[:, 0] * n[:, 1] - du[:, 1] * n[:, 0])            # |U_t| relative
+        y = fvm.dperp
+        u_tau = self._spalding_u_tau(xp.maximum(ut, 1e-30), y)
+        nu_w = xp.where(ut > 1e-12 * self.U_ref, u_tau ** 2 * y / xp.maximum(ut, 1e-30),
+                        self.nu)
+        self.nu_wall = xp.where(w, xp.maximum(nu_w, self.nu), self.nu)
+        self.u_tau_wall = xp.where(w, u_tau, 0.0)
+
+    def _wall_cell_shear(self):
+        xp, fvm = self.xp, self.fvm
+        w = self.is_wall
+        ut = self.u_tau_wall
+        sw = ut ** 2 / (self.nu + self.KAPPA * ut * fvm.dperp)
+        cnt = xp.bincount(fvm.Pb, weights=xp.where(w, 1.0, 0.0), minlength=fvm.nc)
+        val = xp.bincount(fvm.Pb, weights=xp.where(w, sw, 0.0), minlength=fvm.nc)
+        return cnt > 0, val / xp.maximum(cnt, 1.0)
+
+    def _omega_wall_cells(self):
+        """ω imposé dans les cellules pariétales (omegaWallFunction d'OpenFOAM) :
+        ω = √(ω_vis² + ω_log²), ω_vis = 6ν/(β₁y²), ω_log = u_τ/(√β* κ y)."""
+        xp, fvm = self.xp, self.fvm
+        w = self.is_wall
+        y = fvm.dperp
+        beta1 = getattr(self.model, "beta1", getattr(self.model, "beta", 0.075))
+        bstar = getattr(self.model, "beta_star", 0.09)
+        om = xp.sqrt((6 * self.nu / (beta1 * y ** 2)) ** 2
+                     + (self.u_tau_wall / (np.sqrt(bstar) * self.KAPPA * y)) ** 2)
+        cnt = xp.bincount(fvm.Pb, weights=xp.where(w, 1.0, 0.0), minlength=fvm.nc)
+        val = xp.bincount(fvm.Pb, weights=xp.where(w, om, 0.0), minlength=fvm.nc)
+        mask = cnt > 0
+        return mask, val / xp.maximum(cnt, 1.0)
 
     def cell_force(self, face=False):
         """Force volumique par unité de masse aux cellules (ou aux faces internes) :
@@ -554,9 +648,10 @@ class Solver2D:
         xp = self.xp
         fvm, U = self.fvm, self.U
         force = self.cell_force()
+        self._update_wall_function()
         nu_eff = self.nu + self.nut
         gam_i = fvm.interp(nu_eff)
-        gam_b = xp.where(self.is_wall, self.nu, nu_eff[fvm.Pb])
+        gam_b = xp.where(self.is_wall, self.nu_wall, nu_eff[fvm.Pb])
         gradU = self.grad_U(U)
         gUf = fvm.interp(gradU)
         V = fvm.V
@@ -1042,7 +1137,8 @@ class Solver2D:
             return self
         h = self.backend.to_host
         for name in ("U", "p", "F_i", "F_b", "nut", "kindU", "U_fixed", "kindP", "p_fixed",
-                     "kindT", "is_wall", "kindTemp", "T_fixed", "T_grad"):
+                     "kindT", "is_wall", "kindTemp", "T_fixed", "T_grad", "nu_wall",
+                     "u_tau_wall"):
             setattr(self, name, h(getattr(self, name)))
         self.state = {k: h(v) for k, v in self.state.items()}
         if self.energy is not None:
@@ -1068,7 +1164,7 @@ class Solver2D:
             Pb = fvm.Pb[sl]
             Fp = xp.sum(pb[sl, None] * fvm.Sb[sl], axis=0)
             du = self.U[Pb] - self.U_fixed[sl]
-            Fv = xp.sum((self.nu * fvm.magSb[sl] / fvm.dperp[sl])[:, None] * du, axis=0)
+            Fv = xp.sum((self.nu_wall[sl] * fvm.magSb[sl] / fvm.dperp[sl])[:, None] * du, axis=0)
             out[name] = {"pressure": Fp, "viscous": Fv, "total": Fp + Fv}
         return out
 
@@ -1082,7 +1178,7 @@ class Solver2D:
         t = xp.column_stack([-n[:, 1], n[:, 0]])
         du = self.U[Pb] - self.U_fixed[sl]
         ut = xp.sum(du * t, axis=1)
-        tau = self.nu * ut / fvm.dperp[sl]
+        tau = self.nu_wall[sl] * ut / fvm.dperp[sl]
         yplus = fvm.dperp[sl] * xp.sqrt(xp.abs(tau)) / self.nu
         xf = self.mesh.face_centers[self.mesh.n_internal:][sl]
         return xf, tau, yplus

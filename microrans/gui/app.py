@@ -400,8 +400,12 @@ class MainWindow(QMainWindow):
         f.addRow("Modèle", self.model_combo)
         f.addRow("Intensité turbulente amont", B.sci(("turbulence", "intensity"), 0.001))
         f.addRow("Rapport ν_t/ν amont", B.sci(("turbulence", "viscosity_ratio"), 0.1))
-        f.addRow(_note("SA : ν̃ = 3ν en amont (recommandation NASA TMR). Parois résolues "
-                       "(y⁺ ≈ 1) : pas de lois de paroi."))
+        f.addRow("Traitement pariétal", B.combo(("solver", "wall_treatment"), [
+            ("resolved", "Résolu jusqu'à la paroi (y⁺ ≈ 1)"),
+            ("wall_function", "Lois de paroi, Spalding (y⁺ ≈ 30 à 300)")], "resolved"))
+        f.addRow(_note("SA : ν̃ = 3ν en amont (recommandation NASA TMR). Lois de paroi : SA, "
+                       "k-ω, SST (pas le k-ε bas-Reynolds) ; maillages 3 à 10× plus légers "
+                       "près des parois, précision ~2-5 % (voir README)."))
         lay.addWidget(box)
         self.box_energy, f = _form("Thermique (équation de l'énergie, Boussinesq)")
         self.energy_on = self._check("Résoudre la température", False)

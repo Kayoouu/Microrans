@@ -1,0 +1,61 @@
+# Plaque plane turbulente avec LOIS DE PAROI (loi de Spalding) : 1re maille à y+ ≈ 90,
+# 2 688 cellules au lieu de 7 168 (plaque_plane_sa, y+ ≈ 0.5). Modèle SST.
+# Cf(x = 0.97) mesuré : SA 0.00278, SST 0.00273, k-ω 0.00288 ; corrélations 0.00273-0.00287.
+# Comparaison : corrélations de Cf(Re_x) (Schultz-Grunow, White) — voir README.
+# microrans run2d plaque_plane_loi_de_paroi   (autre modèle : --set physics.model=sa)
+[mesh]
+type = "blocks"
+vertices = [[-0.333, 0.0], [0.0, 0.0], [2.0, 0.0], [2.0, 1.0], [0.0, 1.0], [-0.333, 1.0]]
+blocks = [
+  # 1re maille de 1e-3 (centre à y+ ≈ 90 en fin de plaque)
+  { vertices = [0, 1, 4, 5], cells = [16, 24], grading = [0.1, 207.88] },
+  { vertices = [1, 2, 3, 4], cells = [96, 24], grading = [20.0, 207.88] },
+]
+
+[mesh.patches]
+inlet = { type = "patch", faces = [[5, 0]] }
+outlet = { type = "patch", faces = [[2, 3]] }
+top = { type = "patch", faces = [[3, 4], [4, 5]] }
+symmetry = { type = "symmetry", faces = [[0, 1]] }
+plate = { type = "wall", faces = [[1, 2]] }
+
+[physics]
+nu = 2e-7                  # U = 1, Re/L = 5e6
+model = "sst"
+reference_velocity = 1.0
+reference_length = 1.0
+
+[initial]
+U = [1.0, 0.0]
+
+[turbulence]
+intensity = 0.0008         # pour k-ω / SST ; SA utilise ν̃ = 3ν (NASA TMR)
+viscosity_ratio = 0.01
+
+[boundary.inlet]
+type = "inlet"
+U = [1.0, 0.0]
+
+[boundary.outlet]
+type = "outlet"
+p = 0.0
+
+[boundary.top]
+type = "outlet"
+
+[boundary.symmetry]
+type = "symmetry"
+
+[boundary.plate]
+type = "wall"
+
+[solver]
+mode = "steady"
+wall_treatment = "wall_function"
+max_iter = 1500
+tol = 1e-6
+log_every = 100
+
+[output]
+directory = "results/plaque_plane_loi_de_paroi"
+forces = ["plate"]

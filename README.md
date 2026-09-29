@@ -22,8 +22,8 @@ est justifié par une mesure** reproductible dans ce dépôt (sections « Métho
 (section « Limites »).
 
 > **Ce que ce n'est pas :** un remplaçant d'OpenFOAM, SU2 ou Fluent. Python vectorisé
-> (NumPy/SciPy) : confortable jusqu'à ~10⁵ cellules en 2D ; incompressible, 2D, pas de lois de
-> paroi, pas de transition.
+> (NumPy/SciPy) : confortable jusqu'à ~10⁵ cellules en 2D ; incompressible, 2D, pas de
+> transition ni de LES.
 
 ---
 
@@ -130,6 +130,7 @@ API Python : `from microrans.fv2d import Solver2D, Settings`, `from microrans.me
 | Temps | Euler, BDF2 à pas variable, Crank-Nicolson, RK1–RK4 et AB2 à projection, pas adaptatif sur le Courant, choix automatique | OpenFOAM, SU2, codes DNS |
 | Solveurs linéaires | multigrille algébrique par agrégation (hiérarchie réutilisée), CG flexible, BiCGStab, LU creuse | GAMG d'OpenFOAM, PETSc |
 | Turbulence | SA, k-ε LS, k-ω 2006, SST 2003 (formes NASA TMR), sources linéarisées par Newton | NASA TMR |
+| Parois | résolues (y⁺ ≈ 1) ou **lois de paroi** : loi de Spalding (viscosité pariétale), ω imposé dans les cellules pariétales, k à gradient nul, cisaillement de la loi de paroi pour la production | nutUSpaldingWallFunction, omegaWallFunction, kqRWallFunction d'OpenFOAM |
 | Thermique | température, Boussinesq, flux / température imposés, Nusselt ; force aux faces + `fixedFluxPressure` | buoyantBoussinesq d'OpenFOAM |
 | Conditions limites | paroi (mobile), entrée, sortie, symétrie, champ lointain, périodicité | SU2 / OpenFOAM |
 | Arrêt | résidus normalisés (OpenFOAM) ou stabilisation des efforts (moniteurs Fluent) | — |
@@ -258,7 +259,9 @@ maillage et la préparation restent sur CPU.
 | Cylindre Re = 20, O-grid | C_d | 2.037 (96×64) ; 2.046 (64×40) | 2.045 (Dennis & Chang 1970) |
 | Cylindre Re = 100 | St, C_d, C_l | tableau § 5.1 | St 0.164–0.167 ; C_d 1.32–1.35 ; C_l ≈ 0.32–0.34 |
 | Canal turbulent Re_τ = 395, SA | U_b | 17.6402 | 17.6398 (solveur 1D) |
-| Plaque plane Re_L = 5e6, SA / SST | C_f(x = 0.97) | 0.00273 / 0.00260 | 0.00273 (Schultz-Grunow), 0.00287 (White) |
+| Plaque plane Re_L = 5e6, SA / SST, y⁺ ≈ 0.5 (7 168 cellules) | C_f(x = 0.97) | 0.00273 / 0.00260 | 0.00273 (Schultz-Grunow), 0.00287 (White) |
+| idem, **lois de paroi**, y⁺ ≈ 90 (2 688 cellules), SA / SST / k-ω | C_f(x = 0.97) | 0.00278 / 0.00273 / 0.00288 | idem |
+| Canal Re_τ = 2000, **lois de paroi**, 1re cellule à y⁺ ≈ 50 (24 cellules), SA / SST / k-ω | U_b / U_b résolu (1D, y⁺ = 0.2) | −2.3 % / +3.5 % / −0.5 % | même modèle résolu ; y⁺ ≈ 25 : −3.6 / +4.8 / −0.3 % |
 | NACA 0012, α = 4°, Re = 1e6, SA | C_l ; C_d | 0.433 ; 0.0125 | 2πα = 0.439 (démonstration, voir limites) |
 
 ### 2D, thermique (convection naturelle, de Vahl Davis 1983, Pr = 0.71)
@@ -318,8 +321,12 @@ depuis longtemps).
 3. **SIMPLE** converge lentement sur les maillages très fins et étirés (pas de solveur couplé
    pression-vitesse) ; sur maillages non orthogonaux les résidus plafonnent souvent vers 1e-5 —
    utiliser `monitor_tol`.
-4. **Incompressible uniquement**, pas de lois de paroi (y⁺ ≲ 1 requis), pas de transition,
-   pas de LES/DES.
+4. **Incompressible uniquement**, pas de transition, pas de LES/DES.
+   **Lois de paroi** : la loi de Spalding impose une loi log universelle (κ = 0.41, B = 5.2) ;
+   chaque modèle résolu a la sienne, d'où 2 à 5 % d'écart sur le débit par rapport au même
+   modèle résolu (canal ci-dessus) ; moins précises dans la zone tampon (y⁺ ≈ 5-30) ; pas pour
+   le k-ε Launder-Sharma (bas-Reynolds) ; pas de loi de paroi thermique (la température reste
+   « résolue »).
 5. **k-ω / SST** : sensibles à la hauteur de la 1re maille (condition pariétale de Menter) ;
    plaque plane SST 5 % sous les corrélations.
 6. **Maillages** : triangles purs → traînée 3.6 % plus forte que l'hybride à tailles égales ;
@@ -335,8 +342,8 @@ depuis longtemps).
 
 ## 9. Feuille de route
 
-Solveur couplé pression-vitesse (type « Coupled » de Fluent) pour les maillages étirés ; lois
-de paroi ; maillage en C ; compressible (schémas de Roe/HLLC, RK SSP) ; transition γ-Re_θ ;
+Solveur couplé pression-vitesse (type « Coupled » de Fluent) pour les maillages étirés ; loi
+de paroi thermique et k-ε haut-Reynolds ; maillage en C ; compressible (schémas de Roe/HLLC, RK SSP) ; transition γ-Re_θ ;
 parallélisme (Numba ou CuPy validé sur carte) ; données NASA TMR intégrées aux tests.
 
 ---
@@ -360,7 +367,7 @@ microrans/
   gui/                   interface PySide6 (app.py, widgets.py)
   examples/              cas fournis (microrans examples)
 packaging/               PyInstaller (microrans.spec) : exécutables GUI + CLI
-tests/                   pytest (132 tests : vérification, validation, GUI hors écran, faux GPU)
+tests/                   pytest (137 tests : vérification, validation, GUI hors écran, faux GPU)
 .github/workflows/       tests (Python 3.10 / 3.12) ; exécutables Windows / Linux / macOS
 ```
 

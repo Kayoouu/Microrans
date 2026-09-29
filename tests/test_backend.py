@@ -100,3 +100,13 @@ def test_channel_body_force_and_forces_on_gpu():
     assert np.max(np.abs(c.U - g.U)) < 1e-8
     fc, fg = c.forces()["bottom"]["total"], g.forces()["bottom"]["total"]
     assert np.allclose(fc, fg)
+
+
+def test_wall_functions_on_gpu():
+    def build(st):
+        return Solver2D(channel_mesh(1.0, 2.0, 2, 16, first_height=0.05), 1 / 2000.0,
+                        {"bottom": {"type": "wall"}, "top": {"type": "wall"}}, model="sst",
+                        body_force=(1.0, 0.0), initial_U=(20.0, 0.0), settings=st)
+    c, g = _pair(build, lambda s: s.run_steady(max_iter=30, tol=1e-12),
+                 wall_treatment="wall_function", solver_p="direct")
+    assert np.max(np.abs(c.U - g.U)) < 1e-6
