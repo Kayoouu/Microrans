@@ -1211,6 +1211,21 @@ class Solver2D:
             out[name] = {"pressure": Fp, "viscous": Fv, "total": Fp + Fv}
         return out
 
+    def moment(self, patch, center=(0.0, 0.0)):
+        """Moment (par unité d'envergure, ρ = 1, sens trigonométrique : positif = cabrer
+        pour un écoulement selon +x) des efforts de pression et de frottement sur `patch`
+        autour de `center`."""
+        xp = self.xp
+        fvm = self.fvm
+        sl = self.patch_slices[patch]
+        pb = self.boundary_p(self.p)[sl]
+        du = self.U[fvm.Pb[sl]] - self.U_fixed[sl]
+        dF = pb[:, None] * fvm.Sb[sl] + (self.nu_wall[sl] * fvm.magSb[sl]
+                                         / fvm.dperp[sl])[:, None] * du
+        r = self.backend.asarray(self.mesh.face_centers[self.mesh.n_internal:][
+            self.patch_slices[patch]] - np.asarray(center, float))
+        return float(xp.sum(r[:, 0] * dF[:, 1] - r[:, 1] * dF[:, 0]))
+
     def wall_shear(self, patch):
         """(abscisse curviligne implicite) centres de faces, τ_w signé (tangente locale), y⁺."""
         xp = self.xp

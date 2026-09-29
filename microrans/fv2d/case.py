@@ -5,6 +5,11 @@ du fichier .cfg de SU2). Voir les exemples de `microrans/examples/`
 Sections : [mesh] (+ [domain], [[bodies]]), [physics], [initial], [turbulence],
 [boundary.<patch>], [solver], [output].
 
+Incidence : [physics] angle_of_attack = α (degrés) fait tourner la vitesse des entrées /
+champs lointains et la vitesse initiale ; Cd et Cl sont alors donnés dans les axes de
+l'écoulement (traînée selon U∞), Cm autour de [output] moment_center (défaut (0, 0)).
+Balayage (polaire) : voir sweep.py.
+
 Reprise : [initial] restart = "…/checkpoint.npz" (reprise exacte sur le même maillage,
 interpolation sinon) ; [output] checkpoint = true (défaut) écrit checkpoint.npz à la fin
 du calcul, à l'arrêt demandé et toutes les `checkpoint_minutes` (défaut 5) minutes.
@@ -54,15 +59,47 @@ def _energy_from(cfg):
     return e
 
 
+def wind_axes(cfg: dict):
+    """Directions de traînée et de portance (vecteurs unitaires) pour l'incidence du cas."""
+    a = np.radians(float(cfg.get("physics", {}).get("angle_of_attack", 0.0)))
+    return np.array([np.cos(a), np.sin(a)]), np.array([-np.sin(a), np.cos(a)])
+
+
+def _apply_incidence(cfg: dict) -> tuple[dict, list]:
+    """(conditions aux limites, vitesse initiale) tournées de l'incidence du cas."""
+    bcs = cfg["boundary"]
+    U0 = cfg.get("initial", {}).get("U", (0.0, 0.0))
+    alpha = float(cfg.get("physics", {}).get("angle_of_attack", 0.0))
+    if alpha == 0.0:
+        return bcs, U0
+    ed, el = wind_axes(cfg)
+    R = np.column_stack([ed, el])                   # repère écoulement -> repère maillage
+
+    def rot(u, where):
+        if not all(isinstance(c, (int, float)) for c in u):
+            raise ValueError(f"{where} : angle_of_attack exige une vitesse constante "
+                             f"(pas d'expression en x, y) ; reçu {u}.")
+        return [float(c) for c in R @ np.asarray(u, float)]
+    out = {}
+    for name, spec in bcs.items():
+        spec = dict(spec)
+        if spec["type"] in ("inlet", "farfield"):
+            spec["U"] = rot(spec["U"], f"[boundary.{name}]")
+        out[name] = spec
+    return out, rot(U0, "[initial] U")
+
+
+def case_mesh(cfg: dict, base_dir=".", verbose=False):
+    mcfg = cfg.get("mesh", {})
+    if "preset" in mcfg:
+        return PRESETS[mcfg["preset"]]()
+    return build_mesh(cfg, base_dir=base_dir, verbose=verbose)
+
+
 def build_solver(cfg: dict, base_dir=".", verbose=False, mesh=None):
     """Solveur prêt à calculer (maillage construit, ou fourni via `mesh`)."""
-    mcfg = cfg.get("mesh", {})
-    if mesh is not None:
-        pass
-    elif "preset" in mcfg:
-        mesh = PRESETS[mcfg["preset"]]()
-    else:
-        mesh = build_mesh(cfg, base_dir=base_dir, verbose=verbose)
+    if mesh is None:
+        mesh = case_mesh(cfg, base_dir, verbose)
     ph = cfg.get("physics", {})
     if "nu" in ph:
         nu = float(ph["nu"])
@@ -71,10 +108,11 @@ def build_solver(cfg: dict, base_dir=".", verbose=False, mesh=None):
     else:
         raise ValueError("[physics] : donner nu ou reynolds.")
     init = cfg.get("initial", {})
-    solver = Solver2D(mesh, nu, cfg["boundary"], model=ph.get("model", "laminar"),
+    bcs, U0 = _apply_incidence(cfg)
+    solver = Solver2D(mesh, nu, bcs, model=ph.get("model", "laminar"),
                       model_options=ph.get("model_options"),
                       body_force=ph.get("body_force", (0.0, 0.0)),
-                      initial_U=init.get("U", (0.0, 0.0)),
+                      initial_U=U0,
                       turbulence_inflow=cfg.get("turbulence"),
                       settings=_settings_from(cfg.get("solver", {})),
                       reference_velocity=ph.get("reference_velocity"),
@@ -86,7 +124,9 @@ def build_solver(cfg: dict, base_dir=".", verbose=False, mesh=None):
             path = Path(base_dir) / path
         if not path.is_file():
             raise FileNotFoundError(f"Fichier de reprise introuvable : {path}")
-        solver.restart_info = load_checkpoint(solver, path)
+        solver.restart_info = load_checkpoint(
+            solver, path, fields_only=init.get("restart_mode", "exact") == "fields",
+            shift_U=init.get("restart_shift_U"))
         if verbose:
             ri = solver.restart_info
             print(f"Reprise ({ri['mode']}) depuis {path} : t = {ri['time']:.6g}, "
@@ -115,6 +155,8 @@ def run_case(cfg: dict, base_dir=".", out_dir=None, verbose=True, plot=True, cal
     Uref = ph.get("reference_velocity", solver.U_ref)
     Lref = ph.get("reference_length", 1.0)
     qdyn = 0.5 * Uref ** 2 * Lref
+    ed, el = wind_axes(cfg)
+    center = oc.get("moment_center", (0.0, 0.0))
     force_patches = oc.get("forces", [p.name for p in solver.mesh.patches if p.type == "wall"])
     mode = sc.get("mode", "steady")
     if verbose:
@@ -122,7 +164,8 @@ def run_case(cfg: dict, base_dir=".", out_dir=None, verbose=True, plot=True, cal
               f"ν = {solver.nu:.4g}, mode {mode}")
     t0 = time.perf_counter()
     summary = {"mode": mode, "model": solver.model_name, "n_cells": solver.mesh.n_cells,
-               "nu": solver.nu, "reference_velocity": Uref, "reference_length": Lref}
+               "nu": solver.nu, "reference_velocity": Uref, "reference_length": Lref,
+               "angle_of_attack": float(ph.get("angle_of_attack", 0.0))}
     if solver.restart_info:
         summary["restart"] = {k: solver.restart_info[k] for k in ("file", "mode", "time",
                                                                   "iteration")}
@@ -151,8 +194,8 @@ def run_case(cfg: dict, base_dir=".", out_dir=None, verbose=True, plot=True, cal
         def probes(s):
             rec = {}
             for name, f in s.forces(force_patches).items():
-                rec[f"Cd_{name}"] = f["total"][0] / qdyn
-                rec[f"Cl_{name}"] = f["total"][1] / qdyn
+                rec[f"Cd_{name}"] = float(f["total"] @ s.backend.asarray(ed)) / qdyn
+                rec[f"Cl_{name}"] = float(f["total"] @ s.backend.asarray(el)) / qdyn
             return rec
         vtk_every = oc.get("vtk_every", 0)
 
@@ -184,8 +227,10 @@ def run_case(cfg: dict, base_dir=".", out_dir=None, verbose=True, plot=True, cal
     solver.to_cpu()                     # post-traitement sur CPU (no-op si déjà CPU)
     for name, f in solver.forces(force_patches).items():
         summary.setdefault(name, {}).update(
-            Cd=float(f["total"][0] / qdyn), Cl=float(f["total"][1] / qdyn),
-            Cd_pressure=float(f["pressure"][0] / qdyn), Cd_viscous=float(f["viscous"][0] / qdyn))
+            Cd=float(f["total"] @ ed / qdyn), Cl=float(f["total"] @ el / qdyn),
+            Cm=solver.moment(name, center) / (qdyn * Lref),
+            Cd_pressure=float(f["pressure"] @ ed / qdyn),
+            Cd_viscous=float(f["viscous"] @ ed / qdyn))
         xf, tau, yp = solver.wall_shear(name)
         summary[name].update(yplus_max=float(yp.max()), yplus_mean=float(yp.mean()))
         # distribution pariétale (comme les « XY plots » de Fluent) : Cf, Cp, y+ (, T, q)

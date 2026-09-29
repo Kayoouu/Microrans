@@ -103,21 +103,31 @@ def _interpolator(src, dst):
     return f
 
 
-def load_checkpoint(solver, path) -> dict:
+def load_checkpoint(solver, path, fields_only=False, shift_U=None) -> dict:
     """Initialise `solver` depuis un fichier de reprise ; renvoie un résumé de l'opération
-    ({"mode": "exact" | "interpolé", ...})."""
+    ({"mode": "exact" | "champs" | "interpolé", ...}).
+
+    fields_only : seuls les champs aux cellules servent d'état initial (nouveau calcul :
+    temps, historique et flux repartent de zéro) — continuation d'un balayage de paramètres,
+    ou conditions aux limites modifiées. shift_U : vitesse uniforme ajoutée au champ lu
+    (continuation en incidence : variation de U∞ entre deux points)."""
     d = read_checkpoint(path)
     meta = d["meta"]
     xp = solver.xp
     A = solver.backend.asarray
-    exact = same_mesh(solver, d)
-    info = {"file": str(path), "mode": "exact" if exact else "interpolé",
+    same = same_mesh(solver, d)
+    exact = same and not fields_only
+    info = {"file": str(path),
+            "mode": "exact" if exact else ("champs" if same else "interpolé"),
             "time": float(d["time"]), "iteration": int(d["iteration"]), "ignored": []}
-    if exact:
+    if same:
         conv = lambda v: v                                               # noqa: E731
     else:
         conv = _interpolator(d["cell_centers"], np.asarray(solver.mesh.cell_centers))
-    solver.U = A(conv(d["U"]).reshape(-1, 2).copy())
+    U = conv(d["U"]).reshape(-1, 2).copy()
+    if shift_U is not None:
+        U += np.asarray(shift_U, float)
+    solver.U = A(U)
     solver.p = A(conv(d["p"]).copy())
     for k in solver.state:
         if "state_" + k in d:
@@ -160,6 +170,7 @@ def load_checkpoint(solver, path) -> dict:
         fvm = solver.fvm
         solver.F_i = xp.sum(fvm.interp(solver.U) * fvm.Si, axis=1)
         solver.F_b = xp.sum(solver.boundary_U(solver.U) * fvm.Sb, axis=1)
-        solver.time = float(d["time"])
+        if not same:
+            solver.time = float(d["time"])
     solver.update_nut()
     return info

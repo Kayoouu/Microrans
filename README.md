@@ -77,6 +77,8 @@ microrans run2d convection_naturelle_ra1e5
 microrans run2d cylindre_re100_urans --set solver.time_scheme=rk3 --set solver.adjust_dt=true
 microrans run2d cylindre_re100_urans --continue --set solver.t_end=200   # poursuivre un calcul
 microrans run2d mon_cas_fin.toml --restart results/mon_cas/checkpoint.npz # partir d'un autre calcul
+microrans polar naca0012_polaire --alpha -4 14 2      # polaire Cl(α), Cd(α), Cm(α)
+microrans sweep cylindre_re20 --param physics.reynolds --values 10 20 40  # balayage
 microrans mesh mesh_naca_multi -f msh su2 vtk foam   # mailler seulement, exporter
 microrans mesh --preset cylinder-hybrid
 microrans rans -m all                           # canal 1D, 4 modèles
@@ -114,6 +116,7 @@ name = "profil"
 [physics]
 reynolds = 1e6
 model = "sst"              # laminar | sa | ke | kw | sst
+angle_of_attack = 4.0      # incidence de l'écoulement amont (°) ; Cd, Cl en axes écoulement
 [energy]                   # optionnel : thermique
 Pr = 0.71
 beta = 3.4e-3
@@ -128,6 +131,11 @@ time_scheme = "auto"       # auto | euler | backward | crankNicolson | rk1..rk4 
 dt = 0.01
 t_end = 10.0
 backend = "cpu"            # cpu | gpu
+[sweep]                    # optionnel : microrans sweep <cas>
+parameter = "physics.angle_of_attack"
+range = "-4:14:2"          # ou values = [0, 5, 10]
+[output]
+moment_center = [0.25, 0.0]   # Cm autour du quart de corde
 ```
 
 API Python : `from microrans.fv2d import Solver2D, Settings`, `from microrans.mesh2d import ...`
@@ -151,6 +159,7 @@ API Python : `from microrans.fv2d import Solver2D, Settings`, `from microrans.me
 | Thermique | température, Boussinesq, flux / température imposés, Nusselt ; force aux faces + `fixedFluxPressure` | buoyantBoussinesq d'OpenFOAM |
 | Conditions limites | paroi (mobile), entrée, sortie, symétrie, champ lointain, périodicité | SU2 / OpenFOAM |
 | Arrêt | résidus normalisés (OpenFOAM) ou stabilisation des efforts (moniteurs Fluent) | — |
+| Études | reprise exacte / interpolation sur un autre maillage ; polaire (incidence de l'écoulement, continuation) ; balayage de n'importe quel paramètre | `mapFields`, polaires Fluent / SU2 |
 | Matériel | CPU (NumPy/SciPy) ou GPU (CuPy) par un module de tableaux interchangeable | — |
 
 ---
@@ -288,6 +297,8 @@ maillage et la préparation restent sur CPU.
 | idem, **lois de paroi**, y⁺ ≈ 90 (2 688 cellules), SA / SST / k-ω | C_f(x = 0.97) | 0.00278 / 0.00273 / 0.00288 | idem |
 | Canal Re_τ = 2000, **lois de paroi**, 1re cellule à y⁺ ≈ 50 (24 cellules), SA / SST / k-ω | U_b / U_b résolu (1D, y⁺ = 0.2) | −2.3 % / +3.5 % / −0.5 % | même modèle résolu ; y⁺ ≈ 25 : −3.6 / +4.8 / −0.3 % |
 | NACA 0012, α = 4°, Re = 1e6, SA | C_l ; C_d | 0.433 ; 0.0125 | 2πα = 0.439 (démonstration, voir limites) |
+| NACA 0012, polaire −4° à 14°, Re = 1e6, SA (8 192 cellules, 4 min) | pente dC_l/dα ; C_m quart de corde ; symétrie | 0.1083 /° ; \|C_m\| < 0.008 ; C_l(−α) = −C_l(α) à 5 chiffres | 2π = 0.1097 /° (profil mince) ; 0 (profil symétrique) ; exacte |
+| Cylindre Re = 20, écoulement incliné de 30° | C_d (axes écoulement) | écart 0.01 % avec 0° | invariance exacte |
 
 ### 2D, thermique (convection naturelle, de Vahl Davis 1983, Pr = 0.71)
 
@@ -318,6 +329,7 @@ modèles (bilan exact) ; amplitude du frottement oscillant de 0.18 (k-ε) à 0.3
 ![Comparaison RANS 1D](docs/rans_comparaison_re395.png)
 ![Cavité](docs/cavite_U.png)
 ![Cylindre Re = 100, vorticité](docs/cylindre_re100_vorticite.png)
+![Polaire NACA 0012, SA, Re = 1e6](docs/polaire_naca0012_sa.png)
 
 ---
 
@@ -365,6 +377,12 @@ depuis longtemps).
    (utiliser un schéma implicite pour la convection naturelle).
 9. Validation limitée aux cas ci-dessus ; pas de comparaison point à point avec les données
    NASA TMR (non embarquées).
+10. **Polaires** : pas de décrochage prédit jusqu'à 14° pour le NACA 0012 (C_l = 1.37) ; le
+   décrochage réel à Re = 1e6 n'est ni validé ni fiable en RANS stationnaire (SA surestime
+   généralement C_l max). Écoulement supposé entièrement turbulent (pas de transition) :
+   traînée à faible incidence surestimée par rapport à un profil réel à ce Reynolds. La
+   continuation ne réduit pas systématiquement le nombre d'itérations (de −41 % à +53 %
+   mesurés, voir `fv2d/sweep.py`).
 
 ## 9. Feuille de route
 

@@ -16,7 +16,7 @@ from pathlib import Path
 import numpy as np
 from PySide6.QtCore import Qt, QThread, QUrl
 from PySide6.QtGui import QAction, QDesktopServices, QFont, QKeySequence
-from PySide6.QtWidgets import (QApplication, QFileDialog, QFormLayout, QGroupBox, QHBoxLayout,
+from PySide6.QtWidgets import (QApplication, QCheckBox, QFileDialog, QFormLayout, QGroupBox, QHBoxLayout,
                                QHeaderView, QLabel, QListWidget, QListWidgetItem, QMainWindow,
                                QMessageBox, QPlainTextEdit, QProgressBar, QPushButton,
                                QScrollArea, QSplitter, QStackedWidget, QTableWidget,
@@ -394,6 +394,10 @@ class MainWindow(QMainWindow):
         f.addRow("Re = U L / ν", self.re_edit)
         f.addRow("Vitesse de référence U", B.sci(("physics", "reference_velocity"), 1.0))
         f.addRow("Longueur de référence L", B.sci(("physics", "reference_length"), 1.0))
+        f.addRow("Incidence α (°)", B.sci(("physics", "angle_of_attack"), None, True, "0"))
+        f.addRow(_note("Incidence : l'écoulement amont (entrées, champ lointain, vitesse "
+                       "initiale) est tourné de α ; Cd et Cl sont donnés dans les axes de "
+                       "l'écoulement."))
         lay.addWidget(box)
         box, f = _form("Turbulence")
         self.model_combo = B.combo(("physics", "model"), MODEL_LABELS, "laminar")
@@ -536,6 +540,24 @@ class MainWindow(QMainWindow):
         lay.addWidget(_note("Le calcul est sauvegardé (checkpoint.npz) toutes les 5 minutes, "
                             "à la fin et à l'arrêt : un calcul arrêté ou interrompu peut être "
                             "poursuivi avec « Continuer »."))
+        box, f = _form("Polaire / balayage d'un paramètre")
+        self.sweep_param = combo([("physics.angle_of_attack", "Incidence α (°) : polaire"),
+                                  ("physics.reynolds", "Nombre de Reynolds"),
+                                  ("physics.nu", "Viscosité ν")])
+        self.sweep_values = QLineEdit_("-4:12:2")
+        self.sweep_values.setToolTip("début:fin:pas (fin incluse) ou liste a, b, c")
+        self.sweep_cont = QCheckBox("Continuation : chaque point part du précédent")
+        self.sweep_cont.setChecked(True)
+        self.sweep_btn = QPushButton("Lancer le balayage")
+        self.sweep_btn.clicked.connect(self.run_sweep_gui)
+        f.addRow("Paramètre", self.sweep_param)
+        f.addRow("Valeurs", self.sweep_values)
+        f.addRow(self.sweep_cont)
+        f.addRow(self.sweep_btn)
+        f.addRow(_note("Un calcul complet par valeur, sur le même maillage. Résultats : "
+                       "balayage.csv, polaire.png et un sous-dossier par point. Points non "
+                       "convergés (ex. après le décrochage) : marqueurs creux."))
+        lay.addWidget(box)
         self.run_info = _note("")
         lay.addWidget(self.run_info)
         lay.addStretch(1)
@@ -1072,6 +1094,7 @@ class MainWindow(QMainWindow):
         self.progress.setVisible(False)
         self.run_btn.setEnabled(True)
         self.continue_btn.setEnabled(True)
+        self.sweep_btn.setEnabled(True)
         self.stop_btn.setEnabled(False)
 
     def _finish(self, res):
@@ -1092,6 +1115,62 @@ class MainWindow(QMainWindow):
         if self.worker is not None:
             self.worker.stop_requested = True
             self.statusBar().showMessage("Arrêt demandé…")
+
+    def run_sweep_gui(self):
+        from ..fv2d.sweep import parse_values
+        key = self.sweep_param.currentData()
+        try:
+            values = parse_values(self.sweep_values.text())
+        except ValueError as exc:
+            QMessageBox.warning(self, "Valeurs", f"Valeurs invalides : {exc}")
+            return
+        if not values:
+            return
+        self._store_forms()
+        cfg = copy.deepcopy(self.cfg)
+        cfg.setdefault("output", {})["directory"] = str(self.out_dir())
+        if cfg.get("solver", {}).get("mode", "steady") != "steady":
+            QMessageBox.information(self, "Balayage", "Le balayage fonctionne aussi en "
+                                    "instationnaire, mais chaque point est alors long. "
+                                    "Il est conseillé de passer en stationnaire.")
+        mesh, base, cont = self.mesh, self.base_dir(), self.sweep_cont.isChecked()
+        self.sweep_rows, self._sweep_key, self._sweep_n = [], key, len(values)
+
+        def job(worker):
+            from ..fv2d.sweep import run_sweep
+            rows = run_sweep(cfg, key, values, base_dir=base, out_dir=cfg["output"]["directory"],
+                             continuation=cont, verbose=True, plot=True,
+                             callback=lambda s, n: worker.stop_requested, mesh=mesh,
+                             on_point=worker.report)
+            return rows
+        self.nav.setCurrentRow(6)
+        self.tabs.setCurrentIndex(0)
+        self.canvas.message(f"Balayage : {len(values)} calculs…")
+        self.sweep_btn.setEnabled(False)
+        self._start(job, self._sweep_done, "Balayage en cours…", self._sweep_progress)
+
+    def _sweep_progress(self, row):
+        from ..fv2d.sweep import plot_sweep
+        self.sweep_rows.append(row)
+        n = len(self.sweep_rows)
+        self.progress.setRange(0, self._sweep_n)
+        self.progress.setValue(n)
+        self.run_info.setText(f"Point {n}/{self._sweep_n} : {self._sweep_key} = "
+                              f"{row[self._sweep_key]:g} "
+                              f"({'convergé' if row['converged'] else 'NON convergé'})")
+        self.canvas.fig.clear()
+        plot_sweep(self.sweep_rows, self._sweep_key, None, fig=self.canvas.fig)
+        self.canvas.draw()
+
+    def _sweep_done(self, rows):
+        self.sweep_btn.setEnabled(True)
+        cols = [k for k in (rows[0] if rows else {}) if not k.startswith(("Cd_p", "Cd_v"))]
+        lines = ["\t".join(cols)] + ["\t".join(f"{r.get(c, ''):.5g}" if isinstance(
+            r.get(c), float) else str(r.get(c, "")) for c in cols) for r in rows]
+        self.summary_view.setPlainText("\n".join(lines))
+        self.run_info.setText(f"Balayage terminé : {len(rows)} points. Tableau : "
+                              f"{self.out_dir() / 'balayage.csv'}")
+        self.log(f"Balayage écrit dans {self.out_dir()}")
 
     def _browse_restart(self):
         path, _ = QFileDialog.getOpenFileName(self, "Fichier de reprise", str(self.out_dir()),
@@ -1128,13 +1207,11 @@ class MainWindow(QMainWindow):
             from ..fv2d.case import run_case
 
             def cb(s, n):
-                rec = dict(s.history[-1]) if steady and s.history else {}
-                if not steady:
-                    rec = {"time": s.time, "dt": s.dt}
-                    for name, f in s.forces().items():
-                        q = 0.5 * s.U_ref ** 2
-                        rec[f"Cd_{name}"] = f["total"][0] / q
-                        rec[f"Cl_{name}"] = f["total"][1] / q
+                # enregistrement du pas courant (efforts en axes écoulement, calculés par
+                # run_case)
+                src = s.history if steady else s.series
+                rec = {k: v for k, v in src[-1].items() if k.startswith(
+                    ("iteration", "time", "dt", "Cd_", "Cl_")) or steady} if src else {}
                 worker.report(rec)
                 return worker.stop_requested
             return run_case(cfg, base_dir=base, out_dir=cfg["output"]["directory"], verbose=True,
@@ -1346,13 +1423,25 @@ def _selftest(win: MainWindow, app, shot: str | None) -> int:
     # « Continuer » : reprise exacte, 60 itérations de plus
     ok = (win.solver is not None and len(its) == 2 and its[0] > 10 and its[1] > its[0]
           and win.summary.get("restart", {}).get("mode") == "exact")
+    # balayage (2 viscosités) : tableau et figure
+    set_combo(win.sweep_param, "physics.nu")
+    win.sweep_values.setText("0.01, 0.02")
+    win.run_sweep_gui()
+    t0 = time.time()
+    while win.thread is not None and time.time() - t0 < 300:
+        app.processEvents()
+        time.sleep(0.02)
+    ok = ok and not errors and len(win.sweep_rows) == 2 and (
+        win.out_dir() / "balayage.csv").is_file()
+    if errors:
+        print("SELFTEST ÉCHEC :", errors[0])
     for i in range(win.field_combo.count()):
         win.field_combo.setCurrentIndex(i)
         win.plot_field()
     app.processEvents()
     if shot:
         win.grab().save(shot)
-    print("SELFTEST", "OK" if ok else "ÉCHEC", its)
+    print("SELFTEST", "OK" if ok else "ÉCHEC", its, len(win.sweep_rows))
     return 0 if ok else 1
 
 

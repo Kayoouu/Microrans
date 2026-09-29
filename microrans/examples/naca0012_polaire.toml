@@ -1,0 +1,53 @@
+# Polaire du profil NACA 0012, Re = 1e6, Spalart-Allmaras, maillage en O.
+# L'incidence est celle de l'écoulement amont ([physics] angle_of_attack) : un seul maillage
+# pour toute la polaire ; chaque point démarre de la solution du précédent (continuation).
+# microrans polar naca0012_polaire --alpha -4 14 2      (ou : microrans sweep naca0012_polaire)
+# Au-delà du décrochage (~14-16° pour ce profil), un calcul stationnaire RANS n'est pas
+# fiable : les points non convergés sont signalés.
+[mesh]
+type = "ogrid"
+n_around = 128
+n_radial = 64
+farfield_radius = 30.0
+first_height = 2e-5          # y+ ~ 1 à Re = 1e6
+
+[[bodies]]
+type = "naca"
+code = "0012"
+chord = 1.0
+name = "airfoil"
+
+[physics]
+reynolds = 1e6
+reference_velocity = 1.0
+reference_length = 1.0       # corde
+model = "sa"
+angle_of_attack = 0.0
+
+[initial]
+U = [1.0, 0.0]
+
+[boundary.airfoil]
+type = "wall"
+
+[boundary.farfield]
+type = "farfield"
+U = [1.0, 0.0]
+
+[solver]
+mode = "steady"
+max_iter = 3000
+tol = 1e-5
+monitor_tol = 1e-5
+log_every = 500
+
+[sweep]
+parameter = "physics.angle_of_attack"
+range = "-4:14:2"
+continuation = true
+
+[output]
+directory = "results/naca0012_polaire"
+forces = ["airfoil"]
+moment_center = [0.25, 0.0]  # quart de corde
+vtk = false

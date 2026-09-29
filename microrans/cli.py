@@ -165,8 +165,7 @@ def cmd_mesh(args) -> int:
     return 0
 
 
-def cmd_run2d(args) -> int:
-    from .fv2d.case import run_case
+def _load_case(args):
     from .mesh2d.builder import load_config
 
     args.case = str(resolve_example(args.case))
@@ -180,6 +179,13 @@ def cmd_run2d(args) -> int:
         except ValueError:
             pass
         cfg.setdefault(sec, {})[name] = val
+    return cfg
+
+
+def cmd_run2d(args) -> int:
+    from .fv2d.case import run_case
+
+    cfg = _load_case(args)
     out = args.out or cfg.get("output", {}).get("directory") or f"results/{Path(args.case).stem}"
     if args.continue_run:
         args.restart = str(Path(out) / "checkpoint.npz")
@@ -188,6 +194,36 @@ def cmd_run2d(args) -> int:
     summary = run_case(cfg, base_dir=Path(args.case).parent, out_dir=out,
                        verbose=not args.quiet, plot=not args.no_plot)
     return 0 if summary.get("converged", True) else 1
+
+
+def cmd_sweep(args) -> int:
+    from .fv2d.sweep import ALPHA, run_sweep
+
+    cfg = _load_case(args)
+    sw = cfg.get("sweep", {})
+    key = ALPHA if getattr(args, "alpha", None) else (args.param or sw.get("parameter"))
+    values = (args.alpha or args.range or args.values
+              or sw.get("values") or sw.get("range"))
+    if not key or values is None:
+        print("Indiquer le paramètre et les valeurs : --param physics.reynolds --values 10 20 "
+              "(ou --range début fin pas), ou une section [sweep] dans le cas.")
+        return 2
+    from_range = bool(args.range or args.alpha) or (
+        values is sw.get("range") and values is not None)
+    if isinstance(values, list) and len(values) == 3 and from_range:
+        values = f"{values[0]}:{values[1]}:{values[2]}"
+    cont = sw.get("continuation", True) and not args.no_continuation
+    out = args.out or cfg.get("output", {}).get("directory") or f"results/{Path(args.case).stem}"
+    rows = run_sweep(cfg, key, values, base_dir=Path(args.case).parent, out_dir=out,
+                     continuation=cont, verbose=not args.quiet, plot=not args.no_plot)
+    cols = [key, "converged", "iterations"] + [k for k in rows[0] if k.split("_")[0] in
+                                               ("Cl", "Cd", "Cm") and "_" in k
+                                               and not k.startswith(("Cd_p", "Cd_v"))]
+    print("  ".join(f"{c:>14s}" for c in cols))
+    for r in rows:
+        print("  ".join(f"{r[c]:>14.5g}" if isinstance(r[c], float) else f"{str(r[c]):>14s}"
+                        for c in cols))
+    return 0 if all(r["converged"] for r in rows) else 1
 
 
 def cmd_schemes(args) -> int:
@@ -309,6 +345,27 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--no-plot", action="store_true")
     p.add_argument("-q", "--quiet", action="store_true")
     p.set_defaults(func=cmd_run2d)
+
+    def sweep_common(p):
+        p.add_argument("case", help="fichier de cas .toml / .json, ou nom d'un exemple")
+        p.add_argument("-o", "--out", help="dossier de sortie")
+        p.add_argument("--set", nargs="+", action="extend", metavar="SECTION.CLE=VALEUR")
+        p.add_argument("--no-continuation", action="store_true",
+                       help="chaque point part de l'état initial (plus lent, pas d'hystérésis)")
+        p.add_argument("--no-plot", action="store_true")
+        p.add_argument("-q", "--quiet", action="store_true")
+        p.set_defaults(func=cmd_sweep, param=None, values=None, range=None, alpha=None)
+
+    p = sub.add_parser("polar", help="polaire Cl(α), Cd(α), Cm(α) (incidence de l'écoulement)")
+    sweep_common(p)
+    p.add_argument("--alpha", nargs=3, type=float, metavar=("DEBUT", "FIN", "PAS"),
+                   required=True, help="incidences en degrés, ex. --alpha -4 12 2")
+    p = sub.add_parser("sweep", help="balayage d'un paramètre quelconque du cas")
+    sweep_common(p)
+    p.add_argument("--param", help="clé du cas, ex. physics.reynolds, physics.angle_of_attack")
+    g = p.add_mutually_exclusive_group()
+    g.add_argument("--values", nargs="+", type=float, help="valeurs explicites")
+    g.add_argument("--range", nargs=3, type=float, metavar=("DEBUT", "FIN", "PAS"))
 
     p = sub.add_parser("examples", help="liste des cas d'exemple fournis")
     p.set_defaults(func=cmd_examples)
