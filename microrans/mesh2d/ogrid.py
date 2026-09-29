@@ -29,7 +29,8 @@ def geometric_layers(n: int, first: float, total: float) -> np.ndarray:
     lo, hi = 1.0 + 1e-12, 10.0
     for _ in range(200):
         q = 0.5 * (lo + hi)
-        if first * (q ** n - 1) / (q - 1) < total:
+        # somme géométrique évaluée en log pour éviter le dépassement (n grand)
+        if np.log(first) + n * np.log(q) - np.log(q - 1) < np.log(total + first / (q - 1)):
             lo = q
         else:
             hi = q

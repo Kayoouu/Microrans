@@ -24,7 +24,7 @@ import numpy as np
 
 from ..mesh2d.mesh import Mesh2D
 from ..models import canonical_name, get_model
-from .fvm import FVM, normalized_residual, solve_linear
+from .fvm import FVM, normalized_residual
 
 BC_TYPES = ("wall", "inlet", "outlet", "symmetry", "farfield")
 
@@ -40,8 +40,13 @@ class Settings:
     convection_turb: str = "upwind"
     max_iter: int = 3000
     tol: float = 1e-5                     # résidus normalisés (OpenFOAM) de tous les champs
-    solver_p: str = "direct"              # direct | bicgstab | amg (pyamg si installé)
-    solver_U: str = "auto"                # auto = direct si < 40 000 cellules, sinon bicgstab
+    # critère complémentaire (comme les moniteurs de Fluent) : arrêt quand les efforts sur
+    # les parois varient de moins de monitor_tol (relatif) sur monitor_window itérations
+    monitor_tol: float | None = None
+    monitor_window: int = 100
+    # solveurs linéaires (voir microrans.linalg) : auto | direct | amg | bicgstab | pyamg
+    solver_p: str = "auto"                # auto : LU si < 20 000 cellules, sinon AMG + CG
+    solver_U: str = "auto"                # auto : BiCGStab + Jacobi
     solver_turb: str = "auto"
     # instationnaire
     time_scheme: str = "backward"         # euler | backward
@@ -146,7 +151,8 @@ class Step2D:
             diag = diag / self.relax
         A = fvm.matrix(diag, up, lo)
         s.residuals_now[name] = normalized_residual(A, phi, rhs, s.freestream.get(name, 0.0))
-        new = solve_linear(A, rhs, phi, s.settings.solver_turb, rtol=0.1 if s.steady else 1e-4)
+        new = s.fvm.lin.solve(A, rhs, phi, s.settings.solver_turb,
+                              rtol=0.1 if s.steady else 1e-4, tag=name)
         floor = s.model.floors.get(name)
         if floor is not None:
             new = np.maximum(new, floor)
@@ -177,9 +183,6 @@ class Solver2D:
         self.boundaries = boundaries
         self.fvm = FVM(mesh)
         fvm = self.fvm
-        for attr in ("solver_U", "solver_turb", "solver_p"):
-            if getattr(self.settings, attr) == "auto":
-                setattr(self.settings, attr, "direct" if fvm.nc < 40000 else "bicgstab")
         if self.settings.relax_U is None:
             # SIMPLEC à 0.9 peut diverger sur maillage très non orthogonal (triangles, hybride)
             nonorth = mesh.quality()["non_orthogonality_max_deg"]
@@ -369,7 +372,7 @@ class Solver2D:
         return eqs
 
     # ------------------------------------------------------------------ pression
-    def _pressure_correction(self, eqs, ddt_corr=None, relax_p=1.0):
+    def _pressure_correction(self, eqs, ddt_corr=None, relax_p=1.0, rtol=1e-6):
         fvm, s = self.fvm, self.settings
         V = fvm.V
         H = np.column_stack([rhs - self._offdiag_mult(up, lo, self.U[:, c])
@@ -423,7 +426,8 @@ class Solver2D:
             A = fvm.matrix(diag, up, lo)
             if k == 0:
                 self.residuals_now["p"] = normalized_residual(A, self.p, rhs, self.u_scale ** 2)
-            p_new = solve_linear(A, rhs, p_new, s.solver_p, rtol=1e-6)
+            p_new = fvm.lin.solve(A, rhs, p_new, s.solver_p, rtol=rtol, symmetric=True,
+                                  tag="p")
         # flux conservatifs (cohérents avec la dernière équation résolue)
         self.F_i = phiHbyA_i - gam_i * fvm.g * (p_new[fvm.N] - p_new[fvm.P]) - nf_used
         self.F_b = phiHbyA_b - gam_b * fvm.magSb * (g_ * p_new[fvm.Pb] + d_)
@@ -450,6 +454,7 @@ class Solver2D:
         self.update_nut()
         t0 = time.perf_counter()
         converged = False
+        forces = []
         for it in range(1, max_iter + 1):
             self.residuals_now = {}
             eqs = self._momentum(relax=s.relax_U)
@@ -459,8 +464,9 @@ class Solver2D:
                 b = rhs - gp
                 self.residuals_now["Ux" if c == 0 else "Uy"] = normalized_residual(
                     A, self.U[:, c], b, self.u_scale)
-                self.U[:, c] = solve_linear(A, b, self.U[:, c], s.solver_U, rtol=0.1)
-            self._pressure_correction(eqs, relax_p=relax_p)
+                self.U[:, c] = self.fvm.lin.solve(A, b, self.U[:, c], s.solver_U, rtol=0.1,
+                                                  tag="U")
+            self._pressure_correction(eqs, relax_p=relax_p, rtol=0.01)
             self._turbulence(relax=s.relax_turb)
             cont = float(np.sum(np.abs(self.fvm.div(self.F_i, self.F_b))) /
                          (self.u_scale * np.sum(self.fvm.mesh.magSf) + 1e-300))
@@ -471,18 +477,27 @@ class Solver2D:
             if verbose and (it % log_every == 0 or it == 1):
                 print("  it %5d  " % it + "  ".join(f"{k}={v:.2e}" for k, v in rec.items()
                                                     if k != "iteration"))
-            if callback:
-                callback(self, it)
+            if s.monitor_tol:
+                forces.append(np.concatenate([f["total"] for f in self.forces().values()]))
+                w = s.monitor_window
+                if len(forces) > w:
+                    ref = np.maximum(np.abs(forces[-1]), 1e-12 * self.u_scale ** 2)
+                    if np.max(np.abs(forces[-1] - forces[-1 - w]) / ref) < s.monitor_tol:
+                        converged = "forces"
+            if callback and callback(self, it):
+                break                                  # arrêt demandé (interface graphique)
             if max(v for k, v in self.residuals_now.items()) < tol:
                 converged = True
+            if converged:
                 break
         self.converged = converged
         self.iterations = it
         self.wall_time = time.perf_counter() - t0
         if verbose:
-            print(f"  {'convergé' if converged else 'NON convergé'} en {it} itérations "
+            how = " (efforts stabilisés)" if converged == "forces" else ""
+            print(f"  {'convergé' if converged else 'NON convergé'}{how} en {it} itérations "
                   f"({self.wall_time:.1f} s)")
-        return converged
+        return bool(converged)
 
     # ------------------------------------------------------------------ instationnaire
     def run_transient(self, dt: float, t_end: float, verbose=False, log_every=50,
@@ -524,9 +539,12 @@ class Solver2D:
                     b = rhs - gp
                     self.residuals_now["Ux" if c == 0 else "Uy"] = normalized_residual(
                         A, self.U[:, c], b, self.u_scale)
-                    self.U[:, c] = solve_linear(A, b, self.U[:, c], s.solver_U, rtol=1e-4)
-                for _ in range(s.n_corr):
-                    self._pressure_correction(eqs, ddt_corr=ddt_corr)
+                    self.U[:, c] = fvm.lin.solve(A, b, self.U[:, c], s.solver_U, rtol=1e-4,
+                                                 tag="U")
+                for corr in range(s.n_corr):
+                    last = final and corr == s.n_corr - 1
+                    self._pressure_correction(eqs, ddt_corr=ddt_corr,
+                                              rtol=1e-6 if last else 0.01)
                 if final or s.turbulence_every_outer:
                     self._turbulence(a0=a0, hist=histT)
             if not np.all(np.isfinite(self.U)):
@@ -541,8 +559,8 @@ class Solver2D:
             if verbose and (n % log_every == 0 or n == 1):
                 print(f"  t={self.time:.4f}  " + "  ".join(
                     f"{k}={v:.3e}" for k, v in rec.items() if k != "time"))
-            if callback:
-                callback(self, n)
+            if callback and callback(self, n):
+                break
         self.wall_time = time.perf_counter() - t0
         return series
 

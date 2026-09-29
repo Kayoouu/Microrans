@@ -11,8 +11,8 @@ from __future__ import annotations
 
 import numpy as np
 import scipy.sparse as sp
-from scipy.sparse.linalg import LinearOperator, bicgstab, spsolve
 
+from ..linalg import LinearSolver
 from ..mesh2d.mesh import Mesh2D
 
 
@@ -40,6 +40,15 @@ class FVM:
         self.rN = m.face_centers[:ni] - (C[self.N] - m.shift)
         self.rows = np.concatenate([np.arange(self.nc), self.P, self.N])
         self.cols = np.concatenate([np.arange(self.nc), self.N, self.P])
+        # structure CSR figée : chaque matrice = une somme pondérée vectorisée (bincount)
+        key = self.rows.astype(np.int64) * self.nc + self.cols
+        uk, self._csr_pos = np.unique(key, return_inverse=True)
+        self._csr_nnz = len(uk)
+        self._csr_indices = (uk % self.nc).astype(np.int32)
+        self._csr_indptr = np.concatenate(
+            [[0], np.cumsum(np.bincount(uk // self.nc, minlength=self.nc))]).astype(np.int32)
+        # solveurs linéaires (hiérarchie AMG bâtie sur le graphe, poids |S|²/(d·S))
+        self.lin = LinearSolver(self.nc, self.P, self.N, self.g)
         nonorth = np.linalg.norm(self.kvec, axis=1) / np.maximum(m.magSf[:ni], 1e-300)
         self.orthogonal = bool(np.all(nonorth < 1e-8))
 
@@ -102,8 +111,9 @@ class FVM:
         return diag, upper, lower, rhs
 
     def matrix(self, diag, upper, lower):
-        data = np.concatenate([diag, upper, lower])
-        return sp.csr_matrix((data, (self.rows, self.cols)), shape=(self.nc, self.nc))
+        data = np.bincount(self._csr_pos, np.concatenate([diag, upper, lower]), self._csr_nnz)
+        return sp.csr_matrix((data, self._csr_indices, self._csr_indptr),
+                             shape=(self.nc, self.nc))
 
 
 # ----------------------------------------------------------------------- solveurs linéaires
@@ -121,30 +131,11 @@ def normalized_residual(A, x, b, scale: float = 0.0) -> float:
     return float(np.sum(np.abs(b - Ax)) / norm)
 
 
-def solve_linear(A, b, x0=None, method: str = "bicgstab", rtol: float = 1e-6,
-                 maxiter: int = 500):
-    """Résout A x = b. method : 'direct' (LU creuse), 'bicgstab' (Jacobi), 'amg' (pyamg).
-
-    Pour les méthodes itératives, `rtol` est relatif au résidu INITIAL (comme `relTol`
-    d'OpenFOAM) : on résout la correction A δ = b − A x0.
-    """
-    if method == "direct":
-        return spsolve(A.tocsc(), b)
-    x0 = np.zeros_like(b) if x0 is None else np.asarray(x0, dtype=float)
-    r0 = b - A @ x0
-    if not np.any(r0):
-        return x0.copy()
-    if method == "amg":
-        try:
-            import pyamg
-        except ImportError:
-            return spsolve(A.tocsc(), b)
-        ml = pyamg.smoothed_aggregation_solver(A.tocsr())
-        return x0 + ml.solve(r0, tol=rtol, accel="bicgstab", maxiter=maxiter)
-    d = A.diagonal()
-    dinv = np.where(np.abs(d) > 1e-300, 1.0 / d, 1.0)
-    M = LinearOperator(A.shape, matvec=lambda v: dinv * v)
-    dx, info = bicgstab(A, r0, rtol=rtol, atol=0.0, maxiter=maxiter, M=M)
-    if info != 0 or not np.all(np.isfinite(dx)):
-        return spsolve(A.tocsc(), b)
-    return x0 + dx
+def solve_linear(A, b, x0=None, method: str = "auto", rtol: float = 1e-6,
+                 maxiter: int = 1000, symmetric: bool = False):
+    """Résolution ponctuelle (sans hiérarchie AMG réutilisée) ; voir `linalg.LinearSolver`."""
+    A = A.tocsr()
+    off = A.tocoo()
+    sel = off.row < off.col
+    return LinearSolver(A.shape[0], off.row[sel], off.col[sel], np.abs(off.data[sel])).solve(
+        A, b, x0, method, rtol, maxiter, symmetric)

@@ -36,6 +36,7 @@ U = [1.0, 0.0]
 mode = "steady"
 max_iter = 3000
 tol = 1e-5
+monitor_tol = 1e-5        # ou efforts stabilisés à 1e-5 près sur 100 itérations
 log_every = 100
 
 [output]

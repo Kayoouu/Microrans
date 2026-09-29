@@ -117,8 +117,13 @@ def run_case(cfg: dict, base_dir=".", out_dir=None, verbose=True, plot=True) -> 
         summary.setdefault(name, {}).update(
             Cd=float(f["total"][0] / qdyn), Cl=float(f["total"][1] / qdyn),
             Cd_pressure=float(f["pressure"][0] / qdyn), Cd_viscous=float(f["viscous"][0] / qdyn))
-        _, tau, yp = solver.wall_shear(name)
+        xf, tau, yp = solver.wall_shear(name)
         summary[name].update(yplus_max=float(yp.max()), yplus_mean=float(yp.mean()))
+        # distribution pariétale (comme les « XY plots » de Fluent) : Cf, Cp, y+
+        pb = solver.boundary_p(solver.p)[solver.patch_slices[name]]
+        np.savetxt(out / f"wall_{name}.csv",
+                   np.column_stack([xf, tau, tau / (0.5 * Uref ** 2), pb / (0.5 * Uref ** 2), yp]),
+                   delimiter=",", header="x,y,tau_w,Cf,Cp,yplus", comments="")
     (out / "summary.json").write_text(json.dumps(summary, indent=2, ensure_ascii=False),
                                       encoding="utf-8")
     if hist:
