@@ -12,6 +12,8 @@
 `microrans` fait environ 350 Mo : c'est normal (tout ce qu'il faut est dedans).
 
 **3. Lancer `microrans-gui`** (`microrans-gui.exe` sous Windows) par un double-clic.
+(`microrans` sans « -gui » est la version ligne de commande pour utilisateurs avancés ;
+double-cliqué sans rien taper, il ouvre lui aussi l'interface.)
 
 Le programme n'est pas signé numériquement (cela demande un certificat payant) :
 - **Windows** affiche « Windows a protégé votre ordinateur » → cliquer

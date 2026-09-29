@@ -34,7 +34,9 @@ est justifié par une mesure** reproductible dans ce dépôt (sections « Métho
    - onglet **Actions → executables → dernier run → Artifacts** : `microrans-Windows`,
      `microrans-Linux`, `microrans-macOS` (compte GitHub requis).
 2. Décompresser, puis lancer **`microrans-gui`** (`microrans-gui.exe` sous Windows).
-   Le même dossier contient **`microrans`**, la ligne de commande.
+   Le même dossier contient **`microrans`**, la ligne de commande (double-cliqué sans
+   argument, il ouvre aussi l'interface). En cas de problème, le journal
+   `microrans_resultats/microrans-gui.log` (dossier personnel) indique la cause.
 
 Honnêtement : les exécutables ne sont **pas signés**. Windows affiche un avertissement
 SmartScreen (« Informations complémentaires → Exécuter quand même ») ; sous macOS faire
