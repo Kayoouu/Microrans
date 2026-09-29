@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "microrans"
+version = "0.1.0"
+description = "Micro-solveur RANS/URANS 1D (canal plan) : Spalart-Allmaras, k-epsilon, k-omega, k-omega SST"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = ["numpy>=1.22", "scipy>=1.8", "matplotlib>=3.5"]
+
+[project.optional-dependencies]
+test = ["pytest>=7"]
+
+[project.scripts]
+microrans = "microrans.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["microrans*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
