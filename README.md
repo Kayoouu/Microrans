@@ -125,14 +125,16 @@ internes d'abord (owner < neighbour), puis faces frontières groupées par patch
 | Cavité entraînée Re = 100, 64×64 | profils u(0.5, y), v(x, 0.5) | écart max 0.004 / 0.009 | Ghia, Ghia & Shin (1982) |
 | Cylindre Re = 20, O-grid 96×64 et 160×96 | C_d | 2.037 / 2.033 | 2.045 (Dennis & Chang 1970) |
 | Cylindre Re = 20 | longueur de recirculation L/D | ≈ 0.90–0.91 (estimation grossière) | 0.94 (Dennis & Chang 1970) |
-| Cylindre Re = 100 (URANS laminaire), 96×64, Δt = 0.05 | St ; C_d moyen ; amplitude C_l | 0.160 ; 1.354 ; 0.39 | 0.164–0.167 ; 1.32–1.35 ; ≈ 0.33 (simulations 2D publiées) |
+| Cylindre Re = 100 (URANS laminaire), O-grid 96×64, Δt = 0.05 | St ; C_d moyen ; amplitude C_l | 0.160 ; 1.354 ; 0.39 | 0.164–0.167 ; 1.32–1.35 ; ≈ 0.33 (simulations 2D publiées) |
+| idem, O-grid 144×96, Δt = 0.03 | St ; C_d moyen ; amplitude C_l | 0.163 ; 1.351 ; 0.37 | idem |
 | Canal turbulent périodique Re_τ = 395, SA | U_b | 17.6402 | 17.6398 (solveur 1D, même modèle) |
 | Plaque plane turbulente Re_L = 5e6 (géométrie NASA TMR), SA | C_f à x = 0.97 | 0.00273 | 0.00273 (Schultz-Grunow) ; 0.00287 (White) |
 | idem, SST | C_f à x = 0.97 | 0.00260 | idem |
 
 Commentaires honnêtes :
-- **Cylindre Re = 100** : sur ce maillage grossier, St est ~2–3 % trop bas et l'amplitude de C_l
-  ~20 % trop haute ; ce sont des écarts de résolution typiques, pas une validation fine.
+- **Cylindre Re = 100** : St passe de 0.160 à 0.163 quand on raffine (référence 0.164–0.167) ;
+  l'amplitude de C_l reste 10–20 % trop haute. Tendance correcte, mais pas une validation fine
+  (pas d'étude de convergence complète en maillage, en pas de temps et en taille de domaine).
 - **Canal 2D, SST / k-ω / k-ε** : écart de 1 à 1.6 % avec le 1D à 96 cellules, qui se réduit quand
   on raffine (SST : 17.557 → 17.402 → 17.346 pour 96 → 192 → 384 cellules, contre 17.291 en 1D
   très fin). C'est la sensibilité à y⁺ déjà observée en 1D (voir plus bas), pas une différence

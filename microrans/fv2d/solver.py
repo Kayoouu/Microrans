@@ -18,7 +18,7 @@ Les patches périodiques sont gérés par le maillage (pas de condition à donne
 from __future__ import annotations
 
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 import numpy as np
 
@@ -286,7 +286,7 @@ class Solver2D:
         return out
 
     def pressure_bc(self):
-        nb, dp = self.fvm.nb, self.fvm.dperp
+        dp = self.fvm.dperp
         fx = self.kindP == 0
         a = np.where(fx, 0.0, 1.0)
         b = np.where(fx, self.p_fixed, 0.0)
