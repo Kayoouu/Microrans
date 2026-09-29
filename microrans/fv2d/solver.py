@@ -353,6 +353,7 @@ class Solver2D:
         self._restart_hist = None
         self.series_restart: list[dict] = []
         self.series: list[dict] = []
+        self.averager = None               # moyennes temporelles (sampling.TimeAverage)
         self.has_fixed_p = bool(np.any(kindP_h == 0))
 
     # ------------------------------------------------------------------ conditions limites
@@ -808,7 +809,8 @@ class Solver2D:
         self.update_nut()
 
     # ------------------------------------------------------------------ stationnaire
-    def run_steady(self, max_iter=None, tol=None, verbose=False, log_every=50, callback=None):
+    def run_steady(self, max_iter=None, tol=None, verbose=False, log_every=50, callback=None,
+                   probes=None):
         xp = self.xp
         s = self.settings
         max_iter = max_iter or s.max_iter
@@ -861,6 +863,8 @@ class Solver2D:
             self.history.append(rec)
             if not all(xp.isfinite(v) for v in rec.values()) or not xp.all(xp.isfinite(self.U)):
                 raise FloatingPointError(f"Divergence à l'itération {it}.")
+            if probes:
+                rec.update(probes(self))            # sondes (NaN possible hors domaine)
             if verbose and (it % log_every == 0 or it == 1):
                 print("  it %5d  " % it + "  ".join(f"{k}={v:.2e}" for k, v in rec.items()
                                                     if k != "iteration"))
@@ -1267,10 +1271,15 @@ class Solver2D:
         xf = self.mesh.face_centers[self.mesh.n_internal:][sl]
         return xf, tau, yplus
 
+    def mean_fields(self) -> dict:
+        """Moyennes et écarts-types temporels (si [output] average_from est donné)."""
+        return self.averager.fields() if self.averager is not None else {}
+
     def fields(self) -> dict:
         xp = self.xp
         out = {"U": self.U, "p": self.p, "U_mag": xp.linalg.norm(self.U, axis=1),
                "vorticity": self.flow().vorticity}
+        out.update(self.mean_fields())
         if self.model.variables:
             out["nut_over_nu"] = self.nut / self.nu
             out.update(self.state)

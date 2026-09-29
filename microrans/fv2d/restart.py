@@ -56,6 +56,8 @@ def save_checkpoint(solver, path, history=None) -> Path:
             data[f"hist{lvl}_state_{k}"] = h(v)
         if hist["T"][lvl] is not None:
             data[f"hist{lvl}_T"] = h(hist["T"][lvl])
+    if getattr(solver, "averager", None) is not None:        # moyennes temporelles
+        data.update(solver.averager.state())
     if hist.get("R"):                                         # AB2
         data["histR"] = h(hist["R"][0])
         data["histR_dt"] = np.array(hist["dt"][0])
@@ -164,6 +166,8 @@ def load_checkpoint(solver, path, fields_only=False, shift_U=None) -> dict:
         # toujours transmis (même vide, schémas RK sans historique) : le pas adaptatif
         # reprend alors sa croissance lissée depuis le dernier Δt, comme sans arrêt
         solver._restart_hist = hist
+        if "avg_weight" in d:
+            solver._restart_avg = {k: v for k, v in d.items() if k.startswith("avg_")}
     else:
         # flux recalculés depuis la vitesse interpolée ; le 1er pas de pression les rend
         # conservatifs

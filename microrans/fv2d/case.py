@@ -15,6 +15,11 @@ sur l'axe ; [mesh] cut_axis = true pour ne garder que la moitié y > 0 d'un mail
 d'un corps). Efforts et flux de chaleur totaux (sur 360°) ; Cd rapporté à
 [physics] reference_area (défaut : maître-couple π L²/4, L = reference_length = diamètre).
 
+Sorties supplémentaires ([output]) : probes = [[x, y], …] (sondes : Ux, Uy, p (, T) à
+chaque itération / pas de temps dans history.csv) ; [[output.lines]] name, start, end, n
+(profils line_<name>.csv/.png) ; average_from = t (instationnaire : moyennes et écarts-types
+Ux_mean, Ux_rms, p_mean…).
+
 Reprise : [initial] restart = "…/checkpoint.npz" (reprise exacte sur le même maillage,
 interpolation sinon) ; [output] checkpoint = true (défaut) écrit checkpoint.npz à la fin
 du calcul, à l'arrêt demandé et toutes les `checkpoint_minutes` (défaut 5) minutes.
@@ -32,6 +37,7 @@ import numpy as np
 from ..mesh2d.builder import PRESETS, build_mesh
 from ..mesh2d.io import write_vtk
 from .restart import load_checkpoint, save_checkpoint
+from .sampling import Sampler, TimeAverage, parse_points, write_lines
 from .solver import Settings, Solver2D
 
 
@@ -157,10 +163,22 @@ def run_case(cfg: dict, base_dir=".", out_dir=None, verbose=True, plot=True, cal
              mesh=None, return_solver=False):
     """Exécute un cas complet. callback(solver, n) -> True pour arrêter (interface
     graphique) ; mesh : maillage déjà construit ; return_solver : renvoie (résumé, solveur)."""
-    solver = build_solver(cfg, base_dir, verbose, mesh=mesh)
     ph, sc, oc = cfg.get("physics", {}), cfg.get("solver", {}), cfg.get("output", {})
     out = Path(out_dir or oc.get("directory", "results/case2d"))
     out.mkdir(parents=True, exist_ok=True)
+    fmg = None
+    levels = int(sc.get("fmg_levels", 0))
+    if levels > 0 and sc.get("mode", "steady") == "steady" and not cfg.get("initial", {}).get(
+            "restart"):
+        from .fmg import fmg_initialize
+        if verbose:
+            print(f"Démarrage multigrille : {levels} niveau(x) grossier(s)")
+        t_f = time.perf_counter()
+        path, fmg = fmg_initialize(cfg, levels, base_dir, out, verbose, callback)
+        if path is not None:
+            cfg = {**cfg, "initial": {**cfg.get("initial", {}), "restart": str(path)}}
+            fmg = {"levels": fmg, "wall_time_s": round(time.perf_counter() - t_f, 2)}
+    solver = build_solver(cfg, base_dir, verbose, mesh=mesh)
     Uref = ph.get("reference_velocity", solver.U_ref)
     Lref = ph.get("reference_length", 1.0)
     qdyn = 0.5 * Uref ** 2 * Lref
@@ -187,6 +205,26 @@ def run_case(cfg: dict, base_dir=".", out_dir=None, verbose=True, plot=True, cal
     if solver.restart_info:
         summary["restart"] = {k: solver.restart_info[k] for k in ("file", "mode", "time",
                                                                   "iteration")}
+    if fmg:
+        summary["fmg"] = fmg
+    # sondes : Ux, Uy, p (, T) en des points fixes, à chaque itération / pas de temps
+    probe_pts = parse_points(oc.get("probes"))
+    sampler = Sampler(solver, probe_pts) if len(probe_pts) else None
+    probe_fields = ["Ux", "Uy", "p"] + (["T"] if solver.energy is not None else [])
+    if sampler is not None and not sampler.ok.all() and verbose:
+        print(f"  ATTENTION : sondes hors du domaine : {probe_pts[~sampler.ok].tolist()}")
+
+    def probe_rec(s):
+        if sampler is None:
+            return {}
+        v = sampler.sample(probe_fields)
+        return {f"probe{i + 1}_{k}": float(v[k][i]) for i in range(len(probe_pts))
+                for k in probe_fields}
+    if mode != "steady" and oc.get("average_from") is not None:
+        solver.averager = TimeAverage(solver, float(oc["average_from"]))
+        ra = getattr(solver, "_restart_avg", None)
+        if ra is not None and float(ra["avg_t_start"]) == solver.averager.t_start:
+            solver.averager.load(ra)
     ckpt = out / "checkpoint.npz" if oc.get("checkpoint", True) else None
     every = 60.0 * float(oc.get("checkpoint_minutes", 5.0))
     last_save = [time.perf_counter()]
@@ -204,7 +242,7 @@ def run_case(cfg: dict, base_dir=".", out_dir=None, verbose=True, plot=True, cal
             autosave(s)
             return callback(s, n) if callback else None
         ok = solver.run_steady(verbose=verbose, log_every=sc.get("log_every", 100),
-                               callback=cb_steady)
+                               callback=cb_steady, probes=probe_rec if sampler else None)
         summary.update(converged=bool(ok), iterations=solver.iterations_total,
                        iterations_this_run=solver.iterations)
         hist = solver.history
@@ -214,12 +252,15 @@ def run_case(cfg: dict, base_dir=".", out_dir=None, verbose=True, plot=True, cal
             for name, f in s.forces(force_patches).items():
                 rec[f"Cd_{name}"] = float(f["total"] @ s.backend.asarray(ed)) * kF
                 rec[f"Cl_{name}"] = 0.0 if axi else float(f["total"] @ s.backend.asarray(el)) * kF
+            rec.update(probe_rec(s))
             return rec
         vtk_every = oc.get("vtk_every", 0)
 
         n0 = len(solver.series_restart)
 
         def cb(s, n):
+            if s.averager is not None:
+                s.averager.update()
             if vtk_every and (n0 + n) % vtk_every == 0:
                 write_vtk(s.mesh, out / f"fields_{n0 + n:06d}.vtk", s.fields())
             autosave(s)
@@ -238,6 +279,8 @@ def run_case(cfg: dict, base_dir=".", out_dir=None, verbose=True, plot=True, cal
                              "Cl_amplitude": float(0.5 * (cl[late].max() - cl[late].min())),
                              "strouhal": f * Lref / Uref, "periods_used": n}
     summary["wall_time_s"] = round(time.perf_counter() - t0, 2)
+    if fmg:
+        summary["wall_time_total_s"] = round(summary["wall_time_s"] + fmg["wall_time_s"], 2)
     # vitesse moyenne (pondérée par le volume ; conduite périodique : vitesse débitante)
     summary["U_mean"] = [float(v) for v in solver.backend.to_host(
         solver.xp.sum(solver.U * solver.fvm.V[:, None], axis=0) / solver.xp.sum(solver.fvm.V))]
@@ -285,6 +328,14 @@ def run_case(cfg: dict, base_dir=".", out_dir=None, verbose=True, plot=True, cal
             w.writeheader()
             for h in hist:
                 w.writerow(h)
+    if sampler is not None:
+        v = sampler.sample(probe_fields)
+        summary["probes"] = [{"x": float(p[0]), "y": float(p[1]),
+                              **{k: float(v[k][i]) for k in probe_fields}}
+                             for i, p in enumerate(probe_pts)]
+    if oc.get("lines"):
+        summary["lines"] = [str(p) for p in write_lines(solver, oc["lines"], out,
+                                                        plot and oc.get("plots", True))]
     if oc.get("vtk", True):
         write_vtk(solver.mesh, out / "fields.vtk", solver.fields())
     if plot and oc.get("plots", True):

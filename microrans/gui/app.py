@@ -485,6 +485,11 @@ class MainWindow(QMainWindow):
                  B.sci(("solver", "monitor_tol"), None, True, "ex. 1e-5"))
         f.addRow("Pseudo-transitoire local, Courant (vide = non)",
                  B.sci(("solver", "pseudo_cfl"), None, True, "ex. 200 (canaux très fins)"))
+        f.addRow("Démarrage multigrille (niveaux grossiers)",
+                 B.int(("solver", "fmg_levels"), 0, 0, 4))
+        f.addRow(_note("Multigrille : le cas est d'abord résolu sur des maillages 2, 4… fois "
+                       "plus grossiers. Mesuré : cavité 128² 2.5× plus rapide, cylindre 1.4× ; "
+                       "sans gain sur la plaque plane turbulente. Maillages générés seulement."))
         lay.addWidget(self.box_steady)
         self.box_transient, f = _form("Instationnaire")
         opts = [("auto", "auto — choix automatique (recommandé)")] + [
@@ -518,6 +523,11 @@ class MainWindow(QMainWindow):
         box, f = _form("Sorties")
         f.addRow("Dossier de résultats", B.text(("output", "directory"), "results/cas"))
         f.addRow(_note(f"Chemin relatif : placé dans {results_root()}"))
+        self.probes_edit = B.text(("output", "probes"), "")
+        self.probes_edit.setPlaceholderText("x y ; x y …  (vide : aucune)")
+        f.addRow("Sondes (Ux, Uy, p à chaque itération)", self.probes_edit)
+        f.addRow("Moyennes temporelles à partir de t =",
+                 B.sci(("output", "average_from"), None, True, "vide : non (instationnaire)"))
         lay.addWidget(box)
         lay.addStretch(1)
         return w
@@ -597,6 +607,14 @@ class MainWindow(QMainWindow):
         f.addRow("Grandeur", self.wall_q)
         b = QPushButton("Tracer")
         b.clicked.connect(self.plot_wall)
+        f.addRow(b)
+        lay.addWidget(box)
+        box, f = _form("Profil le long d'une ligne (grandeur choisie ci-dessus)")
+        self.line_start, self.line_end = Vec2((0.0, 0.0)), Vec2((1.0, 0.0))
+        f.addRow("Début (x, y)", self.line_start)
+        f.addRow("Fin (x, y)", self.line_end)
+        b = QPushButton("Tracer le profil")
+        b.clicked.connect(self.plot_line)
         f.addRow(b)
         lay.addWidget(box)
         b = QPushButton("Historique (résidus / efforts)")
@@ -1343,6 +1361,34 @@ class MainWindow(QMainWindow):
         self.canvas.draw()
         self.tabs.setCurrentIndex(0)
 
+    def plot_line(self):
+        from ..fv2d.sampling import Sampler, line_points
+        s = self.solver
+        if s is None:
+            self.canvas.message("Aucun résultat : lancez d'abord un calcul.")
+            return
+        key = self.field_combo.currentData() or "U_mag"
+        dist, pts = line_points(self.line_start.value(), self.line_end.value(), 300)
+        smp = Sampler(s, pts)
+        vals = smp.sample([key]).get(key)
+        if vals is None:                            # grandeur sans reconstruction : cellule
+            f = s.fields()
+            if key == "vorticity":
+                g = s.grad_U(s.U)
+                f[key] = g[:, 1, 0] - g[:, 0, 1]
+            cell = np.asarray(f[key])
+            vals = np.where(smp.ok, cell[smp._c], np.nan)
+        ax = self.canvas.axes()
+        ax.plot(dist, vals, color="#2a78d6", lw=1.6)
+        ax.set(xlabel="abscisse le long de la ligne", ylabel=FIELD_LABELS.get(key, key),
+               title=f"Profil de {FIELD_LABELS.get(key, key)}")
+        ax.grid(True, alpha=0.3)
+        if not smp.ok.all():
+            ax.text(0.01, 0.01, "points hors du domaine non tracés", transform=ax.transAxes,
+                    fontsize=8, color="#666666")
+        self.canvas.draw()
+        self.tabs.setCurrentIndex(0)
+
     def plot_wall(self):
         s = self.solver
         name = self.wall_combo.currentData()
@@ -1455,6 +1501,9 @@ def _selftest(win: MainWindow, app, shot: str | None) -> int:
     for i in range(win.field_combo.count()):
         win.field_combo.setCurrentIndex(i)
         win.plot_field()
+        win.line_start.set_value((0.5, 0.0))
+        win.line_end.set_value((0.5, 1.0))
+        win.plot_line()
     app.processEvents()
     if shot:
         win.grab().save(shot)

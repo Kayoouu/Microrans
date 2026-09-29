@@ -50,7 +50,7 @@ SmartScreen (« Informations complémentaires → Exécuter quand même »). Le 
 `Accueil` (exemples) → `1. Canal 1D` ou `2. Maillage` → `3. Physique` → `4. Conditions limites`
 → `5. Numérique` → `6. Calcul` (résidus / efforts en direct, boutons Arrêter et **Continuer
 le calcul précédent**) → `7. Résultats`
-(champs, vecteurs, Cp / Cf / y⁺ / flux de chaleur pariétaux). L'onglet **Fichier de cas (TOML)**
+(champs, vecteurs, Cp / Cf / y⁺ / flux de chaleur pariétaux, profils le long d'une ligne). L'onglet **Fichier de cas (TOML)**
 montre le cas complet, modifiable : tout ce que les formulaires ne proposent pas (maillage
 multi-blocs, zones de raffinement, expressions de vitesse) s'y écrit.
 
@@ -135,12 +135,19 @@ time_scheme = "auto"       # auto | euler | backward | crankNicolson | rk1..rk4 
 dt = 0.01
 t_end = 10.0
 backend = "cpu"            # cpu | gpu
+fmg_levels = 0             # démarrage multigrille (stationnaire) : niveaux grossiers
 [sweep]                    # optionnel : microrans sweep <cas>
 parameter = "physics.angle_of_attack"
 range = "-4:14:2"          # ou values = [0, 5, 10]
 [output]
 moment_center = [0.25, 0.0]   # Cm autour du quart de corde
 nusselt = "bulk"           # conduites : Nu local sur la température de mélange
+probes = [[1.0, 0.0], [2.0, 0.5]]   # sondes : Ux, Uy, p à chaque itération (history.csv)
+average_from = 50.0        # instationnaire : moyennes et écarts-types (Ux_mean, p_rms…)
+[[output.lines]]           # profil le long d'une ligne : line_sillage.csv / .png
+name = "sillage"
+start = [1.0, -2.0]
+end = [1.0, 2.0]
 ```
 
 Axisymétrique : `[mesh] cut_axis = true` garde la moitié y > 0 d'un maillage autour d'un
@@ -169,7 +176,8 @@ API Python : `from microrans.fv2d import Solver2D, Settings`, `from microrans.me
 | Conditions limites | paroi (mobile), entrée, sortie, symétrie, champ lointain, périodicité, axe | SU2 / OpenFOAM |
 | Axisymétrique | secteur d'un radian (volumes et surfaces pondérés par r), gradient avec faces latérales, contrainte circonférentielle −2ν_eff u_r/r², déformation (u_r/r)², moyenne des diagonales dans H/A | `wedge` d'OpenFOAM, « Axisymmetric » de Fluent |
 | Arrêt | résidus normalisés (OpenFOAM) ou stabilisation des efforts (moniteurs Fluent) | — |
-| Études | reprise exacte / interpolation sur un autre maillage ; polaire (incidence de l'écoulement, continuation) ; balayage de n'importe quel paramètre | `mapFields`, polaires Fluent / SU2 |
+| Études | reprise exacte / interpolation sur un autre maillage ; démarrage multigrille ; polaire (incidence de l'écoulement, continuation) ; balayage de n'importe quel paramètre | `mapFields`, FMG de Fluent, polaires Fluent / SU2 |
+| Post-traitement | sondes (suivi à chaque itération), profils le long d'une ligne (cellule + gradient), moyennes et écarts-types temporels (reprise exacte) | `probes`, `sample`, `fieldAverage` d'OpenFOAM |
 | Matériel | CPU (NumPy/SciPy) ou GPU (CuPy) par un module de tableaux interchangeable | — |
 
 ---
@@ -371,6 +379,19 @@ Gains : solveurs linéaires (§ 5.2), assemblage CSR à structure figée, arrêt
 stabilisés (NACA : le résidu de pression plafonne à ~1.5e-5 alors que les efforts sont stables
 depuis longtemps).
 
+**Démarrage multigrille** (`[solver] fmg_levels`, désactivé par défaut) : temps total, niveaux
+grossiers compris ; résultats identiques (efforts à 5 chiffres).
+
+| Cas | Cellules | Sans | 1 niveau | 2 niveaux |
+|---|---:|---:|---:|---:|
+| Cavité Re = 100 | 16 384 | 46.4 s (1 135 it.) | 23.1 s | 18.7 s (2.5×) |
+| Cylindre Re = 20 | 6 144 | 3.1 s | 2.2 s (1.4×) | 2.2 s |
+| Plaque plane SA | 7 168 | 7.1 s | 7.0 s | 7.6 s (aucun gain) |
+| NACA 0012 SA | 8 192 | 29.9 s | 27.2 s (1.1×) | 28.3 s |
+
+Utile pour les écoulements laminaires ou à recirculation ; quasi inutile pour les couches
+limites turbulentes, dont la convergence est dominée par les équations de turbulence.
+
 ---
 
 ## 8. Limites connues (à lire avant d'utiliser les résultats)
@@ -440,11 +461,13 @@ microrans/
     solver.py            SIMPLE(C), PIMPLE, projection RK/AB2, thermique, CL, efforts
     case.py post.py      fichiers de cas, sorties, figures
     restart.py           sauvegarde / reprise, interpolation sur un autre maillage
+    fmg.py               démarrage multigrille (maillages grossiers reconstruits)
+    sampling.py          sondes, profils sur ligne, moyennes temporelles
     sweep.py             polaires et balayages de paramètres
   gui/                   interface PySide6 (app.py, widgets.py)
   examples/              cas fournis (microrans examples)
 packaging/               PyInstaller (microrans.spec) : exécutables GUI + CLI
-tests/                   pytest (157 tests : vérification, validation, GUI hors écran, faux GPU)
+tests/                   pytest (163 tests : vérification, validation, GUI hors écran, faux GPU)
 .github/workflows/       tests (Python 3.10 / 3.12) ; exécutables Windows / Linux
 ```
 
