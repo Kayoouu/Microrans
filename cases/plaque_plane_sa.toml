@@ -1,0 +1,60 @@
+# Plaque plane turbulente sans gradient de pression (géométrie du NASA TMR),
+# Re = 5e6 par unité de longueur, modèle Spalart-Allmaras.
+# Comparaison : corrélations de Cf(Re_x) (Schultz-Grunow, White) — voir README.
+# microrans run2d cases/plaque_plane_sa.toml
+# Autre modèle : microrans run2d cases/plaque_plane_sa.toml --set physics.model="sst"
+[mesh]
+type = "blocks"
+vertices = [[-0.333, 0.0], [0.0, 0.0], [2.0, 0.0], [2.0, 1.0], [0.0, 1.0], [-0.333, 1.0]]
+blocks = [
+  # grading y : rapport dernière/première maille ; ici 1re maille ≈ 5e-6 (y+ ≈ 0.5 au centre)
+  { vertices = [0, 1, 4, 5], cells = [16, 64], grading = [0.1, 30000.0] },
+  { vertices = [1, 2, 3, 4], cells = [96, 64], grading = [20.0, 30000.0] },
+]
+
+[mesh.patches]
+inlet = { type = "patch", faces = [[5, 0]] }
+outlet = { type = "patch", faces = [[2, 3]] }
+top = { type = "patch", faces = [[3, 4], [4, 5]] }
+symmetry = { type = "symmetry", faces = [[0, 1]] }
+plate = { type = "wall", faces = [[1, 2]] }
+
+[physics]
+nu = 2e-7                  # U = 1, Re/L = 5e6
+model = "sa"
+reference_velocity = 1.0
+reference_length = 1.0
+
+[initial]
+U = [1.0, 0.0]
+
+[turbulence]
+intensity = 0.0008         # pour k-ω / SST ; SA utilise ν̃ = 3ν (NASA TMR)
+viscosity_ratio = 0.01
+
+[boundary.inlet]
+type = "inlet"
+U = [1.0, 0.0]
+
+[boundary.outlet]
+type = "outlet"
+p = 0.0
+
+[boundary.top]
+type = "outlet"
+
+[boundary.symmetry]
+type = "symmetry"
+
+[boundary.plate]
+type = "wall"
+
+[solver]
+mode = "steady"
+max_iter = 1500
+tol = 1e-6
+log_every = 100
+
+[output]
+directory = "results/plaque_plane"
+forces = ["plate"]

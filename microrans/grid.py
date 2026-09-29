@@ -11,6 +11,8 @@ import numpy as np
 class Grid:
     """Maillage 1D non uniforme avec les grandeurs géométriques dérivées."""
 
+    is_1d = True
+
     def __init__(self, y):
         y = np.asarray(y, dtype=float)
         if y.ndim != 1 or y.size < 5:

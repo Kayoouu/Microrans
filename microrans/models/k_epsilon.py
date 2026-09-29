@@ -11,8 +11,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from ..numerics import ddy
-from .base import TurbulenceModel, k_omega_guess, linearize_source
+from .base import TurbulenceModel, k_omega_freestream, k_omega_guess, linearize_source
 
 
 class LaunderSharmaKE(TurbulenceModel):
@@ -34,29 +33,37 @@ class LaunderSharmaKE(TurbulenceModel):
         eps = self._zero_at_walls(0.09 * k * omega)
         return {"k": k, "eps": eps}
 
+    def freestream_values(self, velocity, intensity=0.001, viscosity_ratio=0.1, length=1.0):
+        k, omega = k_omega_freestream(self.nu, velocity, intensity, viscosity_ratio)
+        return {"k": k, "eps": self.c_mu * k * omega}
+
     def eddy_viscosity(self, state, flow):
         k, eps = state["k"], state["eps"]
         nut = self.c_mu * self.f_mu(self._rt(k, eps)) * k ** 2 / np.maximum(
             eps, self.floors["eps"])
         return self._zero_at_walls(nut)
 
+    def _d_term(self, k):
+        """D = 2ν |∇√k|² (dissipation pariétale)."""
+        return 2.0 * self.nu * self.ops.grad_sq(np.sqrt(np.maximum(k, 0.0)), "sqrt_k")
+
     def update(self, state, flow, step):
         nu = self.nu
         k, eps = state["k"], state["eps"]
-        s2 = flow.dudy ** 2
+        s2 = flow.strain ** 2
         nut = self.eddy_viscosity(state, flow)
 
-        # Équation de k : P_k − ε̃ − D, avec D = 2ν (∂√k/∂y)² (dissipation pariétale)
-        d_term = 2.0 * nu * ddy(self.grid, np.sqrt(np.maximum(k, 0.0))) ** 2
+        # Équation de k : P_k − ε̃ − D
+        d_term = self._d_term(k)
         k_safe = np.maximum(k, self.floors["k"])
         k_new = self._solve(step, "k", nu + nut / self.sigma_k, nut * s2,
                             (eps + d_term) / k_safe)
 
-        # Équation de ε̃ : C1 (ε̃/k) P_k − C2 f2 ε̃²/k + E, E = 2 ν ν_t (∂²U/∂y²)².
+        # Équation de ε̃ : C1 (ε̃/k) P_k − C2 f2 ε̃²/k + E, E = 2 ν ν_t (∂²Uᵢ/∂xⱼ∂xₖ)².
         # C1 (ε̃/k) P_k est écrit C1 C_μ f_μ k S² (identique, sans division par k).
         rt = self._rt(k_new, eps)
         f2 = 1.0 - 0.3 * np.exp(-rt ** 2)
-        e_term = 2.0 * nu * nut * flow.d2udy2 ** 2
+        e_term = 2.0 * nu * nut * flow.second_derivative_sq
         k_safe = np.maximum(k_new, self.floors["k"])
         # Newton sur le puits quadratique −C2 f2 ε̃²/k.
         q = self.c1 * self.c_mu * self.f_mu(rt) * k_new * s2 + e_term \
@@ -67,5 +74,4 @@ class LaunderSharmaKE(TurbulenceModel):
         return {"k": k_new, "eps": eps_new}
 
     def extra_fields(self, state, flow):
-        d_term = 2.0 * self.nu * ddy(self.grid, np.sqrt(np.maximum(state["k"], 0.0))) ** 2
-        return {"eps_total": state["eps"] + d_term}
+        return {"eps_total": state["eps"] + self._d_term(state["k"])}

@@ -1,0 +1,43 @@
+# Profil NACA 0012 à 4° d'incidence, Re = 1e6, modèle Spalart-Allmaras, maillage en O.
+# Exemple de démonstration (pas de référence quantitative embarquée).
+# microrans run2d cases/naca0012_sa.toml
+[mesh]
+type = "ogrid"
+n_around = 192
+n_radial = 96
+farfield_radius = 30.0
+first_height = 2e-5          # y+ ~ 1 à Re = 1e6
+
+[[bodies]]
+type = "naca"
+code = "0012"
+chord = 1.0
+incidence = 4.0
+rotation_center = [0.25, 0.0]
+name = "airfoil"
+
+[physics]
+reynolds = 1e6
+reference_velocity = 1.0
+reference_length = 1.0       # corde
+model = "sa"
+
+[initial]
+U = [1.0, 0.0]
+
+[boundary.airfoil]
+type = "wall"
+
+[boundary.farfield]
+type = "farfield"
+U = [1.0, 0.0]
+
+[solver]
+mode = "steady"
+max_iter = 3000
+tol = 1e-5
+log_every = 100
+
+[output]
+directory = "results/naca0012_sa"
+forces = ["airfoil"]

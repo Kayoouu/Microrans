@@ -1,0 +1,46 @@
+# Cylindre, Re = 100, instationnaire (lâcher de tourbillons de von Kármán)
+# Références 2D : St ≈ 0.164-0.166, Cd moyen ≈ 1.33-1.35
+# microrans run2d cases/cylindre_re100_urans.toml
+[mesh]
+type = "ogrid"
+n_around = 96
+n_radial = 64
+farfield_radius = 30.0
+first_height = 0.01
+
+[[bodies]]
+type = "circle"
+center = [0.0, 0.0]
+radius = 0.5
+name = "cylinder"
+
+[physics]
+reynolds = 100
+reference_velocity = 1.0
+reference_length = 1.0
+model = "laminar"
+
+[initial]
+U = [1.0, 0.0]
+perturbation = 0.3         # perturbation du sillage pour déclencher le lâcher
+
+[boundary.cylinder]
+type = "wall"
+
+[boundary.farfield]
+type = "farfield"
+U = [1.0, 0.0]
+
+[solver]
+mode = "transient"
+time_scheme = "backward"   # euler | backward (BDF2)
+dt = 0.05
+t_end = 200.0
+n_outer = 1
+n_corr = 2
+log_every = 200
+
+[output]
+directory = "results/cylindre_re100"
+forces = ["cylinder"]
+vtk_every = 0              # > 0 : un fichier VTK tous les N pas

@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import numpy as np
 
-from ..numerics import ddy
 from .base import TurbulenceModel, linearize_source
 
 
@@ -37,9 +36,9 @@ class SpalartAllmaras(TurbulenceModel):
         chi3 = chi ** 3
         return chi3 / (chi3 + self.cv1 ** 3)
 
-    def initial_state(self, flow, nut0):
-        # Inversion de ν_t = ν̃ f_v1(ν̃/ν) par dichotomie (fonction monotone croissante).
-        target = nut0 / self.nu
+    def nu_tilde_from_nut(self, nut):
+        """Inverse de ν_t = ν̃ f_v1(ν̃/ν) par dichotomie (fonction monotone croissante)."""
+        target = np.asarray(nut, dtype=float) / self.nu
         lo = np.zeros_like(target)
         hi = np.maximum(2.0 * target, 20.0)
         for _ in range(80):
@@ -47,8 +46,14 @@ class SpalartAllmaras(TurbulenceModel):
             too_big = mid * self.fv1(mid) > target
             hi = np.where(too_big, mid, hi)
             lo = np.where(too_big, lo, mid)
-        nt = 0.5 * (lo + hi) * self.nu
-        return {"nu_tilde": self._zero_at_walls(nt)}
+        return 0.5 * (lo + hi) * self.nu
+
+    def initial_state(self, flow, nut0):
+        return {"nu_tilde": self._zero_at_walls(self.nu_tilde_from_nut(nut0))}
+
+    def freestream_values(self, velocity, intensity=0.001, viscosity_ratio=0.1, length=1.0):
+        # NASA TMR : ν̃_∞ = 3ν (χ = 3, ν_t/ν ≈ 0.21) pour un écoulement pleinement turbulent
+        return {"nu_tilde": 3.0 * self.nu}
 
     def eddy_viscosity(self, state, flow):
         nt = state["nu_tilde"]
@@ -81,13 +86,13 @@ class SpalartAllmaras(TurbulenceModel):
 
     def update(self, state, flow, step):
         nt = state["nu_tilde"]
-        omega = flow.strain
+        omega = flow.vorticity
         # Jacobienne locale dQ/dν̃ par différence finie (dépendances via S̃, r, f_w, f_t2).
         q = self.local_source(nt, omega)
         dnt = 1e-7 * nt + 1e-30
         dq = (self.local_source(nt + dnt, omega) - q) / dnt
         source, sink = linearize_source(nt, q, dq)
-        # Terme non conservatif c_b2/σ (∂ν̃/∂y)² ≥ 0 : explicite.
-        source = source + self.cb2 / self.sigma * ddy(self.grid, nt) ** 2
+        # Terme non conservatif c_b2/σ |∇ν̃|² ≥ 0 : explicite.
+        source = source + self.cb2 / self.sigma * self.ops.grad_sq(nt, "nu_tilde")
         gamma = (self.nu + nt) / self.sigma
         return {"nu_tilde": self._solve(step, "nu_tilde", gamma, source, sink)}

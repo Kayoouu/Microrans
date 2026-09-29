@@ -1,22 +1,39 @@
-"""Interface commune des modèles de turbulence."""
+"""Interface commune des modèles de turbulence (1D et 2D).
+
+Un modèle ne décrit que la physique locale. La discrétisation est fournie par :
+  - `self.ops`  : opérateurs de gradient (|∇f|², ∇f·∇g) du maillage 1D ou 2D ;
+  - `flow`      : grandeurs du champ moyen (S = √(2SᵢⱼSᵢⱼ), Ω = |rot U|, dérivées secondes) ;
+  - `step`      : résolution implicite d'une équation de transport (schéma en temps,
+                  convection, conditions aux limites, planchers).
+Le même code de modèle sert donc au solveur 1D (canal) et au solveur volumes finis 2D.
+"""
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
 
 import numpy as np
 
-from ..flow import FlowField
-from ..grid import Grid
+from ..numerics import ddy
+
+
+class Ops1D:
+    """Opérateurs de gradient sur le maillage 1D (différences finies d'ordre 2)."""
+
+    def __init__(self, grid):
+        self.grid = grid
+
+    def grad_sq(self, f, name=None):
+        return ddy(self.grid, f) ** 2
+
+    def grad_dot(self, f, g, fname=None, gname=None):
+        return ddy(self.grid, f) * ddy(self.grid, g)
 
 
 class TurbulenceModel(ABC):
     """Modèle de turbulence à 0, 1 ou 2 équations de transport.
 
-    Chaque équation s'écrit sous la forme
-        ∂φ/∂t = S_exp − D_imp·φ + ∂/∂y(Γ ∂φ/∂y)
-    avec S_exp ≥ 0 (termes explicites) et D_imp ≥ 0 (puits implicités, linéarisation
-    de type Patankar) pour préserver la positivité. Le schéma en temps est fourni par
-    l'objet `step` (voir solver.ImplicitStep) : le modèle ne décrit que la physique.
+    Chaque équation s'écrit  ∂φ/∂t + convection = S_exp − D_imp·φ + ∇·(Γ ∇φ)
+    avec S_exp ≥ 0 (explicite) et D_imp ≥ 0 (puits implicite) : voir `linearize_source`.
     """
 
     name: str = "base"
@@ -24,45 +41,57 @@ class TurbulenceModel(ABC):
     variables: tuple[str, ...] = ()
     floors: dict[str, float] = {}
 
-    def __init__(self, grid: Grid, nu: float):
+    def __init__(self, grid, nu: float):
         self.grid = grid
         self.nu = float(nu)
-        d = grid.wall_distance.copy()
-        # Aux noeuds pariétaux (d = 0) on met une valeur factice : ces noeuds sont en Dirichlet.
-        d[0] = d[-1] = grid.first_cell_height
-        self.d = d
+        d = np.array(grid.wall_distance, dtype=float, copy=True)
+        if getattr(grid, "is_1d", False):
+            # 1D : noeuds 0 et N sur les parois (Dirichlet), distance factice non nulle
+            d[0] = d[-1] = grid.first_cell_height
+            self.wall_nodes = np.array([0, len(d) - 1])
+            self.ops = Ops1D(grid)
+        else:
+            self.wall_nodes = np.array([], dtype=int)
+            self.ops = None          # fourni par le solveur 2D
+        self.d = np.maximum(d, 1e-300)
 
     # -- à implémenter -----------------------------------------------------------
     @abstractmethod
-    def initial_state(self, flow: FlowField, nut0: np.ndarray) -> dict[str, np.ndarray]:
+    def initial_state(self, flow, nut0: np.ndarray) -> dict[str, np.ndarray]:
         """État initial à partir d'une estimation de la viscosité turbulente."""
 
     @abstractmethod
-    def eddy_viscosity(self, state: dict, flow: FlowField) -> np.ndarray:
-        """Viscosité turbulente ν_t aux noeuds (nulle aux parois)."""
+    def eddy_viscosity(self, state: dict, flow) -> np.ndarray:
+        """Viscosité turbulente ν_t (nulle aux noeuds pariétaux en 1D)."""
 
     @abstractmethod
-    def update(self, state: dict, flow: FlowField, step) -> dict[str, np.ndarray]:
+    def update(self, state: dict, flow, step) -> dict[str, np.ndarray]:
         """Avance les variables de transport d'une (sous-)itération implicite."""
 
-    # -- utilitaires -------------------------------------------------------------
-    def wall_values(self, name: str) -> tuple[float, float]:
-        return (0.0, 0.0)
+    def freestream_values(self, velocity: float, intensity: float = 0.001,
+                          viscosity_ratio: float = 0.1, length: float = 1.0) -> dict[str, float]:
+        """Valeurs amont (entrée / champ lointain) à partir de I = u'/U et ν_t/ν."""
+        return {}
 
-    def extra_fields(self, state: dict, flow: FlowField) -> dict[str, np.ndarray]:
+    # -- utilitaires -------------------------------------------------------------
+    def wall_value(self, name: str, d1) -> np.ndarray:
+        """Valeur imposée à la paroi pour la variable `name` (d1 : distance du 1er point)."""
+        return np.zeros_like(np.asarray(d1, dtype=float))
+
+    def wall_values(self, name: str) -> tuple[float, float]:
+        """(1D) valeurs aux deux parois du canal."""
+        dy = self.grid.dy
+        return (float(self.wall_value(name, dy[0])), float(self.wall_value(name, dy[-1])))
+
+    def extra_fields(self, state: dict, flow) -> dict[str, np.ndarray]:
         """Champs dérivés à écrire en sortie (ex. ε pour un modèle k-ω)."""
         return {}
 
     def _solve(self, step, name, gamma, source, sink):
-        phi = step.solve(name, gamma, source, sink, self.wall_values(name))
-        floor = self.floors.get(name)
-        if floor is not None:
-            phi[1:-1] = np.maximum(phi[1:-1], floor)
-        return phi
+        return step.solve(name, gamma, source, sink, model=self)
 
-    @staticmethod
-    def _zero_at_walls(a: np.ndarray) -> np.ndarray:
-        a[0] = a[-1] = 0.0
+    def _zero_at_walls(self, a: np.ndarray) -> np.ndarray:
+        a[self.wall_nodes] = 0.0
         return a
 
     def __repr__(self) -> str:
@@ -79,7 +108,7 @@ class Laminar(TurbulenceModel):
         return {}
 
     def eddy_viscosity(self, state, flow):
-        return np.zeros_like(flow.U)
+        return np.zeros(len(self.d))
 
     def update(self, state, flow, step):
         return {}
@@ -115,5 +144,12 @@ def k_omega_guess(model: TurbulenceModel, nut0: np.ndarray, beta: float = 0.075,
     omega = np.sqrt((6.0 * model.nu / (beta * d ** 2)) ** 2
                     + (u_tau / (np.sqrt(beta_star) * kappa * d)) ** 2)
     k = nut0 * omega
-    k[0] = k[-1] = 0.0
+    k[model.wall_nodes] = 0.0
+    return k, omega
+
+
+def k_omega_freestream(nu, velocity, intensity, viscosity_ratio):
+    k = 1.5 * (intensity * velocity) ** 2
+    k = max(k, 1e-12 * max(velocity, 1e-12) ** 2)
+    omega = k / (viscosity_ratio * nu)
     return k, omega

@@ -14,13 +14,24 @@ def _plt():
     return plt
 
 
+def _figsize(mesh, zoom, width=10.0, extra=0.0):
+    if zoom:
+        dx, dy = zoom[1] - zoom[0], zoom[3] - zoom[2]
+    else:
+        b = mesh.bbox()
+        dx, dy = b[2] - b[0], b[3] - b[1]
+    h = float(np.clip((width - extra) * dy / max(dx, 1e-300) + 0.8, 3.0, 9.0))
+    return (width, h)
+
+
 def plot_mesh(mesh, path=None, ax=None, title=None, zoom=None, linewidth=0.3, show_patches=True):
     """Trace les cellules et colore les patches frontières. zoom = (x0, x1, y0, y1)."""
     from matplotlib.collections import LineCollection, PolyCollection
     plt = _plt()
     own = ax is None
     if own:
-        fig, ax = plt.subplots(figsize=(9, 6))
+        fig, ax = plt.subplots(figsize=_figsize(mesh, zoom, 9.0))
+    ax.grid(False)
     polys = [mesh.points[row[:nv]] for row, nv in zip(mesh.cell_nodes, mesh.cell_nv)]
     ax.add_collection(PolyCollection(polys, facecolors="#f4f3ef", edgecolors="#52514e",
                                      linewidths=linewidth))
@@ -53,7 +64,8 @@ def plot_field(mesh, values, path=None, ax=None, title=None, cmap="viridis", zoo
     plt = _plt()
     own = ax is None
     if own:
-        fig, ax = plt.subplots(figsize=(10, 5))
+        fig, ax = plt.subplots(figsize=_figsize(mesh, zoom, 10.0, extra=1.5))
+    ax.grid(False)
     polys = [mesh.points[row[:nv]] for row, nv in zip(mesh.cell_nodes, mesh.cell_nv)]
     pc = PolyCollection(polys, array=np.asarray(values), cmap=cmap, edgecolors="face",
                         linewidths=0.05)

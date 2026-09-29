@@ -25,6 +25,16 @@ class FlowField:
         """S = sqrt(2 S_ij S_ij) = |dU/dy| (égal au module du rotationnel en canal)."""
         return np.abs(self.dudy)
 
+    @property
+    def vorticity(self) -> np.ndarray:
+        """Ω = |rot U| = |dU/dy|."""
+        return np.abs(self.dudy)
+
+    @property
+    def second_derivative_sq(self) -> np.ndarray:
+        """Σ (∂²Uᵢ/∂xⱼ∂xₖ)² = (d²U/dy²)² (terme E du k-ε de Launder-Sharma)."""
+        return self.d2udy2 ** 2
+
 
 def wall_shear(grid: Grid, nu: float, U: np.ndarray) -> tuple[float, float]:
     """Contraintes pariétales (paroi basse, paroi haute), positives pour un écoulement vers +x."""

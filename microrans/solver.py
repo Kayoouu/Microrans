@@ -33,10 +33,15 @@ class ImplicitStep:
         self.a0 = a0
         self.history = history
 
-    def solve(self, name, gamma, source, sink, wall_values=(0.0, 0.0)):
+    def solve(self, name, gamma, source, sink, wall_values=(0.0, 0.0), model=None):
+        if model is not None:
+            wall_values = model.wall_values(name)
         rhs = np.asarray(source, dtype=float) - self.history[name]
         diag = self.a0 + np.asarray(sink, dtype=float)
-        return solve_transport(self.grid, gamma, diag, rhs, wall_values)
+        phi = solve_transport(self.grid, gamma, diag, rhs, wall_values)
+        if model is not None and name in model.floors:
+            phi[1:-1] = np.maximum(phi[1:-1], model.floors[name])
+        return phi
 
     @classmethod
     def euler(cls, grid, dt, current):

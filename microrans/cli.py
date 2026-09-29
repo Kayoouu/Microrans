@@ -163,6 +163,26 @@ def cmd_mesh(args) -> int:
     return 0
 
 
+def cmd_run2d(args) -> int:
+    from .fv2d.case import run_case
+    from .mesh2d.builder import load_config
+
+    cfg = load_config(args.case)
+    for item in args.set or []:
+        key, _, val = item.partition("=")
+        sec, _, name = key.partition(".")
+        try:
+            import json as _json
+            val = _json.loads(val)
+        except ValueError:
+            pass
+        cfg.setdefault(sec, {})[name] = val
+    out = args.out or cfg.get("output", {}).get("directory") or f"results/{Path(args.case).stem}"
+    summary = run_case(cfg, base_dir=Path(args.case).parent, out_dir=out,
+                       verbose=not args.quiet, plot=not args.no_plot)
+    return 0 if summary.get("converged", True) else 1
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="microrans",
@@ -213,6 +233,15 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("-q", "--quiet", action="store_true")
     p.add_argument("-v", "--verbose", action="store_true")
     p.set_defaults(func=cmd_mesh)
+
+    p = sub.add_parser("run2d", help="calcul 2D (RANS/URANS) décrit par un fichier de cas")
+    p.add_argument("case", help="fichier de cas .toml ou .json (voir dossier cases/)")
+    p.add_argument("-o", "--out", help="dossier de sortie")
+    p.add_argument("--set", nargs="+", metavar="SECTION.CLE=VALEUR",
+                   help="surcharge d'un paramètre, ex. physics.model=sst solver.max_iter=500")
+    p.add_argument("--no-plot", action="store_true")
+    p.add_argument("-q", "--quiet", action="store_true")
+    p.set_defaults(func=cmd_run2d)
 
     p = sub.add_parser("verify", help="vérification contre des solutions exactes")
     p.set_defaults(func=cmd_verify)

@@ -1,0 +1,33 @@
+# Cavité entraînée, Re = 100 — référence : Ghia, Ghia & Shin (1982)
+# microrans run2d cases/cavite_re100.toml
+[mesh]
+type = "rectangle"
+x0 = 0.0
+x1 = 1.0
+y0 = 0.0
+y1 = 1.0
+nx = 64
+ny = 64
+names = { left = "walls", right = "walls", bottom = "walls", top = "lid" }
+
+[physics]
+nu = 0.01                  # Re = U L / ν = 100
+model = "laminar"
+reference_velocity = 1.0
+
+[boundary.lid]
+type = "wall"
+U = [1.0, 0.0]             # paroi mobile
+
+[boundary.walls]
+type = "wall"
+
+[solver]
+mode = "steady"
+algorithm = "SIMPLEC"
+relax_U = 0.9
+max_iter = 2000
+tol = 1e-6
+
+[output]
+directory = "results/cavite_re100"

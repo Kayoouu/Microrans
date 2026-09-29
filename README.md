@@ -1,26 +1,29 @@
-# microrans — micro-solveur RANS / URANS 1D
+# microrans — micro-solveur RANS / URANS 1D et 2D
 
-Petit code Python exécutable pour tester des modèles de turbulence **RANS** (stationnaire) et
-**URANS** (instationnaire) sur le cas le plus simple qui ait du sens physiquement : le **canal plan
-turbulent pleinement établi**, intégré jusqu'à la paroi.
+Code Python exécutable pour tester des modèles de turbulence **RANS** (stationnaire) et **URANS**
+(instationnaire), avec un **mailleur 2D** intégré. Deux niveaux :
 
-Modèles disponibles :
+- **1D** : canal plan turbulent établi, intégré jusqu'à la paroi (rapide, < 0.5 s par calcul) ;
+- **2D** : solveur volumes finis incompressible sur maillages non structurés (SIMPLE/PIMPLE),
+  mailleur (structuré multi-blocs, O-grid, triangles, hybride couches limites), import/export
+  de maillages et de géométries.
+
+Les **mêmes classes de modèles** servent en 1D et en 2D (la physique n'est écrite qu'une fois) :
 
 | Clé   | Modèle | Variante implémentée | Référence |
 |-------|--------|----------------------|-----------|
-| `sa`  | Spalart-Allmaras | forme « standard » NASA TMR, **SA-noft2** par défaut (`--sa-ft2` pour activer f_t2), limitation de S̃ (note c) | Spalart & Allmaras 1992 ; [TMR](https://turbmodels.larc.nasa.gov/spalart.html) |
-| `ke`  | k-ε | **Launder-Sharma bas-Reynolds** (fonctions d'amortissement, intégrable jusqu'à la paroi) | Launder & Sharma 1974 ; [TMR](https://turbmodels.larc.nasa.gov/ke-ls.html) |
+| `sa`  | Spalart-Allmaras | forme « standard » NASA TMR, **SA-noft2** par défaut (option f_t2), limitation de S̃ (note c) | Spalart & Allmaras 1992 ; [TMR](https://turbmodels.larc.nasa.gov/spalart.html) |
+| `ke`  | k-ε | **Launder-Sharma bas-Reynolds** (intégrable jusqu'à la paroi) | Launder & Sharma 1974 ; [TMR](https://turbmodels.larc.nasa.gov/ke-ls.html) |
 | `kw`  | k-ω | **Wilcox 2006** (limiteur de contrainte, diffusion croisée) | Wilcox 2006/2008 ; [TMR](https://turbmodels.larc.nasa.gov/wilcox.html) |
 | `sst` | k-ω SST | **Menter 2003** | Menter, Kuntz & Langtry 2003 ; [TMR](https://turbmodels.larc.nasa.gov/sst.html) |
-| `laminar` | aucun (ν_t = 0) | sert à la vérification | — |
+| `laminar` | aucun (ν_t = 0) | vérification, écoulements laminaires | — |
 
-> **Ce que c'est :** un banc d'essai minimal, vérifié, rapide (< 0.5 s par calcul RANS), pour
-> comprendre et comparer les modèles, et une base propre à étendre.
+> **Ce que c'est :** un banc d'essai compact, vérifié contre des solutions exactes et validé sur
+> quelques cas de référence publiés, et une base propre à étendre.
 >
-> **Ce que ce n'est pas :** un code CFD général. C'est du **1D** (U = U(y, t)) : pas de convection,
-> pas de décollement, pas de lâcher tourbillonnaire. L'« URANS » est ici un canal à **gradient de
-> pression pulsé** (instationnarité imposée), pas une instationnarité auto-entretenue comme un
-> sillage de cylindre — ce qui demanderait au minimum un solveur 2D.
+> **Ce que ce n'est pas :** un remplaçant d'OpenFOAM, SU2 ou Fluent. C'est du Python pur
+> (numpy/scipy) : quelques milliers à quelques dizaines de milliers de cellules, écoulements
+> **incompressibles**, **2D** uniquement, pas de parallélisme.
 
 ---
 
@@ -30,41 +33,120 @@ Modèles disponibles :
 pip install -e ".[test]"        # ou : pip install -r requirements.txt
 ```
 
-Python ≥ 3.10, dépendances : numpy, scipy, matplotlib (pytest pour les tests).
+Python ≥ 3.10 ; numpy, scipy, matplotlib (pytest pour les tests). `pyamg` est utilisé s'il est
+installé (option `solver_p = "amg"`), sinon factorisation LU creuse.
 
-## Utilisation
+## Commandes
 
 ```bash
-# RANS stationnaire, un ou plusieurs modèles (all = sa ke kw sst)
-python -m microrans rans -m all                       # Re_τ = 395 par défaut
-python -m microrans rans -m sst --re-tau 5200 -o results/sst5200
-python -m microrans rans -m sa kw --reference dns_Up.dat   # superpose un profil (y+, U+)
+# --- 1D (canal plan) ---
+microrans rans -m all                       # RANS, 4 modèles, Re_τ = 395
+microrans urans -m sst --omega-plus 0.04    # canal à gradient de pression pulsé
+microrans verify                            # vérification 1D (solutions exactes)
 
-# URANS : canal pulsé f(t) = 1 + A sin(ωt)
-python -m microrans urans -m all                      # ω+ = 0.01, A = 10
-python -m microrans urans -m kw --omega-plus 0.04 --amplitude 40 --scheme bdf2
+# --- maillage 2D ---
+microrans mesh --preset cylinder-hybrid -f msh su2 vtk foam
+microrans mesh cases/mesh_naca_multi.toml             # profil + volet importé (.dat)
+microrans mesh cases/mesh_cylindre_hybride.toml --type unstructured
 
-# Vérification du code contre des solutions exactes
-python -m microrans verify
+# --- calcul 2D ---
+microrans run2d cases/cavite_re100.toml               # cavité entraînée (Ghia)
+microrans run2d cases/cylindre_re20.toml              # cylindre stationnaire
+microrans run2d cases/cylindre_re100_urans.toml       # lâcher de tourbillons (URANS)
+microrans run2d cases/plaque_plane_sa.toml            # plaque plane turbulente
+microrans run2d cases/plaque_plane_sa.toml --set physics.model=\"sst\" solver.max_iter=3000
 ```
 
-`python -m microrans rans -h` / `urans -h` liste toutes les options (maillage `--n-cells`,
-`--y1plus`, pas de temps, tolérances…). Une fois installé, la commande `microrans` est équivalente.
-
-### Sorties
-
-Pour chaque modèle, dans `<out>/<modèle>/` :
-
-| RANS | URANS |
-|------|-------|
-| `summary.json` (U_b⁺, U_c⁺, C_f, écart à Dean, résidu, temps…) | `summary.json` (⟨τ_w⟩, amplitude/phase de τ_w et U_b, périodicité…) |
-| `profiles.csv` (y, y⁺, U, U⁺, ν_t/ν, variables de turbulence) | `history.csv` (t, f, τ_w, U_b, U_c, sous-itérations) |
-| `residuals.csv` | `phase_profiles.csv`, `harmonic.csv` (1er harmonique vs Stokes laminaire) |
-| `rans_<modèle>.png` | `urans_<modèle>.png`, `final_profiles.csv` |
-
-Avec plusieurs modèles : `<out>/summary.csv` et `<out>/comparison.png`.
+(`python -m microrans ...` est équivalent sans installation.)
 
 ---
+
+# Partie 2D
+
+## Mailleur
+
+Inspiré de blockMesh/snappyHexMesh (OpenFOAM), Gmsh et des « inflation layers » de Fluent.
+
+**Objets (géométrie CSG)** : `circle`, `rectangle` (un nom de patch par côté), `ellipse`,
+`polygon`, `naca` (4 chiffres, répartition en cosinus), `spline` (courbe fermée lisse), `file`
+(contour importé). Opérations booléennes union `|`, différence `-`, intersection `&` ;
+transformations `angle` (rotation), `incidence` (angle d'attaque, nez vers le haut), `scale`,
+`translate`. Le nom d'un objet devient le nom de son patch de frontière.
+
+**Formats de contours importés** : `.dat`/`.txt` (profils Selig ou Lednicer, ou colonnes x y),
+`.csv`, `.svg` (polygon, polyline, rect, circle, ellipse, path M/L/H/V/C/Q/Z), `.dxf` ASCII
+(LWPOLYLINE, POLYLINE, LINE, ARC, CIRCLE ; segments chaînés en contours fermés).
+
+**Types de maillage** (`[mesh] type = ...`) :
+
+| Type | Principe | Usage |
+|------|----------|-------|
+| `rectangle` / `blocks` | structuré multi-blocs à la blockMesh : sommets, blocs, progression (`grading`, multi-grading), arêtes courbes (arc, polyligne, spline), interpolation transfinie, recollement des blocs | canaux, cavité, marche, plaque plane |
+| `ogrid` | structuré en O autour d'un corps, 1re maille imposée (y⁺), raccord progressif à un cercle de champ lointain | cylindre, profils |
+| `unstructured` | triangles (algorithme DistMesh, Persson & Strang 2004), raffinement par distance aux objets et par zones | géométries quelconques, multi-corps |
+| `hybrid` | couches de quadrilatères extrudées aux parois + triangles, raccord conforme | RANS autour de corps complexes |
+| `file` | lecture d'un maillage existant | maillages Gmsh / SU2 |
+
+**Formats de maillage** : Gmsh `.msh` (lecture v2.2 et v4.1 ASCII, écriture v2.2 ; groupes
+physiques = patches), SU2 `.su2` (lecture/écriture), VTK `.vtk` (ParaView, avec champs),
+**OpenFOAM** `constant/polyMesh` (extrudé d'une maille, faces avant/arrière `empty`, paires
+périodiques en `cyclic`).
+
+**Qualité** (à la `checkMesh`) : non-orthogonalité, asymétrie, rapport d'aspect, types de cellules ;
+avertissements au-delà des seuils usuels. Structure de données « à la OpenFOAM » : faces
+internes d'abord (owner < neighbour), puis faces frontières groupées par patch ; patches `wall`,
+`patch`, `symmetry`, `empty` ; périodicité par translation convertie en faces internes.
+
+![Maillage hybride multi-corps](docs/mesh_naca_multi.png)
+
+## Solveur
+
+- Volumes finis colocalisés, cellules polygonales quelconques ; gradients de Green-Gauss ;
+  correction non orthogonale (limitée, boucles de correction sur la pression).
+- Couplage vitesse-pression : **SIMPLE / SIMPLEC** (stationnaire) et **PIMPLE** (instationnaire,
+  Euler implicite ou BDF2 « backward », correction ddtCorr), interpolation de Rhie-Chow sous sa
+  forme OpenFOAM (HbyA, φHbyA).
+- Convection : `upwind` ou `linearUpwind` (correction différée) ; forme « bounded » en stationnaire.
+- Conditions aux limites physiques (à la SU2) : `wall` (option paroi mobile), `inlet` (U constante
+  ou expressions en x, y), `outlet` (p imposée), `symmetry` (glissement), `farfield` (U∞/p∞ selon
+  le sens de l'écoulement) ; périodicité via le maillage.
+- Turbulence : les classes 1D sont réutilisées telles quelles (même code) avec des opérateurs 2D.
+  Distance à la paroi exacte (segments), ω pariétal de Menter avec la distance du 1er centre.
+- Sorties : `summary.json` (convergence, Cd, Cl, y⁺ pariétal, Strouhal), `history.csv`,
+  `fields.vtk` (ParaView), figures (|U|, p, vorticité, ν_t/ν, maillage, convergence, efforts).
+
+## Vérification et validation 2D (résultats obtenus avec ce code)
+
+| Cas | Grandeur | microrans | Référence |
+|-----|----------|-----------|-----------|
+| Poiseuille périodique | ordre de convergence en espace | 2.0 | 2 (solution exacte) |
+| Womersley (canal, forçage oscillant) | ordre en temps Euler / BDF2 | 1.0 / 2.0 | 1 / 2 ; mêmes erreurs que le solveur 1D à 3 chiffres |
+| Canal entrée/sortie laminaire | profil de sortie | écart ≤ 0.4 % du max | parabole exacte |
+| Cavité entraînée Re = 100, 64×64 | profils u(0.5, y), v(x, 0.5) | écart max 0.004 / 0.009 | Ghia, Ghia & Shin (1982) |
+| Cylindre Re = 20, O-grid 96×64 et 160×96 | C_d | 2.037 / 2.033 | 2.045 (Dennis & Chang 1970) |
+| Cylindre Re = 20 | longueur de recirculation L/D | ≈ 0.90–0.91 (estimation grossière) | 0.94 (Dennis & Chang 1970) |
+| Cylindre Re = 100 (URANS laminaire), 96×64, Δt = 0.05 | St ; C_d moyen ; amplitude C_l | 0.160 ; 1.354 ; 0.39 | 0.164–0.167 ; 1.32–1.35 ; ≈ 0.33 (simulations 2D publiées) |
+| Canal turbulent périodique Re_τ = 395, SA | U_b | 17.6402 | 17.6398 (solveur 1D, même modèle) |
+| Plaque plane turbulente Re_L = 5e6 (géométrie NASA TMR), SA | C_f à x = 0.97 | 0.00273 | 0.00273 (Schultz-Grunow) ; 0.00287 (White) |
+| idem, SST | C_f à x = 0.97 | 0.00260 | idem |
+
+Commentaires honnêtes :
+- **Cylindre Re = 100** : sur ce maillage grossier, St est ~2–3 % trop bas et l'amplitude de C_l
+  ~20 % trop haute ; ce sont des écarts de résolution typiques, pas une validation fine.
+- **Canal 2D, SST / k-ω / k-ε** : écart de 1 à 1.6 % avec le 1D à 96 cellules, qui se réduit quand
+  on raffine (SST : 17.557 → 17.402 → 17.346 pour 96 → 192 → 384 cellules, contre 17.291 en 1D
+  très fin). C'est la sensibilité à y⁺ déjà observée en 1D (voir plus bas), pas une différence
+  d'équations.
+- **Plaque plane SST** : C_f 5 % sous les corrélations sur ce maillage (y⁺ du 1er centre ≈ 0.5–0.9),
+  alors que SA tombe sur Schultz-Grunow. Non investigué davantage : probablement la sensibilité de
+  la condition pariétale sur ω à la résolution. Les corrélations de C_f sont elles-mêmes à
+  quelques % près.
+
+![Cavité](docs/cavite_U.png)
+
+---
+
+# Partie 1D (canal plan)
 
 ## Physique
 
@@ -74,150 +156,112 @@ Canal plan de demi-hauteur h, parois en y = 0 et y = 2h, écoulement établi :
 ∂U/∂t = f(t) + ∂/∂y[(ν + ν_t) ∂U/∂y],     f = −(1/ρ) ∂p/∂x
 ```
 
-**Adimensionnement :** longueurs en h, vitesses en u_τ nominale (f moyen = u_τ²/h = 1), temps en
-h/u_τ, donc ν = 1/Re_τ. En stationnaire, le bilan de quantité de mouvement impose exactement
-τ_w = f·h = 1 : c'est un contrôle de convergence intégré.
-
-**Conditions aux limites :** U = 0, k = 0, ν̃ = 0, ε̃ = 0 aux parois ; ω_paroi = 10·6ν/(β Δy₁²)
-(Menter). Tout est résolu jusqu'à la paroi (pas de loi de paroi) : il faut y1⁺ < 1.
-
-**Cas URANS :** f(t) = 1 + A sin(ωt), ω = ω⁺ Re_τ. Le calcul part de la solution RANS, avance
-sur ~80 h/u_τ de transitoire (le débit relaxe avec une constante de temps ≈ 6 h/u_τ), puis fait des
-moyennes de phase et extrait le 1er harmonique sur les dernières périodes. Référence analytique
-superposée : la couche de Stokes laminaire soumise au même forçage.
+**Adimensionnement :** longueurs en h, vitesses en u_τ nominale (f moyen = 1), temps en h/u_τ,
+ν = 1/Re_τ. En stationnaire, le bilan impose exactement τ_w = f·h = 1 (contrôle intégré).
+**Cas URANS :** f(t) = 1 + A sin(ωt), ω = ω⁺ Re_τ ; départ de la solution RANS, ~80 h/u_τ de
+transitoire, puis moyennes de phase et 1er harmonique (référence : couche de Stokes laminaire).
 
 ## Numérique
 
-- **Espace :** volumes finis centrés aux noeuds, maillage en tanh resserré aux deux parois
-  (y1⁺ imposé), diffusivités moyennées aux faces, ordre 2 (vérifié).
-- **Termes sources :** linéarisation de **Newton** (jacobienne locale sur la diagonale, partie
-  explicite ≥ 0). C'est indispensable : une linéarisation « Picard » des puits quadratiques
-  (βω², C₂ε̃²/k, c_w1 f_w (ν̃/d)²) produit des oscillations de période 2 aux grands pas de temps.
-- **RANS :** marche en pseudo-temps (Euler implicite, Δτ = 5 h/u_τ) + **sous-relaxation 0.5** des
-  variables de turbulence. Le couplage ségrégué U ↔ ν_t se comporte comme x ↦ a/x (pente −1) ;
-  la relaxation ramène la pente à ~0. Testé de Re_τ = 180 à 5200 : les 4 modèles convergent
-  jusqu'à la précision machine (variation relative ~1e-13).
-- **URANS :** Euler implicite (ordre 1) ou **BDF2** (ordre 2, défaut), sous-itérations de Picard à
-  chaque pas avec prédicteur par extrapolation linéaire, tolérance 1e-6.
-- Chaque équation est un système tridiagonal (`scipy.linalg.solve_banded`).
+- Volumes finis aux noeuds, maillage en tanh (y1⁺ imposé), ordre 2 (vérifié).
+- **Termes sources linéarisés par Newton** (jacobienne locale implicite, partie explicite ≥ 0) :
+  indispensable, une linéarisation « Picard » des puits quadratiques (βω², C₂ε̃²/k,
+  c_w1 f_w (ν̃/d)²) oscille (période 2) aux grands pas de temps.
+- RANS : pseudo-temps (Euler implicite, Δτ = 5) + **sous-relaxation 0.5** de la turbulence (le
+  couplage U ↔ ν_t se comporte comme x ↦ a/x). Convergence jusqu'à ~1e-13 de Re_τ = 180 à 5200.
+- URANS : Euler ou **BDF2**, sous-itérations avec prédicteur linéaire.
 
----
-
-## Vérification (le code résout-il bien les équations ?)
-
-`python -m microrans verify` — résultats obtenus :
+## Vérification 1D (`microrans verify`)
 
 | Cas | Ordre observé | Attendu |
 |-----|---------------|---------|
 | Diffusion à coefficient variable, solution manufacturée, maillage étiré | 1.99 → 2.00 | 2 |
-| Womersley laminaire (solution exacte), temps, Euler implicite | 0.98 → 0.99 | 1 |
+| Womersley laminaire, temps, Euler implicite | 0.98 → 0.99 | 1 |
 | Womersley laminaire, temps, BDF2 | 1.96 → 1.99 | 2 |
 | Womersley laminaire, espace | 1.86 → 2.01 | 2 |
-| Poiseuille laminaire | erreur 1e-15 (schéma exact pour une parabole) | — |
+| Poiseuille laminaire | erreur 1e-15 | — |
 
-La suite `pytest` (56 tests, ~16 s) contrôle en plus : convergence et positivité pour les 4
-modèles, τ_w = 1, symétrie, sous-couche visqueuse U⁺ = y⁺, ν̃ = κ u_τ y pour SA, pente log 1/κ
-pour SA, k = τ(y)/√C_μ dans la zone log pour les modèles à 2 équations, convergence en maillage,
-robustesse de Re_τ = 180 à 5200, URANS sans forçage = RANS, bilan ⟨τ_w⟩ = 1 en régime pulsé, CLI.
+## Résultats 1D (192 mailles, y1⁺ = 0.2)
 
-## Résultats (réglages par défaut : 192 mailles, y1⁺ = 0.2)
+| Modèle | U_b⁺ Re_τ = 395 | écart Dean | U_b⁺ Re_τ = 5200 | écart Dean |
+|--------|-----------:|-----------:|------------:|-----------:|
+| SA     | 17.63 | +2.5 % | 23.80 | −4.3 % |
+| k-ε LS | 18.68 | +8.6 % | 24.55 | −1.2 % |
+| k-ω 06 | 17.52 | +1.9 % | 24.34 | −2.1 % |
+| SST    | 17.38 | +1.0 % | 23.89 | −3.9 % |
 
-### RANS — vitesse débitante U_b⁺
+Dean (1978) est une corrélation empirique (quelques %) : ces écarts ne valident ni n'invalident
+un modèle. Superposer un profil DNS avec `--reference` pour une vraie comparaison.
 
-| Modèle | Re_τ = 395 | écart Dean | Re_τ = 5200 | écart Dean | Itérations | Temps |
-|--------|-----------:|-----------:|------------:|-----------:|-----------:|------:|
-| SA     | 17.63 | +2.5 % | 23.80 | −4.3 % | ~40 | 0.02 s |
-| k-ε LS | 18.68 | +8.6 % | 24.55 | −1.2 % | ~800 | 0.3 s |
-| k-ω 06 | 17.52 | +1.9 % | 24.34 | −2.1 % | ~90 | 0.05 s |
-| SST    | 17.38 | +1.0 % | 23.89 | −3.9 % | ~90 | 0.05 s |
-
-**Attention à l'interprétation :** Dean (1978), C_f = 0.073 Re_b^(−1/4), est une *corrélation
-empirique* (précision de quelques %), pas une référence exacte. Ces écarts ne valident ni
-n'invalident un modèle. Pour une vraie comparaison, superposer un profil DNS avec `--reference`
-(par ex. Lee & Moser 2015, https://turbulence.oden.utexas.edu). Aucune donnée DNS n'est
-embarquée dans le dépôt.
-
-![Comparaison RANS](docs/rans_comparaison_re395.png)
-
-Figure produite pour un modèle seul (ici SA : ν̃ = κy⁺ en proche paroi, creux de ν_t au centre) :
-
-![RANS SA](docs/rans_sa.png)
-
-### Sensibilité au maillage (U_b⁺ à Re_τ = 395)
+**Sensibilité au maillage (U_b⁺, Re_τ = 395)** :
 
 | Maillage | SA | k-ε LS | k-ω 06 | SST |
 |----------|---:|------:|------:|----:|
 | 128 mailles, y1⁺ = 0.5 | 17.608 | 18.483 | 17.670 | 17.521 |
-| **192 mailles, y1⁺ = 0.2 (défaut)** | 17.629 | 18.683 | 17.523 | 17.375 |
+| 192 mailles, y1⁺ = 0.2 (défaut) | 17.629 | 18.683 | 17.523 | 17.375 |
 | 1024 mailles, y1⁺ = 0.05 | 17.649 | 18.804 | 17.437 | 17.291 |
 
-SA est peu sensible. **k-ε Launder-Sharma** est très sensible à y1⁺ (ε̃ et le terme D culminent à
-la paroi) ; **k-ω et SST** le sont via la condition pariétale de Menter sur ω (convergence ≈ ordre 1
-en y1⁺). Avec les réglages par défaut, l'erreur de maillage sur U_b⁺ est ≤ 0.7 %.
+**URANS, canal pulsé (Re_τ = 395, ω⁺ = 0.01, A = 10)** : ⟨τ_w⟩ = 1.0000(4) pour tous les modèles
+(bilan exact), amplitude du frottement oscillant 0.18 (k-ε) à 0.30 (SA) contre 0.253 pour la
+couche de Stokes laminaire : les modèles divergent nettement, sans donnée LES/DNS incluse pour
+trancher.
 
-### URANS — canal pulsé (Re_τ = 395, ω⁺ = 0.01, A = 10)
-
-| Modèle | ⟨τ_w⟩ (attendu 1) | amplitude τ̂_w | phase τ_w / forçage | temps |
-|--------|------------------:|--------------:|--------------------:|------:|
-| SA     | 1.00004 | 0.296 | −67.7° | 8 s |
-| k-ε LS | 1.00005 | 0.179 | −62.5° | 25 s |
-| k-ω 06 | 1.00004 | 0.277 | −66.5° | 15 s |
-| SST    | 1.00003 | 0.259 | −64.3° | 19 s |
-| *Stokes laminaire (réf. analytique)* | — | *0.253* | *−45°* | — |
-
-Les modèles donnent des réponses de frottement nettement différentes (±25 %) à forçage identique :
-c'est typiquement ce que ce banc d'essai permet d'étudier. Aucune donnée LES/DNS de canal pulsé
-n'est incluse pour trancher.
-
-![Comparaison URANS](docs/urans_comparaison.png)
-![URANS SST](docs/urans_sst.png)
+![Comparaison RANS 1D](docs/rans_comparaison_re395.png)
+![Comparaison URANS 1D](docs/urans_comparaison.png)
 
 ---
 
 ## Limites connues (à lire avant d'utiliser les résultats)
 
-1. **1D uniquement** : pas de gradient de pression adverse, de décollement, de courbure, de
-   convection. Les écarts entre modèles y sont bien plus grands que dans un canal.
-2. **URANS à instationnarité imposée** seulement. Pas de lâcher tourbillonnaire possible en 1D.
-3. **k-ε** : seule la variante bas-Reynolds de Launder-Sharma est disponible (pas de k-ε standard
-   haut-Reynolds, qui exige des lois de paroi).
-4. **k-ω / SST** : la zone log est atteinte lentement (la fonction indicatrice y⁺dU⁺/dy⁺ vaut
-   ~2.6–2.8 au lieu de 1/κ ≈ 2.44 à Re_τ = 2000, alors que k⁺ = τ/√β* est bien respecté). C'est le
-   comportement de ces modèles sans correction bas-Reynolds, pas un défaut du code à ma connaissance,
-   mais ce n'est **pas** vérifié contre une autre implémentation de référence.
-5. La cohérence des modèles a été contrôlée par des propriétés analytiques (couche log, sous-couche,
-   bilans), **pas** par comparaison point à point avec les solutions de référence du NASA TMR
-   (qui portent sur des cas 2D).
-6. Le maillage doit résoudre la sous-couche visqueuse (y1⁺ ≲ 0.5, idéalement 0.2).
+1. **Performances** : Python pur, solveurs linéaires directs par défaut (< 40 000 cellules).
+   Ordres de grandeur mesurés : cavité 64×64 ≈ 12 s ; plaque plane SA (7 200 cellules) ≈ 30 s ;
+   cylindre Re = 100 instationnaire (6 144 cellules, 4 000 pas) ≈ 7 min.
+2. **SIMPLE converge lentement** sur les maillages très fins et étirés (modes lisses mal amortis
+   par la sous-relaxation implicite) : ex. canal 2D à 384 cellules non convergé en 8 000
+   itérations. Pas de multigrille ni de solveur couplé.
+3. **Maillages non orthogonaux** (triangles, hybrides) : plus délicats pour SIMPLEC ; baisser
+   `relax_U` (0.7) si le calcul diverge. Le mailleur hybride produit des cellules très asymétriques
+   au bord de fuite aigu des profils (couches extrudées) ; l'O-grid y a une non-orthogonalité ~80°.
+4. **Incompressible uniquement**, pas de loi de paroi (y⁺ ≲ 1 requis), pas de transition.
+5. **k-ω / SST** : sensibilité notable à la hauteur de la 1re maille (condition pariétale de
+   Menter), convergence ≈ ordre 1 en y1⁺ ; zone log atteinte lentement dans le canal.
+6. Validation limitée aux cas du tableau ci-dessus ; pas de comparaison point à point avec les
+   solutions de référence du NASA TMR (données non embarquées).
+7. Le mailleur DistMesh est lent pour de gros maillages (≈ 30–45 s pour ~15 000 cellules).
 
 ## Pistes d'amélioration
 
-- Solveur 2D (plaque plane NASA TMR, marche descendante, cylindre en URANS) — le vrai saut.
-- Comparaison DNS intégrée (téléchargement des profils Lee & Moser), cas de Couette.
-- Autres variantes : k-ω Wilcox 1988, SST-V, SA-neg, SA-RC, k-ε standard + lois de paroi,
-  modèles algébriques (Cess, longueur de mélange).
-- Solveur couplé (Newton global) pour accélérer k-ε ; pas de pseudo-temps adaptatif.
-- Transfert de chaleur (équation de la température, Pr_t).
+- Multigrille (pyamg) par défaut, solveur couplé, parallélisation ; lois de paroi.
+- Compressible (profils transsoniques), transition (γ-Re_θ), modèles SA-neg / SST-V.
+- Comparaisons intégrées aux données NASA TMR / DNS ; C-grid pour profils ; mailleur en C++.
 
 ## Structure du code
 
 ```
 microrans/
-  grid.py            maillage 1D en tanh, y1+ imposé
-  numerics.py        dérivées sur maillage non uniforme, solveur tridiagonal implicite
-  flow.py            champ U et dérivées, diagnostics pariétaux, champ initial (Cess)
-  models/            base.py (interface + linéarisation de Newton), un fichier par modèle
-  solver.py          RANS (pseudo-temps) et URANS (Euler / BDF2 + sous-itérations)
-  cases.py           cas prêts à l'emploi : canal RANS, canal pulsé URANS
-  reference.py       Poiseuille, Womersley, Stokes, loi log, Reichardt, Dean
-  verification.py    études d'ordre de convergence
-  postprocess.py     CSV / JSON / figures
-  cli.py             interface en ligne de commande
-tests/               pytest
+  grid.py, numerics.py, flow.py, solver.py, cases.py     solveur 1D (canal)
+  models/          modèles de turbulence (communs 1D/2D) + linéarisation de Newton
+  mesh2d/
+    geometry.py    objets CSG, NACA, splines, transformations
+    mesh.py        structure volumes finis (owner/neighbour, patches, périodicité, qualité)
+    blocks.py      multi-blocs à la blockMesh (+ canal, cavité, marche, plaque plane)
+    ogrid.py       maillage en O
+    unstructured.py  DistMesh (triangles) et hybride couches limites
+    io.py          Gmsh, SU2, VTK, OpenFOAM, contours dat/csv/svg/dxf
+    builder.py     construction depuis un fichier de configuration, préréglages
+    plot.py        tracés de maillages et de champs
+  fv2d/
+    fvm.py         opérateurs volumes finis, assemblage, solveurs linéaires
+    solver.py      SIMPLE / SIMPLEC / PIMPLE, conditions aux limites, efforts
+    case.py        fichiers de cas TOML/JSON, Strouhal, sorties
+    benchmarks.py  données de référence (Ghia et al. 1982)
+cases/             exemples de maillages et de calculs
+tests/             pytest
 ```
 
-**Ajouter un modèle :** créer une classe dérivée de `TurbulenceModel` (`models/base.py`) qui
-définit `variables`, `initial_state`, `eddy_viscosity` et `update` ; dans `update`, écrire chaque
-équation comme `∂φ/∂t = Q(φ) + ∂/∂y(Γ ∂φ/∂y)`, passer `Q` et `dQ/dφ` à `linearize_source`, puis
-appeler `self._solve(step, nom, Γ, source, puits)`. L'enregistrer dans `MODELS`
-(`models/__init__.py`). Le schéma en temps (RANS ou URANS) est géré par le solveur.
+**Ajouter un modèle de turbulence :** dériver `TurbulenceModel` (`models/base.py`) : définir
+`variables`, `eddy_viscosity`, `update` (+ `initial_state` pour le 1D, `freestream_values` et
+`wall_value` pour le 2D). Dans `update`, écrire chaque équation `∂φ/∂t + … = Q(φ) + ∇·(Γ∇φ)`,
+passer `Q` et `dQ/dφ` à `linearize_source`, puis appeler `self._solve(step, nom, Γ, source, puits)`
+et utiliser `self.ops.grad_sq` / `self.ops.grad_dot` et `flow.strain` / `flow.vorticity` pour les
+gradients : le même code fonctionne alors en 1D et en 2D.
