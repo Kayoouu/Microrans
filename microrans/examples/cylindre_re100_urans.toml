@@ -33,7 +33,7 @@ U = [1.0, 0.0]
 
 [solver]
 mode = "transient"
-time_scheme = "backward"   # euler | backward (BDF2)
+time_scheme = "auto"       # auto (ici Crank-Nicolson) | euler | backward | rk3 ... (README)
 dt = 0.05
 t_end = 200.0
 n_outer = 1

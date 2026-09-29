@@ -24,7 +24,7 @@ def _womersley(scheme, steps, ny=16):
 
 
 @pytest.mark.parametrize("scheme,order", [("euler", 1), ("backward", 2), ("crankNicolson", 2),
-                                          ("rk2", 2), ("rk3", 3), ("rk4", 4)])
+                                          ("rk2", 2), ("rk3", 3), ("rk4", 4), ("ab2", 2)])
 def test_temporal_order_womersley(scheme, order):
     ref = _womersley(scheme, 640)
     e1 = np.max(np.abs(_womersley(scheme, 40) - ref))
@@ -88,9 +88,14 @@ def test_auto_scheme_choice():
     s = _tgv_solver(16, time_scheme="auto")
     s.run_transient(0.05, 0.1)
     assert s.settings.time_scheme == "rk3"
-    # paroi très raffinée (y⁺ ~ 0.1) : limite de diffusion → BDF2 implicite
+    # paroi très raffinée : limite de diffusion → implicite (Crank-Nicolson en laminaire)
     m = channel_mesh(1.0, 2.0, 2, 64, first_height=1e-4)
     s = Solver2D(m, 1e-3, WALLS, body_force=(1.0, 0.0), initial_U=(1.0, 0.0),
+                 settings=Settings(time_scheme="auto"))
+    s.run_transient(0.05, 0.1)
+    assert s.settings.time_scheme == "crankNicolson"
+    # avec un modèle de turbulence : BDF2 (L-stable)
+    s = Solver2D(m, 1e-3, WALLS, model="sa", body_force=(1.0, 0.0), initial_U=(1.0, 0.0),
                  settings=Settings(time_scheme="auto"))
     s.run_transient(0.05, 0.1)
     assert s.settings.time_scheme == "backward"

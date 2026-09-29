@@ -763,18 +763,23 @@ class Solver2D:
         return min(dt, s.max_dt)
 
     def auto_time_scheme(self, dt: float) -> str:
-        """Choix automatique (étude `microrans schemes`) : RK3 explicite (3 à 5× moins cher
-        que PIMPLE à précision égale en convection dominante) si le Δt demandé respecte sa
-        stabilité et que la diffusion (parois à y⁺ ~ 1, ν_t) ne limite pas le pas ; sinon
-        BDF2 implicite. Turbulence → BDF2 (termes sources raides)."""
+        """Choix automatique (études `microrans schemes` et cylindre Re = 100, README) :
+        - RK3 explicite (3 à 5× moins cher que PIMPLE à précision égale en convection
+          dominante) si le Δt demandé respecte sa stabilité et que la diffusion ne limite
+          pas le pas ;
+        - sinon Crank-Nicolson en laminaire (au même Δt, amplitude de portance du cylindre
+          0.339 contre 0.389 en BDF2 ; valeur convergée ≈ 0.31-0.32) ;
+        - BDF2 (L-stable) avec un modèle de turbulence (termes sources raides)."""
         xp = self.xp
         info = TIME_SCHEMES["rk3"]
         _, _, conv, diff = self.courant(1.0)
         dt_conv = info["co_max"] / max(conv.max(), 1e-300)
         dt_diff = info["dn_max"] / max(diff.max(), 1e-300)
         explicit_ok = xp.max(conv * dt / info["co_max"] + diff * dt / info["dn_max"]) <= 1.0
-        if self.model.variables or dt_diff < 0.5 * dt_conv or not explicit_ok:
+        if self.model.variables:
             return "backward"
+        if dt_diff < 0.5 * dt_conv or not explicit_ok:
+            return "crankNicolson"
         return "rk3"
 
     def run_transient(self, dt: float, t_end: float, verbose=False, log_every=50,
