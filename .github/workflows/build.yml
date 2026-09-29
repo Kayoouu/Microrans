@@ -41,18 +41,25 @@ jobs:
           ./dist/microrans/microrans examples
           ./dist/microrans/microrans run2d cavite_re100 -q --no-plot --set solver.max_iter=50 -o smoke/cli || test $? -eq 1
           test -f smoke/cli/summary.json
-      - name: Auto-test de l'interface (Windows)
+      - name: Auto-test de l'interface (Windows, affichage natif comme chez l'utilisateur)
         if: runner.os == 'Windows'
         shell: pwsh
         env:
-          QT_QPA_PLATFORM: offscreen
           MICRORANS_RESULTS: ${{ github.workspace }}\smoke
         run: |
           $p = Start-Process -FilePath dist\microrans\microrans-gui.exe -ArgumentList "--selftest","smoke\gui.png" -Wait -PassThru
           if ($p.ExitCode -ne 0) { Write-Error "auto-test : code $($p.ExitCode)"; exit 1 }
           if (-not (Test-Path smoke\gui.png)) { Write-Error "pas de capture"; exit 1 }
-      - name: Auto-test de l'interface (Linux, macOS)
-        if: runner.os != 'Windows'
+      - name: Auto-test de l'interface (macOS, affichage natif)
+        if: runner.os == 'macOS'
+        shell: bash
+        env:
+          MICRORANS_RESULTS: ${{ github.workspace }}/smoke
+        run: |
+          ./dist/microrans/microrans-gui --selftest smoke/gui.png
+          test -f smoke/gui.png
+      - name: Auto-test de l'interface (Linux, hors écran, pas d'écran sur le serveur)
+        if: runner.os == 'Linux'
         shell: bash
         env:
           QT_QPA_PLATFORM: offscreen
