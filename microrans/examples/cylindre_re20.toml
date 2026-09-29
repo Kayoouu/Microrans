@@ -1,5 +1,5 @@
 # Cylindre, Re = 20, stationnaire — référence : Cd ≈ 2.05 (Dennis & Chang 1970)
-# microrans run2d cases/cylindre_re20.toml
+# microrans run2d cylindre_re20.toml
 [mesh]
 type = "ogrid"
 n_around = 96

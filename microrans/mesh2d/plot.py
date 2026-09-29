@@ -72,7 +72,7 @@ def plot_field(mesh, values, path=None, ax=None, title=None, cmap="viridis", zoo
     if vmin is not None or vmax is not None:
         pc.set_clim(vmin, vmax)
     ax.add_collection(pc)
-    cb = plt.colorbar(pc, ax=ax, shrink=0.85)
+    cb = ax.figure.colorbar(pc, ax=ax, shrink=0.85)
     if label:
         cb.set_label(label)
     if vectors is not None:

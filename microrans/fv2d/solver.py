@@ -95,7 +95,7 @@ class Settings:
     solver_U: str = "auto"                # auto : BiCGStab + Jacobi
     solver_turb: str = "auto"
     # instationnaire (voir TIME_SCHEMES)
-    time_scheme: str = "backward"         # auto | euler | backward | crankNicolson | rk1..4 | ab2
+    time_scheme: str = "auto"             # auto | euler | backward | crankNicolson | rk1..4 | ab2
     adjust_dt: bool = False               # pas de temps adaptatif (comme adjustTimeStep)
     max_co: float = 1.0                   # Courant visé si adjust_dt
     max_dt: float = float("inf")
@@ -600,14 +600,16 @@ class Solver2D:
         return min(dt, s.max_dt)
 
     def auto_time_scheme(self, dt: float) -> str:
-        """Choix automatique : RK3 explicite si la limite de diffusion (parois à y⁺ ~ 1,
-        ν_t) n'impose pas un Δt beaucoup plus petit que la limite convective, sinon BDF2
-        implicite. Les deux sont vérifiés (ordre 3 / 2) ; voir le README."""
+        """Choix automatique (étude `microrans schemes`) : RK3 explicite (3 à 5× moins cher
+        que PIMPLE à précision égale en convection dominante) si le Δt demandé respecte sa
+        stabilité et que la diffusion (parois à y⁺ ~ 1, ν_t) ne limite pas le pas ; sinon
+        BDF2 implicite. Turbulence → BDF2 (termes sources raides)."""
         info = TIME_SCHEMES["rk3"]
         _, _, conv, diff = self.courant(1.0)
         dt_conv = info["co_max"] / max(conv.max(), 1e-300)
         dt_diff = info["dn_max"] / max(diff.max(), 1e-300)
-        if self.model.variables or dt_diff < 0.5 * dt_conv:
+        explicit_ok = np.max(conv * dt / info["co_max"] + diff * dt / info["dn_max"]) <= 1.0
+        if self.model.variables or dt_diff < 0.5 * dt_conv or not explicit_ok:
             return "backward"
         return "rk3"
 

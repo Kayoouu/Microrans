@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "microrans"
-version = "0.1.0"
+version = "0.2.0"
 description = "Solveur RANS/URANS 1D et 2D (volumes finis) avec mailleur : Spalart-Allmaras, k-epsilon, k-omega, SST"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -13,12 +13,21 @@ dependencies = ["numpy>=1.22", "scipy>=1.8", "matplotlib>=3.5", "pyamg>=4.2",
 
 [project.optional-dependencies]
 test = ["pytest>=7"]
+gui = ["PySide6>=6.5"]
+gpu = ["cupy-cuda12x>=13"]
+build = ["PySide6>=6.5", "pyinstaller>=6"]
 
 [project.scripts]
 microrans = "microrans.cli:main"
 
+[project.gui-scripts]
+microrans-gui = "microrans.gui:main"
+
 [tool.setuptools.packages.find]
 include = ["microrans*"]
+
+[tool.setuptools.package-data]
+microrans = ["examples/*.toml", "examples/*.dat", "gui/*.svg", "gui/*.png"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

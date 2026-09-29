@@ -1,5 +1,5 @@
 # Cavité entraînée, Re = 100 — référence : Ghia, Ghia & Shin (1982)
-# microrans run2d cases/cavite_re100.toml
+# microrans run2d cavite_re100.toml
 [mesh]
 type = "rectangle"
 x0 = 0.0

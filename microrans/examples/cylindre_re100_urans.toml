@@ -1,6 +1,6 @@
 # Cylindre, Re = 100, instationnaire (lâcher de tourbillons de von Kármán)
 # Références 2D : St ≈ 0.164-0.166, Cd moyen ≈ 1.33-1.35
-# microrans run2d cases/cylindre_re100_urans.toml
+# microrans run2d cylindre_re100_urans.toml
 [mesh]
 type = "ogrid"
 n_around = 96

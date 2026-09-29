@@ -1,0 +1,85 @@
+name: executables
+
+# Construit les exécutables (interface graphique + ligne de commande) pour Windows, Linux et
+# macOS avec PyInstaller, les teste (calcul + auto-test de l'interface hors écran) et les
+# publie comme artefacts ; sur une étiquette v*, les attache à une « release » GitHub.
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+    paths: ["packaging/**", ".github/workflows/build.yml"]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-22.04, macos-14]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Bibliothèques système Qt (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libegl1 libgl1 libxkbcommon0 libxkbcommon-x11-0 libfontconfig1 libdbus-1-3 zip
+      - name: Installation
+        run: pip install . "PySide6>=6.5" "pyinstaller>=6"
+      - name: Construction PyInstaller
+        run: pyinstaller --noconfirm packaging/microrans.spec
+      - name: Test de la ligne de commande
+        shell: bash
+        run: |
+          ./dist/microrans/microrans examples
+          ./dist/microrans/microrans run2d cavite_re100 -q --no-plot --set solver.max_iter=50 -o smoke/cli || test $? -eq 1
+          test -f smoke/cli/summary.json
+      - name: Auto-test de l'interface (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          QT_QPA_PLATFORM: offscreen
+          MICRORANS_RESULTS: ${{ github.workspace }}\smoke
+        run: |
+          $p = Start-Process -FilePath dist\microrans\microrans-gui.exe -ArgumentList "--selftest","smoke\gui.png" -Wait -PassThru
+          if ($p.ExitCode -ne 0) { Write-Error "auto-test : code $($p.ExitCode)"; exit 1 }
+          if (-not (Test-Path smoke\gui.png)) { Write-Error "pas de capture"; exit 1 }
+      - name: Auto-test de l'interface (Linux, macOS)
+        if: runner.os != 'Windows'
+        shell: bash
+        env:
+          QT_QPA_PLATFORM: offscreen
+          MICRORANS_RESULTS: ${{ github.workspace }}/smoke
+        run: |
+          ./dist/microrans/microrans-gui --selftest smoke/gui.png
+          test -f smoke/gui.png
+      - name: Archive
+        shell: bash
+        run: |
+          cp README.md dist/microrans/LISEZMOI.md
+          cd dist
+          if [ "$RUNNER_OS" = "Windows" ]; then 7z a -tzip ../microrans-${{ runner.os }}.zip microrans > /dev/null; else zip -qry ../microrans-${{ runner.os }}.zip microrans; fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: microrans-${{ runner.os }}
+          path: microrans-${{ runner.os }}.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: capture-interface-${{ runner.os }}
+          path: smoke/gui.png
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: microrans-*
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: microrans-*.zip

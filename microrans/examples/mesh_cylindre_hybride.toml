@@ -1,5 +1,5 @@
 # Maillage hybride autour d'un cylindre : couches de quadrilatères + triangles
-# microrans mesh cases/mesh_cylindre_hybride.toml -f msh su2 vtk foam
+# microrans mesh mesh_cylindre_hybride.toml -f msh su2 vtk foam
 [mesh]
 type = "hybrid"            # blocks | rectangle | ogrid | unstructured | hybrid | file
 h_max = 1.0                # taille maximale des triangles

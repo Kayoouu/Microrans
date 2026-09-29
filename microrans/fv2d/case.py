@@ -1,5 +1,6 @@
 """Cas de calcul 2D décrits par un fichier TOML/JSON (esprit des dictionnaires OpenFOAM /
-du fichier .cfg de SU2). Voir les exemples du dossier `cases/`.
+du fichier .cfg de SU2). Voir les exemples de `microrans/examples/`
+(liste : `microrans examples`).
 
 Sections : [mesh] (+ [domain], [[bodies]]), [physics], [initial], [turbulence],
 [boundary.<patch>], [solver], [output].
@@ -37,9 +38,12 @@ def strouhal(times, signal, frac: float = 0.5):
     return float(1.0 / np.mean(np.diff(tz))), len(z) - 1
 
 
-def build_solver(cfg: dict, base_dir=".", verbose=False):
+def build_solver(cfg: dict, base_dir=".", verbose=False, mesh=None):
+    """Solveur prêt à calculer (maillage construit, ou fourni via `mesh`)."""
     mcfg = cfg.get("mesh", {})
-    if "preset" in mcfg:
+    if mesh is not None:
+        pass
+    elif "preset" in mcfg:
         mesh = PRESETS[mcfg["preset"]]()
     else:
         mesh = build_mesh(cfg, base_dir=base_dir, verbose=verbose)
@@ -67,8 +71,11 @@ def build_solver(cfg: dict, base_dir=".", verbose=False):
     return solver
 
 
-def run_case(cfg: dict, base_dir=".", out_dir=None, verbose=True, plot=True) -> dict:
-    solver = build_solver(cfg, base_dir, verbose)
+def run_case(cfg: dict, base_dir=".", out_dir=None, verbose=True, plot=True, callback=None,
+             mesh=None, return_solver=False):
+    """Exécute un cas complet. callback(solver, n) -> True pour arrêter (interface
+    graphique) ; mesh : maillage déjà construit ; return_solver : renvoie (résumé, solveur)."""
+    solver = build_solver(cfg, base_dir, verbose, mesh=mesh)
     ph, sc, oc = cfg.get("physics", {}), cfg.get("solver", {}), cfg.get("output", {})
     out = Path(out_dir or oc.get("directory", "results/case2d"))
     out.mkdir(parents=True, exist_ok=True)
@@ -84,7 +91,8 @@ def run_case(cfg: dict, base_dir=".", out_dir=None, verbose=True, plot=True) -> 
     summary = {"mode": mode, "model": solver.model_name, "n_cells": solver.mesh.n_cells,
                "nu": solver.nu, "reference_velocity": Uref, "reference_length": Lref}
     if mode == "steady":
-        ok = solver.run_steady(verbose=verbose, log_every=sc.get("log_every", 100))
+        ok = solver.run_steady(verbose=verbose, log_every=sc.get("log_every", 100),
+                               callback=callback)
         summary.update(converged=bool(ok), iterations=solver.iterations)
         hist = solver.history
     else:
@@ -99,11 +107,12 @@ def run_case(cfg: dict, base_dir=".", out_dir=None, verbose=True, plot=True) -> 
         def cb(s, n):
             if vtk_every and n % vtk_every == 0:
                 write_vtk(s.mesh, out / f"fields_{n:06d}.vtk", s.fields())
+            return callback(s, n) if callback else None
         hist = solver.run_transient(sc["dt"], sc["t_end"], verbose=verbose,
                                     log_every=sc.get("log_every", 100), probes=probes,
-                                    callback=cb if vtk_every else None)
+                                    callback=cb)
         t = np.array([h["time"] for h in hist])
-        for name in force_patches:
+        for name in (force_patches if len(hist) > 2 else []):
             cd = np.array([h[f"Cd_{name}"] for h in hist])
             cl = np.array([h[f"Cl_{name}"] for h in hist])
             f, n = strouhal(t, cl)
@@ -141,4 +150,4 @@ def run_case(cfg: dict, base_dir=".", out_dir=None, verbose=True, plot=True) -> 
     if verbose:
         print(json.dumps(summary, indent=2, ensure_ascii=False))
         print(f"Résultats dans {out.resolve()}")
-    return summary
+    return (summary, solver) if return_solver else summary

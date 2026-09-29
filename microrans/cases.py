@@ -152,8 +152,8 @@ class UransResult:
 def run_pulsating_channel(model: str = "sa", re_tau: float = 395.0, n_cells: int = 192,
                           y1_plus: float = 0.2, omega_plus: float = 0.01,
                           amplitude: float = 10.0, n_periods: int | None = None,
-                          t_transient: float = 80.0, steps_per_period: int = 128,
-                          n_average: int = 5, n_phases: int = 8, scheme: str = "bdf2",
+                          t_transient: float = 80.0, steps_per_period: int = 64,
+                          n_average: int = 5, n_phases: int = 8, scheme: str = "sdirk2",
                           max_inner: int = 30, inner_tol: float = 1e-6, relax: float = 1.0,
                           model_options: dict | None = None, verbose: bool = False,
                           steady_kwargs: dict | None = None) -> UransResult:

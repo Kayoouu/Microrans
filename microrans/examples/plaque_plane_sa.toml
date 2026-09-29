@@ -1,8 +1,8 @@
 # Plaque plane turbulente sans gradient de pression (géométrie du NASA TMR),
 # Re = 5e6 par unité de longueur, modèle Spalart-Allmaras.
 # Comparaison : corrélations de Cf(Re_x) (Schultz-Grunow, White) — voir README.
-# microrans run2d cases/plaque_plane_sa.toml
-# Autre modèle : microrans run2d cases/plaque_plane_sa.toml --set physics.model=sst
+# microrans run2d plaque_plane_sa.toml
+# Autre modèle : microrans run2d plaque_plane_sa.toml --set physics.model=sst
 [mesh]
 type = "blocks"
 vertices = [[-0.333, 0.0], [0.0, 0.0], [2.0, 0.0], [2.0, 1.0], [0.0, 1.0], [-0.333, 1.0]]

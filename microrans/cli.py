@@ -126,6 +126,7 @@ def cmd_mesh(args) -> int:
         mesh = PRESETS[args.preset]()
         name = args.preset
     elif args.config:
+        args.config = str(resolve_example(args.config))
         cfg = load_config(args.config)
         if args.type:
             cfg.setdefault("mesh", {})["type"] = args.type
@@ -168,6 +169,7 @@ def cmd_run2d(args) -> int:
     from .fv2d.case import run_case
     from .mesh2d.builder import load_config
 
+    args.case = str(resolve_example(args.case))
     cfg = load_config(args.case)
     for item in args.set or []:
         key, _, val = item.partition("=")
@@ -182,6 +184,55 @@ def cmd_run2d(args) -> int:
     summary = run_case(cfg, base_dir=Path(args.case).parent, out_dir=out,
                        verbose=not args.quiet, plot=not args.no_plot)
     return 0 if summary.get("converged", True) else 1
+
+
+def cmd_schemes(args) -> int:
+    from .studies import markdown_table, plot_time_study, time_study_1d, time_study_2d
+    out = Path(args.out)
+    out.mkdir(parents=True, exist_ok=True)
+    print("Étude 1D (canal turbulent pulsé, SA)...")
+    r1 = time_study_1d()
+    print(markdown_table(r1, ["scheme", "steps", "error", "cpu", "inner"]))
+    print("Étude 2D (tourbillon de Taylor-Green advecté)...")
+    r2 = time_study_2d()
+    print(markdown_table(r2, ["scheme", "dt", "courant", "error", "cpu"]))
+    plot_time_study(r1, r2, out / "schemas_temps.png")
+    (out / "schemas_temps.md").write_text(
+        "## 1D\n\n" + markdown_table(r1, ["scheme", "steps", "error", "cpu", "inner"])
+        + "\n## 2D\n\n" + markdown_table(r2, ["scheme", "dt", "courant", "error", "cpu"]),
+        encoding="utf-8")
+    print(f"Figure et tableaux dans {out.resolve()}")
+    return 0
+
+
+def examples_dir() -> Path:
+    """Dossier des cas d'exemple (paquet installé ou exécutable PyInstaller)."""
+    base = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent.parent))
+    for cand in (Path(__file__).resolve().parent / "examples", base / "microrans" / "examples"):
+        if cand.is_dir():
+            return cand
+    return Path(__file__).resolve().parent / "examples"
+
+
+def resolve_example(name) -> Path:
+    """Chemin d'un fichier de cas ; à défaut, nom d'un exemple fourni (avec ou sans .toml)."""
+    p = Path(name)
+    if p.exists():
+        return p
+    for cand in (examples_dir() / p.name, examples_dir() / (p.name + ".toml")):
+        if cand.exists():
+            return cand
+    raise ValueError(f"Fichier de cas introuvable : {name} (exemples : microrans examples)")
+
+
+def cmd_examples(args) -> int:
+    d = examples_dir()
+    print(f"Exemples fournis ({d}) :")
+    for f in sorted(d.glob("*.toml")):
+        first = f.read_text(encoding="utf-8").splitlines()[0].lstrip("# ").strip()
+        print(f"  {f.stem:28s} {first}")
+    print("Lancer : microrans run2d <nom>   (ou microrans mesh <nom> pour mesh_*)")
+    return 0
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -212,11 +263,12 @@ def build_parser() -> argparse.ArgumentParser:
                    help="nombre total de périodes (défaut : auto via --t-transient)")
     p.add_argument("--t-transient", type=float, default=80.0,
                    help="durée de transitoire avant moyenne, en h/u_τ (défaut : 80)")
-    p.add_argument("--steps-per-period", type=int, default=128)
+    p.add_argument("--steps-per-period", type=int, default=64,
+                   help="pas par période (défaut 64 : erreur en temps ~1e-5 avec sdirk2)")
     p.add_argument("--average", type=int, default=5, help="périodes moyennées (défaut : 5)")
-    p.add_argument("--scheme", choices=list(TIME_SCHEMES_1D), default="bdf2",
-                   help="schéma en temps (voir README) : implicites euler, bdf2, cn, sdirk2, "
-                        "sdirk3 ; explicites rk1..rk4, ab2 (Δt très petit requis)")
+    p.add_argument("--scheme", choices=list(TIME_SCHEMES_1D), default="sdirk2",
+                   help="schéma en temps (défaut sdirk2, voir README) : implicites euler, bdf2, "
+                        "cn, sdirk2, sdirk3 ; explicites rk1..rk4, ab2 (Δt minuscule requis)")
     p.add_argument("--max-inner", type=int, default=30)
     p.add_argument("--inner-tol", type=float, default=1e-6)
     p.add_argument("--relax", type=float, default=1.0,
@@ -238,13 +290,24 @@ def build_parser() -> argparse.ArgumentParser:
     p.set_defaults(func=cmd_mesh)
 
     p = sub.add_parser("run2d", help="calcul 2D (RANS/URANS) décrit par un fichier de cas")
-    p.add_argument("case", help="fichier de cas .toml ou .json (voir dossier cases/)")
+    p.add_argument("case", help="fichier de cas .toml / .json, ou nom d'un exemple "
+                                "(liste : microrans examples)")
     p.add_argument("-o", "--out", help="dossier de sortie")
     p.add_argument("--set", nargs="+", action="extend", metavar="SECTION.CLE=VALEUR",
                    help="surcharge d'un paramètre, ex. physics.model=sst solver.max_iter=500")
     p.add_argument("--no-plot", action="store_true")
     p.add_argument("-q", "--quiet", action="store_true")
     p.set_defaults(func=cmd_run2d)
+
+    p = sub.add_parser("examples", help="liste des cas d'exemple fournis")
+    p.set_defaults(func=cmd_examples)
+
+    p = sub.add_parser("gui", help="interface graphique (nécessite PySide6)")
+    p.set_defaults(func=lambda a: __import__("microrans.gui", fromlist=["main"]).main([]))
+
+    p = sub.add_parser("schemes", help="étude précision / coût des schémas en temps")
+    p.add_argument("-o", "--out", default="results/schemes")
+    p.set_defaults(func=cmd_schemes)
 
     p = sub.add_parser("verify", help="vérification contre des solutions exactes")
     p.set_defaults(func=cmd_verify)

@@ -46,15 +46,15 @@ microrans verify                            # vérification 1D (solutions exacte
 
 # --- maillage 2D ---
 microrans mesh --preset cylinder-hybrid -f msh su2 vtk foam
-microrans mesh cases/mesh_naca_multi.toml             # profil + volet importé (.dat)
-microrans mesh cases/mesh_cylindre_hybride.toml --type unstructured
+microrans mesh mesh_naca_multi                         # profil + volet importé (.dat)
+microrans mesh mesh_cylindre_hybride --type unstructured
 
 # --- calcul 2D ---
-microrans run2d cases/cavite_re100.toml               # cavité entraînée (Ghia)
-microrans run2d cases/cylindre_re20.toml              # cylindre stationnaire
-microrans run2d cases/cylindre_re100_urans.toml       # lâcher de tourbillons (URANS)
-microrans run2d cases/plaque_plane_sa.toml            # plaque plane turbulente
-microrans run2d cases/plaque_plane_sa.toml --set physics.model=sst solver.max_iter=3000
+microrans run2d cavite_re100               # cavité entraînée (Ghia)
+microrans run2d cylindre_re20              # cylindre stationnaire
+microrans run2d cylindre_re100_urans       # lâcher de tourbillons (URANS)
+microrans run2d plaque_plane_sa            # plaque plane turbulente
+microrans run2d plaque_plane_sa --set physics.model=sst solver.max_iter=3000
 ```
 
 (`python -m microrans ...` est équivalent sans installation.)
@@ -280,7 +280,7 @@ microrans/
     solver.py      SIMPLE / SIMPLEC / PIMPLE, conditions aux limites, efforts
     case.py        fichiers de cas TOML/JSON, Strouhal, sorties
     benchmarks.py  données de référence (Ghia et al. 1982)
-cases/             exemples de maillages et de calculs
+microrans/examples/  exemples de maillages et de calculs (microrans examples)
 tests/             pytest
 ```
 
