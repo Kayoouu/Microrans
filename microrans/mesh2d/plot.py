@@ -58,8 +58,12 @@ def plot_mesh(mesh, path=None, ax=None, title=None, zoom=None, linewidth=0.3, sh
 
 
 def plot_field(mesh, values, path=None, ax=None, title=None, cmap="viridis", zoom=None,
-               vmin=None, vmax=None, label=None, vectors=None, vector_stride=None):
-    """Champ aux cellules (couleur par cellule), optionnellement des vecteurs."""
+               vmin=None, vmax=None, label=None, vectors=None, vector_stride=None,
+               mirror=None):
+    """Champ aux cellules (couleur par cellule), optionnellement des vecteurs.
+
+    mirror : ±1 (calcul axisymétrique) — trace aussi l'image miroir par rapport à l'axe
+    y = 0, avec les valeurs multipliées par ce signe (−1 pour u_r, la vorticité)."""
     from matplotlib.collections import PolyCollection
     plt = _plt()
     own = ax is None
@@ -67,7 +71,11 @@ def plot_field(mesh, values, path=None, ax=None, title=None, cmap="viridis", zoo
         fig, ax = plt.subplots(figsize=_figsize(mesh, zoom, 10.0, extra=1.5))
     ax.grid(False)
     polys = [mesh.points[row[:nv]] for row, nv in zip(mesh.cell_nodes, mesh.cell_nv)]
-    pc = PolyCollection(polys, array=np.asarray(values), cmap=cmap, edgecolors="face",
+    values = np.asarray(values)
+    if mirror:
+        polys = polys + [p * np.array([1.0, -1.0]) for p in polys]
+        values = np.concatenate([values, mirror * values])
+    pc = PolyCollection(polys, array=values, cmap=cmap, edgecolors="face",
                         linewidths=0.05)
     if vmin is not None or vmax is not None:
         pc.set_clim(vmin, vmax)
@@ -84,6 +92,9 @@ def plot_field(mesh, values, path=None, ax=None, title=None, cmap="viridis", zoo
             sel = sel[m]
         ax.quiver(C[sel, 0], C[sel, 1], vectors[sel, 0], vectors[sel, 1], color="#0b0b0b",
                   scale_units="xy", angles="xy", width=0.0015)
+        if mirror:
+            ax.quiver(C[sel, 0], -C[sel, 1], vectors[sel, 0], -vectors[sel, 1],
+                      color="#0b0b0b", scale_units="xy", angles="xy", width=0.0015)
     ax.set_aspect("equal")
     if zoom:
         ax.set_xlim(zoom[0], zoom[1])

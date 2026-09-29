@@ -52,6 +52,15 @@ def _bodies(cfg, base_dir="."):
 
 
 def build_mesh(cfg: dict, base_dir=".", verbose: bool = False) -> Mesh2D:
+    """Maillage décrit par la section [mesh] ; [mesh] cut_axis = true garde la moitié y > 0
+    (calcul axisymétrique d'un corps de révolution, patch « axis »)."""
+    mesh = _build_mesh(cfg, base_dir, verbose)
+    if cfg.get("mesh", cfg).get("cut_axis"):
+        mesh = mesh.cut_at_axis()
+    return mesh
+
+
+def _build_mesh(cfg: dict, base_dir=".", verbose: bool = False) -> Mesh2D:
     """Construit le maillage décrit par la section [mesh] (+ [domain], [[bodies]])."""
     m = cfg.get("mesh", cfg)
     kind = m.get("type", "unstructured").lower()

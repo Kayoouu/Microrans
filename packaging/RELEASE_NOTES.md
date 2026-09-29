@@ -32,12 +32,17 @@ Le programme n'est pas signé numériquement (cela demande un certificat payant)
    de votre dossier personnel.
 
 Autres exemples : cylindre (écoulement autour d'un obstacle, lâcher de tourbillons),
-plaque plane et profil d'aile turbulents, convection naturelle (air chauffé), canal 1D.
+plaque plane et profil d'aile turbulents, polaire d'un profil, sphère et tuyaux
+(axisymétrique), convection naturelle (air chauffé), canal 1D.
 
 ## Contenu de cette version
 
-- Simulation d'écoulements 1D et 2D, laminaires ou turbulents (modèles Spalart-Allmaras,
-  k-ε, k-ω, k-ω SST), stationnaires ou instationnaires, avec thermique et lois de paroi ;
+- Simulation d'écoulements 1D, 2D plans et **axisymétriques** (tuyaux, jets, corps de
+  révolution), laminaires ou turbulents (modèles Spalart-Allmaras, k-ε, k-ω, k-ω SST),
+  stationnaires ou instationnaires, avec thermique et lois de paroi ;
+- **polaires** Cl(α), Cd(α), Cm(α) et balayage de n'importe quel paramètre ;
+- **sauvegarde automatique et reprise** : « Continuer le calcul précédent », ou démarrer un
+  maillage fin depuis un calcul grossier ;
 - mailleur intégré (rectangles, maillages autour d'objets, triangles, hybride) et
   import/export Gmsh, SU2, VTK, OpenFOAM ;
 - interface graphique et ligne de commande (`microrans` dans le même dossier).

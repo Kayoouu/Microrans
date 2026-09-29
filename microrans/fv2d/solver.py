@@ -13,7 +13,12 @@ Conditions aux limites physiques par patch (type, à la manière de SU2) :
   outlet    pression imposée p (défaut 0), gradient nul pour U et la turbulence
   symmetry  glissement (vitesse normale nulle)
   farfield  champ lointain : U∞ imposée en entrée, p∞ en sortie (selon le signe de U∞·n)
+  axis      axe de révolution (axisymétrique) : comme symmetry, surface nulle
 Les patches périodiques sont gérés par le maillage (pas de condition à donner).
+
+Axisymétrique (axisymmetric=True ; x = axe, y = rayon, sans rotation propre) : géométrie
+pondérée par r (voir fvm.py) ; terme circonférentiel de la contrainte visqueuse
+−τ_θθ/r = −2 ν_eff u_r / r² (implicite) ; taux de déformation complété par (u_r / r)².
 """
 from __future__ import annotations
 
@@ -26,7 +31,7 @@ from ..mesh2d.mesh import Mesh2D
 from ..models import canonical_name, get_model
 from .fvm import FVM, normalized_residual
 
-BC_TYPES = ("wall", "inlet", "outlet", "symmetry", "farfield")
+BC_TYPES = ("wall", "inlet", "outlet", "symmetry", "farfield", "axis")
 
 # Schémas en temps. Limites de stabilité des schémas explicites (convection linearUpwind) :
 # co_max = Courant convectif (mesuré sur le tourbillon de Taylor-Green advecté, avec marge :
@@ -159,8 +164,11 @@ class FlowField2D:
     def strain(self):
         xp = self.solver.xp
         g = self.gradU
-        return self._wall_override(
-            xp.sqrt(2 * g[:, 0, 0] ** 2 + 2 * g[:, 1, 1] ** 2 + (g[:, 0, 1] + g[:, 1, 0]) ** 2))
+        s2 = 2 * g[:, 0, 0] ** 2 + 2 * g[:, 1, 1] ** 2 + (g[:, 0, 1] + g[:, 1, 0]) ** 2
+        fvm = self.solver.fvm
+        if fvm.axisymmetric:
+            s2 = s2 + 2 * (self.U[:, 1] / fvm.radius) ** 2      # S_θθ = u_r / r
+        return self._wall_override(xp.sqrt(s2))
 
     @property
     def vorticity(self):
@@ -259,8 +267,9 @@ class Solver2D:
                  model_options: dict | None = None, body_force=(0.0, 0.0),
                  initial_U=(0.0, 0.0), turbulence_inflow: dict | None = None,
                  settings: Settings | None = None, reference_velocity: float | None = None,
-                 energy: dict | None = None):
+                 energy: dict | None = None, axisymmetric: bool = False):
         self.mesh = mesh
+        self.axisymmetric = bool(axisymmetric)
         # thermique (optionnelle) : Pr, Pr_t, beta (Boussinesq), T_ref, gravity, T0, source
         self.energy = None if energy is None else {
             "Pr": 0.71, "Pr_t": 0.85, "beta": 0.0, "T_ref": 0.0, "gravity": (0.0, -9.81),
@@ -278,10 +287,19 @@ class Solver2D:
             if spec["type"] not in BC_TYPES:
                 raise ValueError(f"Type de condition inconnu '{spec['type']}' ({name}). "
                                  f"Choix : {BC_TYPES}")
-            types[name] = {"wall": "wall", "symmetry": "symmetry"}.get(spec["type"], "patch")
+            types[name] = {"wall": "wall", "symmetry": "symmetry",
+                           "axis": "symmetry"}.get(spec["type"], "patch")
         mesh.set_patch_types({k: v for k, v in types.items() if k in mesh.patch_types})
         self.boundaries = boundaries
-        self.fvm = FVM(mesh, self.settings.backend)
+        if self.axisymmetric:
+            radial = [abs(float(np.asarray(body_force, float)[1]))
+                      if not callable(body_force) else 0.0]
+            if self.energy is not None and self.energy.get("beta"):
+                radial.append(abs(float(self.energy["gravity"][1])))
+            if max(radial) > 0.0:
+                raise ValueError("Axisymétrique : la force volumique et la gravité doivent être "
+                                 "portées par l'axe x (composante radiale y nulle).")
+        self.fvm = FVM(mesh, self.settings.backend, self.axisymmetric)
         fvm = self.fvm
         self.backend, self.xp = fvm.backend, fvm.xp
         xp = self.xp
@@ -372,7 +390,7 @@ class Solver2D:
             elif kind == "outlet":
                 self.kindP[sl] = 0
                 self.p_fixed[sl] = spec.get("p", 0.0)
-            elif kind == "symmetry":
+            elif kind in ("symmetry", "axis"):
                 self.kindU[sl] = 2
             elif kind == "farfield":
                 uinf = np.asarray(spec["U"], dtype=float)
@@ -684,6 +702,10 @@ class Solver2D:
             tf_b = gam_b * (gb[:, 0, c] * fvm.Sb[:, 0] + gb[:, 1, c] * fvm.Sb[:, 1])
             rhs += fvm.sum_faces(tf_i, tf_b)
             rhs += force[:, c] * V
+            if c == 1 and fvm.axisymmetric:
+                # −τ_θθ/r = −2 ν_eff u_r/r² (les autres termes de ∇·τ sont donnés exactement
+                # par la divergence pondérée par r des deux termes ci-dessus)
+                diag = diag + 2.0 * nu_eff * V / fvm.radius ** 2
             if theta != 1.0:
                 diag, up, lo, rhs = theta * diag, theta * up, theta * lo, theta * rhs
             if explicit is not None:
@@ -707,7 +729,11 @@ class Solver2D:
         diag_u, diag_v = eqs[0][0], eqs[1][0]
         aP = 0.5 * (diag_u + diag_v)
         rAU = V / aP
-        HbyA = xp.column_stack([H[:, 0] / diag_u, H[:, 1] / diag_v])
+        # diagonale commune a_P (moyenne des composantes, cmptAv d'OpenFOAM) ; l'écart propre
+        # à chaque composante (symétrie, terme circonférentiel) passe dans H, pour que
+        # U = HbyA − rAU ∇p vérifie exactement l'équation de quantité de mouvement
+        HbyA = xp.column_stack([(H[:, c] - (eqs[c][0] - aP) * self.U[:, c]) / aP
+                                for c in range(2)])
         pb = self.boundary_p(self.p)
         gradp = fvm.grad(self.p, pb)
         HbyA_b = self.boundary_U(HbyA)
@@ -829,7 +855,7 @@ class Solver2D:
                 self._turbulence(relax=s.relax_turb)
                 self._energy_eq(relax=s.relax_T)
             cont = float(xp.sum(xp.abs(self.fvm.div(self.F_i, self.F_b))) /
-                         (self.u_scale * float(np.sum(self.fvm.mesh.magSf)) + 1e-300))
+                         (self.u_scale * self.fvm.total_area + 1e-300))
             rec = {"iteration": self.iterations_total + it, **self.residuals_now,
                    "continuity": cont}
             self.history.append(rec)
@@ -1189,7 +1215,7 @@ class Solver2D:
         self.model.d = h(self.model.d)
         self.model.wall_nodes = h(self.model.wall_nodes)
         self.settings.backend = "cpu"
-        self.fvm = FVM(self.mesh, "cpu")
+        self.fvm = FVM(self.mesh, "cpu", self.axisymmetric)
         self.backend, self.xp = self.fvm.backend, self.fvm.xp
         self._poisson_cache = None
         return self
@@ -1252,6 +1278,21 @@ class Solver2D:
             out["T"] = self.T
         out["wall_distance"] = self.mesh.wall_distance
         return out
+
+    def bulk_temperature(self, x):
+        """Température de mélange Σ u_x T V / Σ u_x V de la tranche de cellules dont
+        l'étendue en x contient chaque abscisse de `x` (conduites orientées selon x)."""
+        xp = self.xp
+        m = self.mesh
+        nodes_x = np.where(m.cell_nodes >= 0, m.points[np.maximum(m.cell_nodes, 0), 0], np.nan)
+        lo, hi = np.nanmin(nodes_x, axis=1), np.nanmax(nodes_x, axis=1)
+        w = self.backend.to_host(self.U[:, 0] * self.fvm.V)
+        T = self.backend.to_host(self.T)
+        out = np.empty(len(x))
+        for i, xi in enumerate(np.asarray(x, float)):
+            sel = (lo <= xi) & (xi <= hi)
+            out[i] = np.sum(w[sel] * T[sel]) / np.sum(w[sel]) if np.any(sel) else np.nan
+        return xp.asarray(out) if self.backend.is_gpu else out
 
     def wall_heat_flux(self, patch):
         """(T_paroi, flux q entrant dans le fluide, en unités cinématiques q/(ρ c_p))."""

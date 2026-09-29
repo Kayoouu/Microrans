@@ -38,7 +38,8 @@ PAGES = ["Accueil", "Canal 1D", "Maillage", "Physique", "Conditions limites", "N
 MODEL_LABELS = [("laminar", "Laminaire"), ("sa", "Spalart-Allmaras"), ("ke", "k-ε (Launder-Sharma)"),
                 ("kw", "k-ω (Wilcox 2006)"), ("sst", "k-ω SST (Menter)")]
 BC_LABELS = {"wall": "Paroi", "inlet": "Entrée (vitesse)", "outlet": "Sortie (pression)",
-             "symmetry": "Symétrie", "farfield": "Champ lointain"}
+             "symmetry": "Symétrie", "farfield": "Champ lointain",
+             "axis": "Axe (axisymétrique)"}
 MESH_TYPES = [("rectangle", "Rectangle structuré"), ("ogrid", "Structuré en O autour d'un corps"),
               ("unstructured", "Triangles (non structuré)"),
               ("hybrid", "Hybride : couches de quadrilatères + triangles"),
@@ -367,6 +368,9 @@ class MainWindow(QMainWindow):
             wdg.textChanged.connect(self._body_changed)
         self.b_type.currentIndexChanged.connect(self._body_changed)
         lay.addWidget(self.box_bodies)
+        lay.addWidget(self.binder.check(
+            ("mesh", "cut_axis"), False,
+            "Couper à l'axe y = 0 (axisymétrique : ne garder que y > 0, frontière « axis »)"))
         row = QHBoxLayout()
         b = QPushButton("Générer le maillage")
         b.clicked.connect(self.generate_mesh)
@@ -395,6 +399,8 @@ class MainWindow(QMainWindow):
         f.addRow("Vitesse de référence U", B.sci(("physics", "reference_velocity"), 1.0))
         f.addRow("Longueur de référence L", B.sci(("physics", "reference_length"), 1.0))
         f.addRow("Incidence α (°)", B.sci(("physics", "angle_of_attack"), None, True, "0"))
+        f.addRow(B.check(("physics", "axisymmetric"), False,
+                         "Axisymétrique : x = axe de révolution, y = rayon (tuyau, jet, sphère…)"))
         f.addRow(_note("Incidence : l'écoulement amont (entrées, champ lointain, vitesse "
                        "initiale) est tourné de α ; Cd et Cl sont donnés dans les axes de "
                        "l'écoulement."))
@@ -985,6 +991,8 @@ class MainWindow(QMainWindow):
             return {"type": "inlet", "U": [1.0, 0.0]}
         if "outlet" in n or "sortie" in n or "outflow" in n:
             return {"type": "outlet", "p": 0.0}
+        if n in ("axis", "axe"):
+            return {"type": "axis"}
         if "sym" in n or ptype == "symmetry":
             return {"type": "symmetry"}
         if n in ("top", "bottom"):
@@ -1316,9 +1324,12 @@ class MainWindow(QMainWindow):
         cmap = self.cmap_combo.currentData()
         if key in ("vorticity", "p") and cmap == "viridis":
             cmap = "RdBu_r"
+        mirror = None
+        if s.axisymmetric:                           # image miroir par rapport à l'axe
+            mirror = -1 if key in ("Uy", "vorticity") else 1
         plot_field(s.mesh, val, ax=ax, cmap=cmap, zoom=zoom, vmin=vmin, vmax=vmax,
                    title=FIELD_LABELS.get(key, key),
-                   vectors=s.U if self.vec_check.isChecked() else None)
+                   vectors=s.U if self.vec_check.isChecked() else None, mirror=mirror)
         if self.mesh_check.isChecked():
             plot_mesh(s.mesh, ax=ax, zoom=zoom, linewidth=0.15, show_patches=False)
             ax.collections[-1].set_facecolor("none")

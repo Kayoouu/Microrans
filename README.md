@@ -5,10 +5,11 @@
 
 Outil de simulation d'écoulements **incompressibles turbulents ou laminaires**, en Python :
 
-- **2D** : volumes finis sur maillages structurés, non structurés ou hybrides ; stationnaire
-  (SIMPLE/SIMPLEC) et instationnaire (PIMPLE implicite ou Runge-Kutta explicite) ; thermique
-  (convection forcée et naturelle, Boussinesq) ; mailleur intégré et import/export
-  Gmsh / SU2 / VTK / OpenFOAM ;
+- **2D plan ou axisymétrique** (tuyaux, jets, corps de révolution) : volumes finis sur
+  maillages structurés, non structurés ou hybrides ; stationnaire (SIMPLE/SIMPLEC) et
+  instationnaire (PIMPLE implicite ou Runge-Kutta explicite) ; thermique (convection forcée et
+  naturelle, Boussinesq) ; polaires et balayages de paramètres ; reprise de calcul ; mailleur
+  intégré et import/export Gmsh / SU2 / VTK / OpenFOAM ;
 - **1D** : canal plan turbulent intégré jusqu'à la paroi (RANS et URANS pulsé), très rapide,
   idéal pour comparer les modèles ;
 - **modèles de turbulence** : Spalart-Allmaras, k-ε (Launder-Sharma), k-ω (Wilcox 2006),
@@ -22,8 +23,8 @@ est justifié par une mesure** reproductible dans ce dépôt (sections « Métho
 (section « Limites »).
 
 > **Ce que ce n'est pas :** un remplaçant d'OpenFOAM, SU2 ou Fluent. Python vectorisé
-> (NumPy/SciPy) : confortable jusqu'à ~10⁵ cellules en 2D ; incompressible, 2D, pas de
-> transition ni de LES.
+> (NumPy/SciPy) : confortable jusqu'à ~10⁵ cellules en 2D ; incompressible, 2D plan ou
+> axisymétrique (pas de 3D), pas de transition ni de LES.
 
 ---
 
@@ -78,6 +79,8 @@ microrans run2d cylindre_re100_urans --set solver.time_scheme=rk3 --set solver.a
 microrans run2d cylindre_re100_urans --continue --set solver.t_end=200   # poursuivre un calcul
 microrans run2d mon_cas_fin.toml --restart results/mon_cas/checkpoint.npz # partir d'un autre calcul
 microrans polar naca0012_polaire --alpha -4 14 2      # polaire Cl(α), Cd(α), Cm(α)
+microrans run2d sphere_re100_axisym                   # axisymétrique : sphère (2 s)
+microrans run2d tuyau_thermique                       # tuyau chauffé, Nusselt local
 microrans sweep cylindre_re20 --param physics.reynolds --values 10 20 40  # balayage
 microrans mesh mesh_naca_multi -f msh su2 vtk foam   # mailler seulement, exporter
 microrans mesh --preset cylinder-hybrid
@@ -117,11 +120,12 @@ name = "profil"
 reynolds = 1e6
 model = "sst"              # laminar | sa | ke | kw | sst
 angle_of_attack = 4.0      # incidence de l'écoulement amont (°) ; Cd, Cl en axes écoulement
+axisymmetric = false       # true : x = axe, y = rayon ; frontière d'axe : type = "axis"
 [energy]                   # optionnel : thermique
 Pr = 0.71
 beta = 3.4e-3
 [boundary.inlet]
-type = "inlet"             # wall | inlet | outlet | symmetry | farfield
+type = "inlet"             # wall | inlet | outlet | symmetry | farfield | axis
 U = [1.0, 0.0]
 [initial]
 restart = "results/grossier/checkpoint.npz"   # optionnel : repartir d'un calcul
@@ -136,7 +140,12 @@ parameter = "physics.angle_of_attack"
 range = "-4:14:2"          # ou values = [0, 5, 10]
 [output]
 moment_center = [0.25, 0.0]   # Cm autour du quart de corde
+nusselt = "bulk"           # conduites : Nu local sur la température de mélange
 ```
+
+Axisymétrique : `[mesh] cut_axis = true` garde la moitié y > 0 d'un maillage autour d'un
+corps (nombre pair de points autour) et nomme la coupe `axis`. Efforts et flux de chaleur
+sont donnés sur 360° ; Cd est rapporté au maître-couple π L²/4 (`reference_area` sinon).
 
 API Python : `from microrans.fv2d import Solver2D, Settings`, `from microrans.mesh2d import ...`
 (voir `tests/` pour des exemples complets).
@@ -157,7 +166,8 @@ API Python : `from microrans.fv2d import Solver2D, Settings`, `from microrans.me
 | Turbulence | SA, k-ε LS, k-ω 2006, SST 2003 (formes NASA TMR), sources linéarisées par Newton | NASA TMR |
 | Parois | résolues (y⁺ ≈ 1) ou **lois de paroi** : loi de Spalding (viscosité pariétale), ω imposé dans les cellules pariétales, k à gradient nul, cisaillement de la loi de paroi pour la production | nutUSpaldingWallFunction, omegaWallFunction, kqRWallFunction d'OpenFOAM |
 | Thermique | température, Boussinesq, flux / température imposés, Nusselt ; force aux faces + `fixedFluxPressure` | buoyantBoussinesq d'OpenFOAM |
-| Conditions limites | paroi (mobile), entrée, sortie, symétrie, champ lointain, périodicité | SU2 / OpenFOAM |
+| Conditions limites | paroi (mobile), entrée, sortie, symétrie, champ lointain, périodicité, axe | SU2 / OpenFOAM |
+| Axisymétrique | secteur d'un radian (volumes et surfaces pondérés par r), gradient avec faces latérales, contrainte circonférentielle −2ν_eff u_r/r², déformation (u_r/r)², moyenne des diagonales dans H/A | `wedge` d'OpenFOAM, « Axisymmetric » de Fluent |
 | Arrêt | résidus normalisés (OpenFOAM) ou stabilisation des efforts (moniteurs Fluent) | — |
 | Études | reprise exacte / interpolation sur un autre maillage ; polaire (incidence de l'écoulement, continuation) ; balayage de n'importe quel paramètre | `mapFields`, polaires Fluent / SU2 |
 | Matériel | CPU (NumPy/SciPy) ou GPU (CuPy) par un module de tableaux interchangeable | — |
@@ -300,6 +310,18 @@ maillage et la préparation restent sur CPU.
 | NACA 0012, polaire −4° à 14°, Re = 1e6, SA (8 192 cellules, 4 min) | pente dC_l/dα ; C_m quart de corde ; symétrie | 0.1083 /° ; \|C_m\| < 0.008 ; C_l(−α) = −C_l(α) à 5 chiffres | 2π = 0.1097 /° (profil mince) ; 0 (profil symétrique) ; exacte |
 | Cylindre Re = 20, écoulement incliné de 30° | C_d (axes écoulement) | écart 0.01 % avec 0° | invariance exacte |
 
+### 2D axisymétrique
+
+| Cas | Grandeur | microrans | Référence |
+|-----|----------|-----------|-----------|
+| Hagen-Poiseuille (tuyau) | ordre en espace ; débit | 2.00 ; écart 1/N² | exact |
+| Source radiale u_r = C/r (ν grand : termes circonférentiels dominants) | ordre u_r ; p loin des bords | 1.9 ; ≥ 2 | exact |
+| Sphère Re = 20 (4 096 cellules, 2 s) | C_d | 2.722 | 2.735 (corrélation de Clift et al. 1978) |
+| Sphère Re = 100 (4 096 / 9 216 cellules) | C_d | 1.092 / 1.090 | 1.085 (Fornberg 1988) |
+| Tuyau chauffé à flux uniforme, laminaire | Nu établi (N_r = 12 / 24 / 48) | 4.386 / 4.370 / 4.366 | 48/11 = 4.364 |
+| Tuyau lisse turbulent, Re_τ = 550 (Re_D ≈ 19 000), y1⁺ = 0.5 | λ, SA / SST / k-ω / k-ε | +2.5 / +1.8 / −0.1 / −4.8 % | loi de Prandtl (±2-3 % sur les mesures) |
+| idem Re_τ = 2 000 (Re_D ≈ 83 000) | λ, SA / SST / k-ω / k-ε | +2.6 / −0.7 / −3.4 / −2.2 % | idem |
+
 ### 2D, thermique (convection naturelle, de Vahl Davis 1983, Pr = 0.71)
 
 | Ra | Maillage | Nu moyen | écart | u_max | écart | v_max | écart |
@@ -330,6 +352,7 @@ modèles (bilan exact) ; amplitude du frottement oscillant de 0.18 (k-ε) à 0.3
 ![Cavité](docs/cavite_U.png)
 ![Cylindre Re = 100, vorticité](docs/cylindre_re100_vorticite.png)
 ![Polaire NACA 0012, SA, Re = 1e6](docs/polaire_naca0012_sa.png)
+![Sphère Re = 100, axisymétrique (moitié calculée + image miroir)](docs/sphere_re100_axisym_U.png)
 
 ---
 
@@ -383,12 +406,19 @@ depuis longtemps).
    traînée à faible incidence surestimée par rapport à un profil réel à ce Reynolds. La
    continuation ne réduit pas systématiquement le nombre d'itérations (de −41 % à +53 %
    mesurés, voir `fv2d/sweep.py`).
+11. **Axisymétrique** : sans rotation propre (pas de composante u_θ, donc pas de jet
+   tournant ni de cyclone) ; axe = x, rayon = y. Terme E du k-ε Launder-Sharma : dérivées
+   secondes circonférentielles négligées. Le k-ε Launder-Sharma peut se relaminariser en
+   partant d'une vitesse uniforme avec peu de turbulence (tuyau Re_τ = 550 : rapport de
+   viscosité initial 10 insuffisant, 50 suffit ; même comportement en canal plan).
 
 ## 9. Feuille de route
 
-Solveur couplé pression-vitesse (type « Coupled » de Fluent) pour les maillages étirés ; loi
-de paroi thermique et k-ε haut-Reynolds ; maillage en C ; compressible (schémas de Roe/HLLC, RK SSP) ; transition γ-Re_θ ;
-parallélisme (Numba ou CuPy validé sur carte) ; données NASA TMR intégrées aux tests.
+Maillage en C et validation NASA TMR (profils) ; étude de convergence en maillage (GCI) ;
+parallélisme multi-cœur (Numba) ou CuPy validé sur carte ; transition γ-Re_θ ; rugosité,
+corrections de courbure, loi de paroi thermique et k-ε haut-Reynolds ; rotation propre
+(swirl) en axisymétrique ; compressible (Roe/HLLC, RK SSP) ; en option, plus tard : solveur
+couplé pression-vitesse (type « Coupled » de Fluent).
 
 ---
 
@@ -408,10 +438,12 @@ microrans/
     fvm.py               opérateurs volumes finis, assemblage CSR
     solver.py            SIMPLE(C), PIMPLE, projection RK/AB2, thermique, CL, efforts
     case.py post.py      fichiers de cas, sorties, figures
+    restart.py           sauvegarde / reprise, interpolation sur un autre maillage
+    sweep.py             polaires et balayages de paramètres
   gui/                   interface PySide6 (app.py, widgets.py)
   examples/              cas fournis (microrans examples)
 packaging/               PyInstaller (microrans.spec) : exécutables GUI + CLI
-tests/                   pytest (138 tests : vérification, validation, GUI hors écran, faux GPU)
+tests/                   pytest (156 tests : vérification, validation, GUI hors écran, faux GPU)
 .github/workflows/       tests (Python 3.10 / 3.12) ; exécutables Windows / Linux / macOS
 ```
 

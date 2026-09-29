@@ -33,10 +33,12 @@ def plot_case(solver, hist, out: Path, mode, force_patches, qdyn):
     plt = _pyplot()
     zoom = _zoom(solver, 4.0 if mode == "steady" else 14.0)
     f = solver.fields()
+    mir = 1 if solver.axisymmetric else None          # image miroir par rapport à l'axe
     plot_mesh(solver.mesh, out / "mesh.png", zoom=zoom)
-    plot_field(solver.mesh, f["U_mag"], out / "U.png", title="|U|", zoom=zoom, cmap="viridis")
+    plot_field(solver.mesh, f["U_mag"], out / "U.png", title="|U|", zoom=zoom, cmap="viridis",
+               mirror=mir)
     plot_field(solver.mesh, f["p"], out / "p.png", title="p (cinématique)", zoom=zoom,
-               cmap="RdBu_r")
+               cmap="RdBu_r", mirror=mir)
     w = f["vorticity"]
     # échelle de couleur calée hors couche limite (sinon le sillage paraît délavé)
     _, L = _body_size(solver)
@@ -44,10 +46,11 @@ def plot_case(solver, hist, out: Path, mode, force_patches, qdyn):
     lim = np.percentile(np.abs(w[far]) if np.any(far) else np.abs(w), 99)
     omz = solver.grad_U(solver.U)
     plot_field(solver.mesh, omz[:, 1, 0] - omz[:, 0, 1], out / "vorticity.png",
-               title="vorticité ω_z", zoom=zoom, cmap="RdBu_r", vmin=-lim, vmax=lim)
+               title="vorticité ω_z", zoom=zoom, cmap="RdBu_r", vmin=-lim, vmax=lim,
+               mirror=mir and -1)
     if "nut_over_nu" in f:
         plot_field(solver.mesh, f["nut_over_nu"], out / "nut.png", title="ν_t/ν", zoom=zoom,
-                   cmap="magma")
+                   cmap="magma", mirror=mir)
     if not hist:
         return
     color = MODEL_COLORS.get(solver.model_name, "#4a3aa7")

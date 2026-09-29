@@ -404,6 +404,51 @@ class Mesh2D:
         self.patch_types = {p.name: p.type for p in self.patches}
         self._wall_distance = None
 
+    def subset(self, keep, new_patch: str = "cut", new_type: str = "patch") -> "Mesh2D":
+        """Sous-maillage des cellules `keep` (masque booléen) ; les faces coupées forment le
+        patch `new_patch` (comme subsetMesh d'OpenFOAM)."""
+        keep = np.asarray(keep, dtype=bool)
+        if self.periodic_pairs:
+            raise ValueError("subset : maillages périodiques non pris en charge.")
+        if not keep.any():
+            raise ValueError("subset : aucune cellule conservée.")
+        ni = self.n_internal
+        bnd = {}
+        for p in self.patches:
+            f = np.arange(p.start, p.start + p.size)
+            bnd[p.name] = self.face_nodes[f[keep[self.owner[f]]]]
+        P, N = self.owner[:ni], self.neighbour
+        cut = keep[P] != keep[N]
+        edges = self.face_nodes[:ni][cut]
+        # arête orientée comme vue depuis la cellule conservée
+        flip = ~keep[P][cut]
+        edges[flip] = edges[flip][:, ::-1]
+        bnd[new_patch] = np.vstack([bnd.get(new_patch, np.zeros((0, 2), int)), edges])
+        cells = [c for c, k in zip(self.cells_as_lists(), keep) if k]
+        used = np.unique(np.concatenate(cells))
+        remap = -np.ones(self.n_points, dtype=np.int64)
+        remap[used] = np.arange(len(used))
+        types = {p.name: p.type for p in self.patches}
+        types[new_patch] = new_type
+        return Mesh2D(self.points[used], [remap[c] for c in cells],
+                      {k: remap[v] for k, v in bnd.items() if len(v)}, types)
+
+    def cut_at_axis(self, name: str = "axis") -> "Mesh2D":
+        """Moitié y > 0 d'un maillage symétrique par rapport à l'axe x (calcul
+        axisymétrique) ; les sommets à |y| < 1e-9·taille sont placés exactement sur l'axe et
+        la coupe forme le patch `name` (type symmetry)."""
+        tol = 1e-9 * max(float(np.ptp(self.points, axis=0).max()), 1e-300)
+        m = self.subset(self.cell_centers[:, 1] > 0.0, name, "symmetry")
+        on_axis = np.abs(m.points[:, 1]) < tol
+        if not np.all(on_axis[np.unique(m.patch_face_nodes(name))]):
+            raise ValueError("cut_at_axis : la coupe ne suit pas des arêtes du maillage sur "
+                             "y = 0 (utiliser un nombre pair de points autour du corps, "
+                             "symétrique par rapport à l'axe).")
+        pts = m.points.copy()
+        pts[on_axis, 1] = 0.0
+        return Mesh2D(pts, m.cells_as_lists(), {p.name: m.face_nodes[p.faces]
+                                               for p in m.patches}, m.patch_types)
+
     @staticmethod
     def merge(meshes: list["Mesh2D"], tol: float = 1e-9, patch_types=None) -> "Mesh2D":
         """Fusionne des maillages en confondant les sommets coïncidents (arêtes communes -> internes)."""

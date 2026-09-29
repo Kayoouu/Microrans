@@ -10,6 +10,11 @@ champs lointains et la vitesse initiale ; Cd et Cl sont alors donnés dans les a
 l'écoulement (traînée selon U∞), Cm autour de [output] moment_center (défaut (0, 0)).
 Balayage (polaire) : voir sweep.py.
 
+Axisymétrique : [physics] axisymmetric = true (x = axe, y = rayon ; patch de type « axis »
+sur l'axe ; [mesh] cut_axis = true pour ne garder que la moitié y > 0 d'un maillage autour
+d'un corps). Efforts et flux de chaleur totaux (sur 360°) ; Cd rapporté à
+[physics] reference_area (défaut : maître-couple π L²/4, L = reference_length = diamètre).
+
 Reprise : [initial] restart = "…/checkpoint.npz" (reprise exacte sur le même maillage,
 interpolation sinon) ; [output] checkpoint = true (défaut) écrit checkpoint.npz à la fin
 du calcul, à l'arrêt demandé et toutes les `checkpoint_minutes` (défaut 5) minutes.
@@ -108,6 +113,10 @@ def build_solver(cfg: dict, base_dir=".", verbose=False, mesh=None):
     else:
         raise ValueError("[physics] : donner nu ou reynolds.")
     init = cfg.get("initial", {})
+    axi = bool(ph.get("axisymmetric", False))
+    if axi and float(ph.get("angle_of_attack", 0.0)) != 0.0:
+        raise ValueError("Axisymétrique : pas d'incidence possible (l'écoulement amont doit "
+                         "être parallèle à l'axe).")
     bcs, U0 = _apply_incidence(cfg)
     solver = Solver2D(mesh, nu, bcs, model=ph.get("model", "laminar"),
                       model_options=ph.get("model_options"),
@@ -116,7 +125,7 @@ def build_solver(cfg: dict, base_dir=".", verbose=False, mesh=None):
                       turbulence_inflow=cfg.get("turbulence"),
                       settings=_settings_from(cfg.get("solver", {})),
                       reference_velocity=ph.get("reference_velocity"),
-                      energy=_energy_from(cfg))
+                      energy=_energy_from(cfg), axisymmetric=axi)
     solver.restart_info = None
     if init.get("restart"):
         path = Path(init["restart"])
@@ -155,6 +164,14 @@ def run_case(cfg: dict, base_dir=".", out_dir=None, verbose=True, plot=True, cal
     Uref = ph.get("reference_velocity", solver.U_ref)
     Lref = ph.get("reference_length", 1.0)
     qdyn = 0.5 * Uref ** 2 * Lref
+    axi = solver.axisymmetric
+    # coefficient = effort · kF ; axisymétrique : effort sur 360° (2π × par radian) rapporté
+    # à ½ρU²·A_ref ; la résultante radiale est nulle par symétrie (Cl = Cm = 0)
+    if axi:
+        a_ref = float(ph.get("reference_area", np.pi * Lref ** 2 / 4.0))
+        kF = 2.0 * np.pi / (0.5 * Uref ** 2 * a_ref)
+    else:
+        kF = 1.0 / qdyn
     ed, el = wind_axes(cfg)
     center = oc.get("moment_center", (0.0, 0.0))
     force_patches = oc.get("forces", [p.name for p in solver.mesh.patches if p.type == "wall"])
@@ -164,6 +181,7 @@ def run_case(cfg: dict, base_dir=".", out_dir=None, verbose=True, plot=True, cal
               f"ν = {solver.nu:.4g}, mode {mode}")
     t0 = time.perf_counter()
     summary = {"mode": mode, "model": solver.model_name, "n_cells": solver.mesh.n_cells,
+               "axisymmetric": axi,
                "nu": solver.nu, "reference_velocity": Uref, "reference_length": Lref,
                "angle_of_attack": float(ph.get("angle_of_attack", 0.0))}
     if solver.restart_info:
@@ -194,8 +212,8 @@ def run_case(cfg: dict, base_dir=".", out_dir=None, verbose=True, plot=True, cal
         def probes(s):
             rec = {}
             for name, f in s.forces(force_patches).items():
-                rec[f"Cd_{name}"] = float(f["total"] @ s.backend.asarray(ed)) / qdyn
-                rec[f"Cl_{name}"] = float(f["total"] @ s.backend.asarray(el)) / qdyn
+                rec[f"Cd_{name}"] = float(f["total"] @ s.backend.asarray(ed)) * kF
+                rec[f"Cl_{name}"] = 0.0 if axi else float(f["total"] @ s.backend.asarray(el)) * kF
             return rec
         vtk_every = oc.get("vtk_every", 0)
 
@@ -220,6 +238,9 @@ def run_case(cfg: dict, base_dir=".", out_dir=None, verbose=True, plot=True, cal
                              "Cl_amplitude": float(0.5 * (cl[late].max() - cl[late].min())),
                              "strouhal": f * Lref / Uref, "periods_used": n}
     summary["wall_time_s"] = round(time.perf_counter() - t0, 2)
+    # vitesse moyenne (pondérée par le volume ; conduite périodique : vitesse débitante)
+    summary["U_mean"] = [float(v) for v in solver.backend.to_host(
+        solver.xp.sum(solver.U * solver.fvm.V[:, None], axis=0) / solver.xp.sum(solver.fvm.V))]
     summary["backend"] = solver.backend.name
     if ckpt is not None:
         save_checkpoint(solver, ckpt, hist)
@@ -227,10 +248,10 @@ def run_case(cfg: dict, base_dir=".", out_dir=None, verbose=True, plot=True, cal
     solver.to_cpu()                     # post-traitement sur CPU (no-op si déjà CPU)
     for name, f in solver.forces(force_patches).items():
         summary.setdefault(name, {}).update(
-            Cd=float(f["total"] @ ed / qdyn), Cl=float(f["total"] @ el / qdyn),
-            Cm=solver.moment(name, center) / (qdyn * Lref),
-            Cd_pressure=float(f["pressure"] @ ed / qdyn),
-            Cd_viscous=float(f["viscous"] @ ed / qdyn))
+            Cd=float(f["total"] @ ed * kF), Cl=0.0 if axi else float(f["total"] @ el * kF),
+            Cm=0.0 if axi else solver.moment(name, center) * kF / Lref,
+            Cd_pressure=float(f["pressure"] @ ed * kF),
+            Cd_viscous=float(f["viscous"] @ ed * kF))
         xf, tau, yp = solver.wall_shear(name)
         summary[name].update(yplus_max=float(yp.max()), yplus_mean=float(yp.mean()))
         # distribution pariétale (comme les « XY plots » de Fluent) : Cf, Cp, y+ (, T, q)
@@ -243,10 +264,16 @@ def run_case(cfg: dict, base_dir=".", out_dir=None, verbose=True, plot=True, cal
             alpha = solver.nu / float(e["Pr"])
             nu_ref = float(e.get("delta_T", 1.0)) * alpha / Lref
             mag = solver.fvm.magSb[solver.patch_slices[name]]
-            summary[name].update(heat_flux=float(np.sum(q * mag)),
+            summary[name].update(heat_flux=float(np.sum(q * mag)) * (2 * np.pi if axi else 1),
                                  Nu_mean=float(np.sum(q * mag) / np.sum(mag) / nu_ref))
             cols += [Tw, q, q / nu_ref]
             header += ",T_wall,q,Nu"
+            if oc.get("nusselt") == "bulk":
+                # conduite : Nu local = q L / (α (T_paroi − T_mélange(x))), L = diamètre
+                # hydraulique (reference_length)
+                Tb = solver.bulk_temperature(xf[:, 0])
+                cols += [Tb, q * Lref / (alpha * (Tw - Tb))]
+                header += ",T_bulk,Nu_bulk"
         np.savetxt(out / f"wall_{name}.csv", np.column_stack(cols), delimiter=",",
                    header=header, comments="", encoding="utf-8")
     (out / "summary.json").write_text(json.dumps(summary, indent=2, ensure_ascii=False),

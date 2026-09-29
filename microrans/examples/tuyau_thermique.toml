@@ -1,0 +1,50 @@
+# Tuyau chauffé à flux uniforme, laminaire (Re_D = 50, Pr = 1), axisymétrique : ~3 s.
+# Nusselt établi exact : 48/11 = 4.364 (Shah & London 1978) ; microrans : 4.370 à x = 8 D
+# (colonne Nu_bulk de wall_wall.csv : Nu fondé sur la température de mélange locale).
+# microrans run2d tuyau_thermique
+[mesh]
+type = "rectangle"
+x0 = 0.0
+x1 = 10.0                    # 10 diamètres
+y0 = 0.0
+y1 = 0.5                     # rayon R = D/2
+nx = 120
+ny = 24
+names = { left = "inlet", right = "outlet", bottom = "axis", top = "wall" }
+
+[physics]
+reynolds = 50                # U_b D / ν
+reference_velocity = 1.0
+reference_length = 1.0       # diamètre
+axisymmetric = true
+
+[energy]
+Pr = 1.0
+
+[initial]
+U = [1.0, 0.0]
+
+[boundary.inlet]
+type = "inlet"
+U = ["2*(1-(y/0.5)**2)", 0.0]   # profil de Poiseuille établi, vitesse débitante 1
+T = 0.0
+
+[boundary.outlet]
+type = "outlet"
+
+[boundary.axis]
+type = "axis"
+
+[boundary.wall]
+type = "wall"
+q = 1.0                      # flux entrant (unités cinématiques)
+
+[solver]
+mode = "steady"
+max_iter = 2000
+tol = 1e-8
+relax_T = 1.0
+
+[output]
+directory = "results/tuyau_thermique"
+nusselt = "bulk"             # Nu local fondé sur la température de mélange T_bulk(x)

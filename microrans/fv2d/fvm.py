@@ -6,6 +6,12 @@ Conventions (proches d'OpenFOAM) :
   + coefficient « lower » (ligne neighbour, colonne owner) pour chaque face interne ;
 - condition aux limites d'une face frontière : φ_b = α φ_P + β et
   ∂φ/∂n|_b = γ φ_P + δ (valueInternalCoeffs / valueBoundaryCoeffs / gradient… d'OpenFOAM).
+
+Axisymétrique (x = axe, y = rayon r ≥ 0) : volumes et surfaces sont ceux d'un secteur d'un
+radian, V = ∫ r dA = A·r_centre et S_f = S_f,plan·r_face (exact pour des arêtes droites) —
+c'est la formulation « wedge » d'OpenFOAM avec un angle infinitésimal. Les faces sur l'axe
+ont une surface nulle. Le gradient de Green-Gauss inclut la contribution des faces latérales
+du secteur (−φ_P Σ S_f), sans laquelle le gradient d'un champ constant serait non nul.
 """
 from __future__ import annotations
 
@@ -16,10 +22,11 @@ from ..mesh2d.mesh import Mesh2D
 
 
 class FVM:
-    def __init__(self, mesh: Mesh2D, backend=None):
+    def __init__(self, mesh: Mesh2D, backend=None, axisymmetric: bool = False):
         from ..backend import get_backend
         m = mesh
         self.mesh = m
+        self.axisymmetric = bool(axisymmetric)
         self.backend = be = get_backend(backend)
         self.xp = xp = be.xp
         self.nc, self.ni, self.nf = m.n_cells, m.n_internal, m.n_faces
@@ -36,15 +43,37 @@ class FVM:
         indptr = np.concatenate([[0], np.cumsum(np.bincount(uk // self.nc, minlength=self.nc))])
         nonorth = np.linalg.norm(m.nonorth_vec, axis=1) / np.maximum(m.magSf[:ni], 1e-300)
         self.orthogonal = bool(np.all(nonorth < 1e-8))
+        Sf, magSf, V = m.Sf, m.magSf, m.cell_volumes
+        g, kvec = m.orth_coeff, m.nonorth_vec
+        if self.axisymmetric:
+            rc = m.cell_centers[:, 1]
+            scale = max(float(np.ptp(m.points[:, 1])), 1e-300)
+            if np.any(rc <= 0.0) or np.any(m.points[:, 1] < -1e-9 * scale):
+                raise ValueError("Axisymétrique : le domaine doit être dans le demi-plan y ≥ 0 "
+                                 "(x = axe de révolution, y = rayon). Couper le maillage à "
+                                 "l'axe ([mesh] cut_axis = true) ou le décaler.")
+            rf = np.maximum(m.face_centers[:, 1], 0.0)
+            Sf, magSf, V = Sf * rf[:, None], magSf * rf, V * rc
+            g, kvec = g * rf[:ni], kvec * rf[:ni, None]
+        self.total_area = float(np.sum(magSf))
         # solveurs linéaires (hiérarchie AMG bâtie sur le graphe CPU, poids |S|²/(d·S))
-        self.lin = LinearSolver(self.nc, P, N, m.orth_coeff)
+        self.lin = LinearSolver(self.nc, P, N, g)
         # tableaux transférés sur le matériel de calcul (CPU : aucune copie)
         A = be.asarray
         self.P, self.N, self.Pb = A(P), A(N), A(m.owner[ni:])
-        self.w, self.g, self.kvec = A(m.weights), A(m.orth_coeff), A(m.nonorth_vec)
-        self.Si, self.Sb = A(m.Sf[:ni]), A(m.Sf[ni:])
-        self.magSb, self.nb_hat = A(m.magSf[ni:]), A(m.nf[ni:])
-        self.V, self.dperp = A(m.cell_volumes), A(m.d_perp_b)
+        self.w, self.g, self.kvec = A(m.weights), A(g), A(kvec)
+        self.Si, self.Sb = A(Sf[:ni]), A(Sf[ni:])
+        self.magSb, self.nb_hat = A(magSf[ni:]), A(m.nf[ni:])
+        self.V, self.dperp = A(V), A(m.d_perp_b)
+        if self.axisymmetric:
+            self.radius = A(m.cell_centers[:, 1])
+            # Σ_f S_f / V (= ê_r / r_P) : faces latérales du secteur, pour le gradient
+            sx = np.bincount(P, Sf[:ni, 0], self.nc) - np.bincount(N, Sf[:ni, 0], self.nc)
+            sy = np.bincount(P, Sf[:ni, 1], self.nc) - np.bincount(N, Sf[:ni, 1], self.nc)
+            if self.nb:
+                sx = sx + np.bincount(m.owner[ni:], Sf[ni:, 0], self.nc)
+                sy = sy + np.bincount(m.owner[ni:], Sf[ni:, 1], self.nc)
+            self._side = A(np.column_stack([sx, sy]) / V[:, None])
         self.rP = A(m.face_centers[:ni] - C[P])
         self.rN = A(m.face_centers[:ni] - (C[N] - m.shift))
         self.rows, self.cols = A(rows), A(cols)
@@ -78,7 +107,10 @@ class FVM:
         pf = self.interp(phi)
         gx = self.sum_faces(pf * self.Si[:, 0], phi_b * self.Sb[:, 0])
         gy = self.sum_faces(pf * self.Si[:, 1], phi_b * self.Sb[:, 1])
-        return self.xp.stack([gx, gy], axis=1) / self.V[:, None]
+        g = self.xp.stack([gx, gy], axis=1) / self.V[:, None]
+        if self.axisymmetric:
+            g = g - phi[:, None] * self._side
+        return g
 
     def div(self, flux_i, flux_b):
         return self.sum_faces(flux_i, flux_b)

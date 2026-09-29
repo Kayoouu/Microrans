@@ -1,0 +1,45 @@
+# Tuyau lisse turbulent établi (périodique), Re_τ = 550 (Re_D ≈ 19 000), k-ω SST,
+# axisymétrique : ~10 s. u_τ = 1 (force motrice 2 u_τ²/R) : la vitesse débitante U_b⁺ est
+# U_mean[0] dans summary.json.
+# Coefficient de perte de charge λ = 8/U_b⁺² : 0.0267 contre 0.0262 (loi de Prandtl,
+# +1.8 %) ; SA +2.5 %, k-ω −0.1 %, k-ε −4.8 % (voir README).
+# microrans run2d tuyau_turbulent_sst
+[mesh]
+type = "rectangle"
+x0 = 0.0
+x1 = 0.2
+y0 = 0.0
+y1 = 1.0                     # rayon R
+nx = 2
+ny = 64
+grading = [1.0, 0.0136]      # dernière / première maille : y1+ ≈ 0.5 à la paroi
+names = { left = "inlet", right = "outlet", bottom = "axis", top = "wall" }
+periodic = [["inlet", "outlet"]]
+
+[physics]
+nu = 0.0018181818181818182   # 1 / Re_τ
+model = "sst"
+body_force = [2.0, 0.0]
+reference_velocity = 15.0
+axisymmetric = true
+
+[turbulence]
+intensity = 0.05
+viscosity_ratio = 50.0
+
+[initial]
+U = [15.0, 0.0]
+
+[boundary.axis]
+type = "axis"
+
+[boundary.wall]
+type = "wall"
+
+[solver]
+mode = "steady"
+max_iter = 6000
+tol = 1e-7
+
+[output]
+directory = "results/tuyau_turbulent_sst"
