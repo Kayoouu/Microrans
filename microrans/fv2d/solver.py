@@ -9,7 +9,11 @@ Couplage vitesse-pression : forme OpenFOAM de l'interpolation de Rhie-Chow
 
 Conditions aux limites physiques par patch (type, à la manière de SU2) :
   wall      paroi adhérente (option U = [ux, uy] pour une paroi mobile)
-  inlet     vitesse imposée U (constante ou expressions en x, y), turbulence amont
+  inlet     vitesse imposée U (constante ou expressions en x, y), turbulence amont ;
+            ou débit imposé flow_rate = Q (normal à la frontière, profile = "uniform" ou
+            "parabolic" ; par unité de profondeur en plan, total sur 360° en axisymétrique)
+  pressure_inlet  pression totale imposée p0 : p = p0 − ½|U|² en entrée (p0 en sortie),
+            U à gradient nul (totalPressure + pressureInletOutletVelocity d'OpenFOAM)
   outlet    pression imposée p (défaut 0), gradient nul pour U et la turbulence
   symmetry  glissement (vitesse normale nulle)
   farfield  champ lointain : U∞ imposée en entrée, p∞ en sortie (selon le signe de U∞·n)
@@ -31,7 +35,7 @@ from ..mesh2d.mesh import Mesh2D
 from ..models import canonical_name, get_model
 from .fvm import FVM, normalized_residual
 
-BC_TYPES = ("wall", "inlet", "outlet", "symmetry", "farfield", "axis")
+BC_TYPES = ("wall", "inlet", "outlet", "symmetry", "farfield", "axis", "pressure_inlet")
 
 # Schémas en temps. Limites de stabilité des schémas explicites (convection linearUpwind) :
 # co_max = Courant convectif (mesuré sur le tourbillon de Taylor-Green advecté, avec marge :
@@ -370,6 +374,8 @@ class Solver2D:
         self.p_fixed = np.zeros(nb)
         self.kindT = np.ones(nb, dtype=int)          # 0 amont, 1 gradient nul, 2 paroi
         self.is_wall = np.zeros(nb, dtype=bool)
+        self.p0_mask = np.zeros(nb, dtype=bool)      # pression totale imposée
+        self.p0 = np.zeros(nb)
         self.patch_slices = {}
         for p in m.patches:
             spec = self.boundaries[p.name]
@@ -385,8 +391,17 @@ class Solver2D:
                 self.is_wall[sl] = True
             elif kind == "inlet":
                 self.kindU[sl] = 0
-                u = spec["U"]
-                self.U_fixed[sl] = np.column_stack([_eval_expr(u[0], x, y), _eval_expr(u[1], x, y)])
+                if "flow_rate" in spec:
+                    self.U_fixed[sl] = self._flow_rate_velocity(p, spec, sl)
+                else:
+                    u = spec["U"]
+                    self.U_fixed[sl] = np.column_stack([_eval_expr(u[0], x, y),
+                                                        _eval_expr(u[1], x, y)])
+                self.kindT[sl] = 0
+            elif kind == "pressure_inlet":
+                self.kindP[sl] = 0
+                self.p0_mask[sl] = True
+                self.p0[sl] = self.p_fixed[sl] = float(spec.get("p0", spec.get("p", 0.0)))
                 self.kindT[sl] = 0
             elif kind == "outlet":
                 self.kindP[sl] = 0
@@ -418,7 +433,7 @@ class Solver2D:
                     # flux q entrant dans le fluide (unités cinématiques q/(ρ c_p)) :
                     # q = −(−α∇T)·n_sortante = α ∂T/∂n  ⇒  ∂T/∂n = q/α
                     self.T_grad[sl] = float(spec["q"]) / alpha
-                elif kind == "inlet":
+                elif kind in ("inlet", "pressure_inlet"):
                     self.kindTemp[sl] = 0
                     self.T_fixed[sl] = spec.get("T", Tref)
                 elif kind == "farfield":
@@ -431,7 +446,49 @@ class Solver2D:
         self.T_grad = A(self.T_grad)
         self.kindU, self.U_fixed, self.kindP = A(self.kindU), A(self.U_fixed), A(self.kindP)
         self.p_fixed, self.kindT, self.is_wall = A(self.p_fixed), A(self.kindT), A(self.is_wall)
+        self.has_p0 = bool(self.p0_mask.any())
+        self.p0_mask, self.p0 = A(self.p0_mask), A(self.p0)
         return host
+
+    def _flow_rate_velocity(self, patch, spec, sl):
+        """Vitesse normale entrante donnant le débit `flow_rate` (profil uniforme ou
+        parabolique ; en axisymétrique, profil de Poiseuille 2(1 − r²/R²) si la frontière
+        touche l'axe)."""
+        m = self.mesh
+        ni = m.n_internal
+        n = m.nf[ni:][sl]
+        area = m.magSf[ni:][sl].copy()
+        fc = m.face_centers[ni:][sl]
+        if self.axisymmetric:
+            area = area * np.maximum(fc[:, 1], 0.0)
+        shape = spec.get("profile", "uniform")
+        nodes = m.points[np.unique(m.face_nodes[patch.start:patch.start + patch.size])]
+        if shape == "parabolic":
+            if self.axisymmetric and nodes[:, 1].min() <= 1e-9 * max(nodes[:, 1].max(), 1e-300):
+                w = 1.0 - (fc[:, 1] / nodes[:, 1].max()) ** 2
+            else:
+                t = np.array([-n.mean(axis=0)[1], n.mean(axis=0)[0]])
+                t /= max(np.linalg.norm(t), 1e-300)
+                sn, sf = nodes @ t, fc @ t
+                xi = (sf - sn.min()) / max(np.ptp(sn), 1e-300)
+                w = xi * (1.0 - xi)
+        elif shape == "uniform":
+            w = np.ones(len(area))
+        else:
+            raise ValueError(f"profile = '{shape}' : 'uniform' ou 'parabolic'.")
+        q = float(spec["flow_rate"]) / (2.0 * np.pi if self.axisymmetric else 1.0)
+        un = q * w / max(float(np.sum(w * area)), 1e-300)
+        return -n * un[:, None]
+
+    def _update_total_pressure(self):
+        """Pression totale : p_b = p0 − ½|U_b|² où le fluide entre, p0 où il sort."""
+        xp = self.xp
+        if not self.has_p0:
+            return
+        Ub = self.U[self.fvm.Pb]
+        un = xp.sum(Ub * self.fvm.nb_hat, axis=1)
+        p_in = self.p0 - 0.5 * xp.sum(Ub * Ub, axis=1)
+        self.p_fixed = xp.where(self.p0_mask, xp.where(un < 0.0, p_in, self.p0), self.p_fixed)
 
     def vector_bc(self, c: int, U):
         """Coefficients (α, β, γ, δ) de la composante c de la vitesse."""
@@ -683,6 +740,7 @@ class Solver2D:
         fvm, U = self.fvm, self.U
         force = self.cell_force()
         self._update_wall_function()
+        self._update_total_pressure()
         nu_eff = self.nu + self.nut
         gam_i = fvm.interp(nu_eff)
         gam_b = xp.where(self.is_wall, self.nu_wall, nu_eff[fvm.Pb])
@@ -1147,6 +1205,11 @@ class Solver2D:
         xp = self.xp
         fvm = self.fvm
         L, rhs_bc, solve = self._poisson()
+        if self.has_p0:
+            # pression totale : valeurs imposées variables, seul le second membre change
+            self._update_total_pressure()
+            _, _, _, d_ = self.pressure_bc()
+            rhs_bc = fvm._sum_b(fvm.magSb * d_)          # comme fvm.assemble (Γ = 1)
         Ub = self.boundary_U(Ustar)
         Fi = xp.sum(fvm.interp(Ustar) * fvm.Si, axis=1)
         Fb = xp.sum(Ub * fvm.Sb, axis=1)
@@ -1210,6 +1273,7 @@ class Solver2D:
             return self
         h = self.backend.to_host
         for name in ("U", "p", "F_i", "F_b", "nut", "kindU", "U_fixed", "kindP", "p_fixed",
+                     "p0_mask", "p0",
                      "kindT", "is_wall", "kindTemp", "T_fixed", "T_grad", "nu_wall",
                      "u_tau_wall"):
             setattr(self, name, h(getattr(self, name)))

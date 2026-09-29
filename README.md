@@ -125,8 +125,9 @@ axisymmetric = false       # true : x = axe, y = rayon ; frontière d'axe : type
 Pr = 0.71
 beta = 3.4e-3
 [boundary.inlet]
-type = "inlet"             # wall | inlet | outlet | symmetry | farfield | axis
-U = [1.0, 0.0]
+type = "inlet"             # wall | inlet | outlet | symmetry | farfield | axis | pressure_inlet
+U = [1.0, 0.0]             # ou flow_rate = Q (débit ; profile = "uniform" | "parabolic")
+# pressure_inlet : p0 = pression totale (p = p0 − ½|U|² en entrée)
 [initial]
 restart = "results/grossier/checkpoint.npz"   # optionnel : repartir d'un calcul
 [solver]
@@ -173,7 +174,7 @@ API Python : `from microrans.fv2d import Solver2D, Settings`, `from microrans.me
 | Turbulence | SA, k-ε LS, k-ω 2006, SST 2003 (formes NASA TMR), sources linéarisées par Newton | NASA TMR |
 | Parois | résolues (y⁺ ≈ 1) ou **lois de paroi** : loi de Spalding (viscosité pariétale), ω imposé dans les cellules pariétales, k à gradient nul, cisaillement de la loi de paroi pour la production | nutUSpaldingWallFunction, omegaWallFunction, kqRWallFunction d'OpenFOAM |
 | Thermique | température, Boussinesq, flux / température imposés, Nusselt ; force aux faces + `fixedFluxPressure` | buoyantBoussinesq d'OpenFOAM |
-| Conditions limites | paroi (mobile), entrée, sortie, symétrie, champ lointain, périodicité, axe | SU2 / OpenFOAM |
+| Conditions limites | paroi (mobile), entrée (vitesse ou débit, profil uniforme ou parabolique), pression totale, sortie, symétrie, champ lointain, périodicité, axe | SU2 / OpenFOAM (`flowRateInletVelocity`, `totalPressure`) |
 | Axisymétrique | secteur d'un radian (volumes et surfaces pondérés par r), gradient avec faces latérales, contrainte circonférentielle −2ν_eff u_r/r², déformation (u_r/r)², moyenne des diagonales dans H/A | `wedge` d'OpenFOAM, « Axisymmetric » de Fluent |
 | Arrêt | résidus normalisés (OpenFOAM) ou stabilisation des efforts (moniteurs Fluent) | — |
 | Études | reprise exacte / interpolation sur un autre maillage ; démarrage multigrille ; polaire (incidence de l'écoulement, continuation) ; balayage de n'importe quel paramètre | `mapFields`, FMG de Fluent, polaires Fluent / SU2 |
@@ -317,6 +318,8 @@ maillage et la préparation restent sur CPU.
 | NACA 0012, α = 4°, Re = 1e6, SA | C_l ; C_d | 0.433 ; 0.0125 | 2πα = 0.439 (démonstration, voir limites) |
 | NACA 0012, polaire −4° à 14°, Re = 1e6, SA (8 192 cellules, 4 min) | pente dC_l/dα ; C_m quart de corde ; symétrie | 0.1083 /° ; \|C_m\| < 0.008 ; C_l(−α) = −C_l(α) à 5 chiffres | 2π = 0.1097 /° (profil mince) ; 0 (profil symétrique) ; exacte |
 | Cylindre Re = 20, écoulement incliné de 30° | C_d (axes écoulement) | écart 0.01 % avec 0° | invariance exacte |
+| Canal, débit imposé (plan / axisymétrique 360°) | débit en sortie | exact à 1e-9 | conservation |
+| Canal entraîné par une pression totale Δp | p + ½U² en entrée ; débit | = p0 à 1e-12 ; −0.8 % | Poiseuille Δp h³/(12 ν L) |
 
 ### 2D axisymétrique
 
@@ -428,7 +431,13 @@ limites turbulentes, dont la convergence est dominée par les équations de turb
    traînée à faible incidence surestimée par rapport à un profil réel à ce Reynolds. La
    continuation ne réduit pas systématiquement le nombre d'itérations (de −41 % à +53 %
    mesurés, voir `fv2d/sweep.py`).
-11. **Axisymétrique** : sans rotation propre (pas de composante u_θ, donc pas de jet
+11. **Sortie** (`outlet`) : pression imposée et vitesse à gradient nul, comme OpenFOAM.
+   Si l'écoulement n'est pas établi à la sortie et que le Reynolds est très faible
+   (Re ~ 1-10), la pression près de la sortie est faussée (test de la source radiale :
+   écart de 3 à 50 % selon la viscosité, sans convergence en maillage). Placer la sortie
+   loin en aval ; pas de sortie « sans contrainte » (essai abandonné : il comptait deux fois
+   la contrainte visqueuse normale).
+12. **Axisymétrique** : sans rotation propre (pas de composante u_θ, donc pas de jet
    tournant ni de cyclone) ; axe = x, rayon = y. Terme E du k-ε Launder-Sharma : dérivées
    secondes circonférentielles négligées. Le k-ε Launder-Sharma peut se relaminariser en
    partant d'une vitesse uniforme avec peu de turbulence (tuyau Re_τ = 550 : rapport de
@@ -467,7 +476,7 @@ microrans/
   gui/                   interface PySide6 (app.py, widgets.py)
   examples/              cas fournis (microrans examples)
 packaging/               PyInstaller (microrans.spec) : exécutables GUI + CLI
-tests/                   pytest (163 tests : vérification, validation, GUI hors écran, faux GPU)
+tests/                   pytest (168 tests : vérification, validation, GUI hors écran, faux GPU)
 .github/workflows/       tests (Python 3.10 / 3.12) ; exécutables Windows / Linux
 ```
 

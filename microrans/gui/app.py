@@ -39,7 +39,7 @@ MODEL_LABELS = [("laminar", "Laminaire"), ("sa", "Spalart-Allmaras"), ("ke", "k-
                 ("kw", "k-ω (Wilcox 2006)"), ("sst", "k-ω SST (Menter)")]
 BC_LABELS = {"wall": "Paroi", "inlet": "Entrée (vitesse)", "outlet": "Sortie (pression)",
              "symmetry": "Symétrie", "farfield": "Champ lointain",
-             "axis": "Axe (axisymétrique)"}
+             "axis": "Axe (axisymétrique)", "pressure_inlet": "Entrée (pression totale)"}
 MESH_TYPES = [("rectangle", "Rectangle structuré"), ("ogrid", "Structuré en O autour d'un corps"),
               ("unstructured", "Triangles (non structuré)"),
               ("hybrid", "Hybride : couches de quadrilatères + triangles"),
@@ -452,12 +452,14 @@ class MainWindow(QMainWindow):
         w = QWidget()
         lay = QVBoxLayout(w)
         lay.addWidget(_note("Une ligne par frontière (patch) du maillage. Paroi : adhérence "
-                            "(U = paroi mobile) ; Entrée : U imposée ; Sortie : p imposée ; "
-                            "Champ lointain : U∞ en entrée, p∞ en sortie selon le signe de U∞·n. "
-                            "Les composantes de U acceptent des expressions en x, y "
-                            "(ex. 6*y*(1-y))."))
-        self.bc_table = QTableWidget(0, 7)
-        self.bc_table.setHorizontalHeaderLabels(["Patch", "Type", "Ux", "Uy", "p", "T", "flux q"])
+                            "(U = paroi mobile) ; Entrée : U imposée, ou débit Q (vitesse "
+                            "normale uniforme ; U ignorée) ; Entrée (pression totale) : colonne "
+                            "p = p0 ; Sortie : p imposée ; Champ lointain : U∞ en entrée, p∞ en "
+                            "sortie selon le signe de U∞·n. Les composantes de U acceptent des "
+                            "expressions en x, y (ex. 6*y*(1-y))."))
+        self.bc_table = QTableWidget(0, 8)
+        self.bc_table.setHorizontalHeaderLabels(["Patch", "Type", "Ux", "Uy", "p", "T", "flux q",
+                                                 "débit Q"])
         self.bc_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         self.bc_table.itemChanged.connect(lambda *_: self._bc_changed())
         lay.addWidget(self.bc_table, 1)
@@ -1049,9 +1051,10 @@ class MainWindow(QMainWindow):
             U = spec.get("U", ["", ""])
             self.bc_table.setItem(r, 2, QTableWidgetItem(str(U[0])))
             self.bc_table.setItem(r, 3, QTableWidgetItem(str(U[1])))
-            self.bc_table.setItem(r, 4, QTableWidgetItem(str(spec.get("p", ""))))
+            self.bc_table.setItem(r, 4, QTableWidgetItem(str(spec.get("p", spec.get("p0", "")))))
             self.bc_table.setItem(r, 5, QTableWidgetItem(str(spec.get("T", ""))))
             self.bc_table.setItem(r, 6, QTableWidgetItem(str(spec.get("q", ""))))
+            self.bc_table.setItem(r, 7, QTableWidgetItem(str(spec.get("flow_rate", ""))))
         self._bc_sync = False
 
     def _bc_changed(self):
@@ -1073,14 +1076,19 @@ class MainWindow(QMainWindow):
             spec = {"type": t}
             ux = num(self.bc_table.item(r, 2).text() if self.bc_table.item(r, 2) else "")
             uy = num(self.bc_table.item(r, 3).text() if self.bc_table.item(r, 3) else "")
-            if t in ("inlet", "farfield") or (t == "wall" and (ux or uy)):
+            Q = num(self.bc_table.item(r, 7).text() if self.bc_table.item(r, 7) else "")
+            if t == "inlet" and Q is not None:
+                spec["flow_rate"] = Q
+            elif t in ("inlet", "farfield") or (t == "wall" and (ux or uy)):
                 spec["U"] = [ux if ux is not None else 0.0, uy if uy is not None else 0.0]
             p = num(self.bc_table.item(r, 4).text() if self.bc_table.item(r, 4) else "")
             if t in ("outlet", "farfield") and p is not None:
                 spec["p"] = p
+            elif t == "pressure_inlet":
+                spec["p0"] = p if p is not None else 0.0
             T = num(self.bc_table.item(r, 5).text() if self.bc_table.item(r, 5) else "")
             q = num(self.bc_table.item(r, 6).text() if self.bc_table.item(r, 6) else "")
-            if T is not None and t in ("wall", "inlet", "farfield"):
+            if T is not None and t in ("wall", "inlet", "farfield", "pressure_inlet"):
                 spec["T"] = T
             elif q is not None and t == "wall":
                 spec["q"] = q
