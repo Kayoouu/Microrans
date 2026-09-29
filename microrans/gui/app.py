@@ -1316,6 +1316,10 @@ def run(argv=None) -> int:
     app = QApplication.instance() or QApplication(sys.argv[:1])
     app.setApplicationName(APP_NAME)
     app.setStyle("Fusion")
+    icon = Path(__file__).with_name("icon.png")
+    if icon.exists():
+        from PySide6.QtGui import QIcon
+        app.setWindowIcon(QIcon(str(icon)))
     win = MainWindow()
     if "--selftest" in argv:
         shot = argv[argv.index("--selftest") + 1] if len(argv) > argv.index("--selftest") + 1 \
