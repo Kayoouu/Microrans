@@ -2,11 +2,14 @@ name: executables
 
 # Construit les exécutables (interface graphique + ligne de commande) pour Windows, Linux et
 # macOS avec PyInstaller, les teste (calcul + auto-test de l'interface hors écran) et les
-# publie comme artefacts ; sur une étiquette v*, les attache à une « release » GitHub.
+# publie comme artefacts. Quand une « release » est publiée sur GitHub (onglet Releases →
+# Draft a new release → tag v0.2.0 → Publish), les archives et les notes de version
+# (packaging/RELEASE_NOTES.md) y sont attachées automatiquement.
 on:
   workflow_dispatch:
+  release:
+    types: [published]
   push:
-    tags: ["v*"]
     branches: ["**"]
     paths: ["packaging/**", ".github/workflows/build.yml"]
 
@@ -73,7 +76,7 @@ jobs:
           path: smoke/gui.png
 
   release:
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: github.event_name == 'release'
     needs: build
     runs-on: ubuntu-latest
     steps:

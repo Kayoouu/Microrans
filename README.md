@@ -389,4 +389,6 @@ CPU et sur GPU.
 
 **Construire les exécutables** : `pip install ".[build]"` puis
 `pyinstaller packaging/microrans.spec` → `dist/microrans/`. Pour publier une version :
-`git tag v0.2.0 && git push --tags` (le workflow attache les archives à la « release »).
+onglet **Releases → Draft a new release**, tag `v0.x.y` (« Create new tag on publish »),
+**Publish release** ; le workflow `executables` construit, teste et attache les trois
+archives et les notes de version (`packaging/RELEASE_NOTES.md`) en ~5 minutes.
