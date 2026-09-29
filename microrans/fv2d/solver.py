@@ -329,6 +329,12 @@ class Solver2D:
         self.dt = 0.0
         self.history: list[dict] = []
         self.residuals_now: dict = {}
+        # reprise (fv2d/restart.py) : compteur global d'itérations, niveaux de temps
+        # précédents, historique d'efforts du calcul repris
+        self.iterations_total = 0
+        self._restart_hist = None
+        self.series_restart: list[dict] = []
+        self.series: list[dict] = []
         self.has_fixed_p = bool(np.any(kindP_h == 0))
 
     # ------------------------------------------------------------------ conditions limites
@@ -824,7 +830,8 @@ class Solver2D:
                 self._energy_eq(relax=s.relax_T)
             cont = float(xp.sum(xp.abs(self.fvm.div(self.F_i, self.F_b))) /
                          (self.u_scale * float(np.sum(self.fvm.mesh.magSf)) + 1e-300))
-            rec = {"iteration": it, **self.residuals_now, "continuity": cont}
+            rec = {"iteration": self.iterations_total + it, **self.residuals_now,
+                   "continuity": cont}
             self.history.append(rec)
             if not all(xp.isfinite(v) for v in rec.values()) or not xp.all(xp.isfinite(self.U)):
                 raise FloatingPointError(f"Divergence à l'itération {it}.")
@@ -846,6 +853,7 @@ class Solver2D:
                 break
         self.converged = converged
         self.iterations = it
+        self.iterations_total += it
         self.wall_time = time.perf_counter() - t0
         if verbose:
             how = " (efforts stabilisés)" if converged == "forces" else ""
@@ -925,10 +933,15 @@ class Solver2D:
             name = self.auto_time_scheme(dt)
             s.time_scheme = name
         info = TIME_SCHEMES[name]
-        self.dt = float(dt)
-        if s.adjust_dt:
-            self.dt = min(self.dt, self._stable_dt(info, None))
-        elif info["kind"] == "explicit":
+        restart = self._restart_hist
+        self._restart_hist = None
+        if restart is not None and s.adjust_dt and self.dt > 0:
+            self.dt = self._stable_dt(info, self.dt)     # suite exacte d'un calcul repris
+        else:
+            self.dt = float(dt)
+            if s.adjust_dt:
+                self.dt = min(self.dt, self._stable_dt(info, None))
+        if not s.adjust_dt and info["kind"] == "explicit":
             co, dn, _, _ = self.courant(self.dt)
             if co / info["co_max"] + dn / info["dn_max"] > 1.0:
                 import warnings
@@ -936,11 +949,11 @@ class Solver2D:
                               f"{name} (Co = {co:.2f}, Dn = {dn:.2f}, limites "
                               f"{info['co_max']:.2f} / {info['dn_max']:.2f}) : risque de "
                               f"divergence. Réduire Δt ou activer adjust_dt.")
-        series = []
+        series = self.series = []
         t0 = time.perf_counter()
         n = 0
         step = self._pimple_step if info["kind"] == "implicit" else self._explicit_step
-        self._hist = {"U": [], "F": [], "state": [], "dt": [], "R": [], "T": []}
+        self._hist = restart or {"U": [], "F": [], "state": [], "dt": [], "R": [], "T": []}
         eps = 1e-9 * max(abs(t_end), 1.0)
         while self.time < t_end - eps:
             n += 1

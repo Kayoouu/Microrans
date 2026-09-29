@@ -181,6 +181,10 @@ def cmd_run2d(args) -> int:
             pass
         cfg.setdefault(sec, {})[name] = val
     out = args.out or cfg.get("output", {}).get("directory") or f"results/{Path(args.case).stem}"
+    if args.continue_run:
+        args.restart = str(Path(out) / "checkpoint.npz")
+    if args.restart:
+        cfg.setdefault("initial", {})["restart"] = str(Path(args.restart).resolve())
     summary = run_case(cfg, base_dir=Path(args.case).parent, out_dir=out,
                        verbose=not args.quiet, plot=not args.no_plot)
     return 0 if summary.get("converged", True) else 1
@@ -295,6 +299,13 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("-o", "--out", help="dossier de sortie")
     p.add_argument("--set", nargs="+", action="extend", metavar="SECTION.CLE=VALEUR",
                    help="surcharge d'un paramètre, ex. physics.model=sst solver.max_iter=500")
+    p.add_argument("--restart", metavar="FICHIER",
+                   help="repartir d'un fichier checkpoint.npz (même maillage : reprise exacte ; "
+                        "autre maillage : champs interpolés)")
+    p.add_argument("--continue", dest="continue_run", action="store_true",
+                   help="poursuivre le calcul depuis le checkpoint.npz du dossier de sortie "
+                        "(stationnaire : max_iter itérations de plus ; instationnaire : "
+                        "jusqu'au nouveau t_end)")
     p.add_argument("--no-plot", action="store_true")
     p.add_argument("-q", "--quiet", action="store_true")
     p.set_defaults(func=cmd_run2d)

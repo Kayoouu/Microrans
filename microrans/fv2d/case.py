@@ -4,6 +4,10 @@ du fichier .cfg de SU2). Voir les exemples de `microrans/examples/`
 
 Sections : [mesh] (+ [domain], [[bodies]]), [physics], [initial], [turbulence],
 [boundary.<patch>], [solver], [output].
+
+Reprise : [initial] restart = "…/checkpoint.npz" (reprise exacte sur le même maillage,
+interpolation sinon) ; [output] checkpoint = true (défaut) écrit checkpoint.npz à la fin
+du calcul, à l'arrêt demandé et toutes les `checkpoint_minutes` (défaut 5) minutes.
 """
 from __future__ import annotations
 
@@ -17,6 +21,7 @@ import numpy as np
 
 from ..mesh2d.builder import PRESETS, build_mesh
 from ..mesh2d.io import write_vtk
+from .restart import load_checkpoint, save_checkpoint
 from .solver import Settings, Solver2D
 
 
@@ -74,6 +79,21 @@ def build_solver(cfg: dict, base_dir=".", verbose=False, mesh=None):
                       settings=_settings_from(cfg.get("solver", {})),
                       reference_velocity=ph.get("reference_velocity"),
                       energy=_energy_from(cfg))
+    solver.restart_info = None
+    if init.get("restart"):
+        path = Path(init["restart"])
+        if not path.is_absolute():
+            path = Path(base_dir) / path
+        if not path.is_file():
+            raise FileNotFoundError(f"Fichier de reprise introuvable : {path}")
+        solver.restart_info = load_checkpoint(solver, path)
+        if verbose:
+            ri = solver.restart_info
+            print(f"Reprise ({ri['mode']}) depuis {path} : t = {ri['time']:.6g}, "
+                  f"itération {ri['iteration']}"
+                  + (f" ; variables absentes (valeurs amont) : {ri['ignored']}"
+                     if ri["ignored"] else ""))
+        return solver
     amp = init.get("perturbation", 0.0)
     if amp:
         # tourbillon gaussien dans le sillage pour déclencher une instabilité (lâcher)
@@ -103,10 +123,29 @@ def run_case(cfg: dict, base_dir=".", out_dir=None, verbose=True, plot=True, cal
     t0 = time.perf_counter()
     summary = {"mode": mode, "model": solver.model_name, "n_cells": solver.mesh.n_cells,
                "nu": solver.nu, "reference_velocity": Uref, "reference_length": Lref}
+    if solver.restart_info:
+        summary["restart"] = {k: solver.restart_info[k] for k in ("file", "mode", "time",
+                                                                  "iteration")}
+    ckpt = out / "checkpoint.npz" if oc.get("checkpoint", True) else None
+    every = 60.0 * float(oc.get("checkpoint_minutes", 5.0))
+    last_save = [time.perf_counter()]
+
+    def autosave(s):
+        # sauvegarde périodique (temps réel écoulé) : un plantage ou une coupure ne fait
+        # perdre que les dernières minutes de calcul
+        if ckpt is not None and every > 0 and time.perf_counter() - last_save[0] > every:
+            save_checkpoint(s, ckpt, s.history if mode == "steady"
+                            else s.series_restart + s.series)
+            last_save[0] = time.perf_counter()
+
     if mode == "steady":
+        def cb_steady(s, n):
+            autosave(s)
+            return callback(s, n) if callback else None
         ok = solver.run_steady(verbose=verbose, log_every=sc.get("log_every", 100),
-                               callback=callback)
-        summary.update(converged=bool(ok), iterations=solver.iterations)
+                               callback=cb_steady)
+        summary.update(converged=bool(ok), iterations=solver.iterations_total,
+                       iterations_this_run=solver.iterations)
         hist = solver.history
     else:
         def probes(s):
@@ -117,13 +156,16 @@ def run_case(cfg: dict, base_dir=".", out_dir=None, verbose=True, plot=True, cal
             return rec
         vtk_every = oc.get("vtk_every", 0)
 
+        n0 = len(solver.series_restart)
+
         def cb(s, n):
-            if vtk_every and n % vtk_every == 0:
-                write_vtk(s.mesh, out / f"fields_{n:06d}.vtk", s.fields())
+            if vtk_every and (n0 + n) % vtk_every == 0:
+                write_vtk(s.mesh, out / f"fields_{n0 + n:06d}.vtk", s.fields())
+            autosave(s)
             return callback(s, n) if callback else None
-        hist = solver.run_transient(sc["dt"], sc["t_end"], verbose=verbose,
-                                    log_every=sc.get("log_every", 100), probes=probes,
-                                    callback=cb)
+        hist = solver.series_restart + solver.run_transient(
+            sc["dt"], sc["t_end"], verbose=verbose, log_every=sc.get("log_every", 100),
+            probes=probes, callback=cb)
         t = np.array([h["time"] for h in hist])
         for name in (force_patches if len(hist) > 2 else []):
             cd = np.array([h[f"Cd_{name}"] for h in hist])
@@ -136,6 +178,9 @@ def run_case(cfg: dict, base_dir=".", out_dir=None, verbose=True, plot=True, cal
                              "strouhal": f * Lref / Uref, "periods_used": n}
     summary["wall_time_s"] = round(time.perf_counter() - t0, 2)
     summary["backend"] = solver.backend.name
+    if ckpt is not None:
+        save_checkpoint(solver, ckpt, hist)
+        summary["checkpoint"] = str(ckpt)
     solver.to_cpu()                     # post-traitement sur CPU (no-op si déjà CPU)
     for name, f in solver.forces(force_patches).items():
         summary.setdefault(name, {}).update(

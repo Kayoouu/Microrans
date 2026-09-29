@@ -47,7 +47,8 @@ clic droit → Ouvrir, ou `xattr -dr com.apple.quarantine microrans`. Le dossier
 ### Parcours dans l'interface
 
 `Accueil` (exemples) → `1. Canal 1D` ou `2. Maillage` → `3. Physique` → `4. Conditions limites`
-→ `5. Numérique` → `6. Calcul` (résidus / efforts en direct, bouton Arrêter) → `7. Résultats`
+→ `5. Numérique` → `6. Calcul` (résidus / efforts en direct, boutons Arrêter et **Continuer
+le calcul précédent**) → `7. Résultats`
 (champs, vecteurs, Cp / Cf / y⁺ / flux de chaleur pariétaux). L'onglet **Fichier de cas (TOML)**
 montre le cas complet, modifiable : tout ce que les formulaires ne proposent pas (maillage
 multi-blocs, zones de raffinement, expressions de vitesse) s'y écrit.
@@ -74,6 +75,8 @@ microrans run2d cavite_re100                    # calcul 2D (nom d'exemple ou fi
 microrans run2d plaque_plane_sa --set physics.model=sst --set solver.max_iter=3000
 microrans run2d convection_naturelle_ra1e5
 microrans run2d cylindre_re100_urans --set solver.time_scheme=rk3 --set solver.adjust_dt=true
+microrans run2d cylindre_re100_urans --continue --set solver.t_end=200   # poursuivre un calcul
+microrans run2d mon_cas_fin.toml --restart results/mon_cas/checkpoint.npz # partir d'un autre calcul
 microrans mesh mesh_naca_multi -f msh su2 vtk foam   # mailler seulement, exporter
 microrans mesh --preset cylinder-hybrid
 microrans rans -m all                           # canal 1D, 4 modèles
@@ -83,7 +86,17 @@ microrans schemes -o docs                       # étude précision / coût des 
 ```
 
 Sorties d'un calcul 2D : `summary.json` (convergence, Cd, Cl, y⁺, Strouhal, Nusselt),
-`history.csv`, `wall_<patch>.csv` (Cp, Cf, y⁺, T, flux), `fields.vtk` (ParaView), figures.
+`history.csv`, `wall_<patch>.csv` (Cp, Cf, y⁺, T, flux), `fields.vtk` (ParaView), figures,
+`checkpoint.npz` (sauvegarde pour reprise).
+
+**Sauvegarde et reprise** : `checkpoint.npz` est écrit à la fin, à l'arrêt demandé et toutes
+les 5 minutes (`[output] checkpoint_minutes`). Sur le **même maillage**, la reprise est
+exacte (champs, flux aux faces, niveaux de temps de BDF2/AB2, Δt adaptatif, historique) :
+un calcul interrompu puis repris donne un résultat identique au bit près (tests). Sur un
+**autre maillage**, les champs sont interpolés (comme `mapFields` d'OpenFOAM) : cavité 128²
+démarrée depuis une solution 32², 508 itérations au lieu de 1 135 (19 s au lieu de 45 s).
+Changer de modèle de turbulence est possible (les variables absentes partent des valeurs
+amont).
 
 ### Format de cas (TOML, extrait)
 
@@ -107,6 +120,8 @@ beta = 3.4e-3
 [boundary.inlet]
 type = "inlet"             # wall | inlet | outlet | symmetry | farfield
 U = [1.0, 0.0]
+[initial]
+restart = "results/grossier/checkpoint.npz"   # optionnel : repartir d'un calcul
 [solver]
 mode = "transient"         # steady | transient
 time_scheme = "auto"       # auto | euler | backward | crankNicolson | rk1..rk4 | ab2

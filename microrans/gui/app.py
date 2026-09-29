@@ -427,6 +427,13 @@ class MainWindow(QMainWindow):
         f.addRow("Vitesse initiale (Ux, Uy)", B.vec(("initial", "U"), (0.0, 0.0)))
         f.addRow("Perturbation du sillage", B.sci(("initial", "perturbation"), None, True, "0"))
         f.addRow("Force volumique (fx, fy)", B.vec(("physics", "body_force"), (0.0, 0.0)))
+        self.restart_path = B.text(("initial", "restart"), "")
+        self.restart_path.setPlaceholderText("vide : démarrer de l'état initial ci-dessus")
+        bb = QPushButton("Parcourir…")
+        bb.clicked.connect(self._browse_restart)
+        f.addRow("Repartir d'un calcul (checkpoint.npz)", self._pair(self.restart_path, bb))
+        f.addRow(_note("Même maillage : reprise exacte. Maillage différent : les champs sont "
+                       "interpolés (ex. démarrer un maillage fin depuis un calcul grossier)."))
         lay.addWidget(box)
         lay.addStretch(1)
         return w
@@ -517,9 +524,18 @@ class MainWindow(QMainWindow):
         self.stop_btn = QPushButton("Arrêter")
         self.stop_btn.setEnabled(False)
         self.stop_btn.clicked.connect(self.stop)
+        self.continue_btn = QPushButton("Continuer le calcul précédent")
+        self.continue_btn.setToolTip(
+            "Repart de la sauvegarde checkpoint.npz du dossier de résultats. Stationnaire : "
+            "« Itérations max » itérations de plus. Instationnaire : jusqu'au nouveau temps final.")
+        self.continue_btn.clicked.connect(self.continue_2d)
         row.addWidget(self.run_btn)
+        row.addWidget(self.continue_btn)
         row.addWidget(self.stop_btn)
         lay.addLayout(row)
+        lay.addWidget(_note("Le calcul est sauvegardé (checkpoint.npz) toutes les 5 minutes, "
+                            "à la fin et à l'arrêt : un calcul arrêté ou interrompu peut être "
+                            "poursuivi avec « Continuer »."))
         self.run_info = _note("")
         lay.addWidget(self.run_info)
         lay.addStretch(1)
@@ -1044,6 +1060,7 @@ class MainWindow(QMainWindow):
         self.progress.setRange(0, 0)
         self.statusBar().showMessage(message)
         self.run_btn.setEnabled(False)
+        self.continue_btn.setEnabled(False)
         self.stop_btn.setEnabled(True)
         self.thread.start()
 
@@ -1054,6 +1071,7 @@ class MainWindow(QMainWindow):
         self.thread = self.worker = None
         self.progress.setVisible(False)
         self.run_btn.setEnabled(True)
+        self.continue_btn.setEnabled(True)
         self.stop_btn.setEnabled(False)
 
     def _finish(self, res):
@@ -1075,10 +1093,30 @@ class MainWindow(QMainWindow):
             self.worker.stop_requested = True
             self.statusBar().showMessage("Arrêt demandé…")
 
-    def run_2d(self):
+    def _browse_restart(self):
+        path, _ = QFileDialog.getOpenFileName(self, "Fichier de reprise", str(self.out_dir()),
+                                              "Reprise microrans (*.npz)")
+        if path:
+            self.restart_path.setText(path)
+            self._store_forms()
+
+    def continue_2d(self):
+        ck = self.out_dir() / "checkpoint.npz"
+        if not ck.is_file():
+            QMessageBox.information(self, "Rien à continuer",
+                                    f"Aucune sauvegarde dans {self.out_dir()} : lancez d'abord "
+                                    "un calcul (ou choisissez un fichier dans Conditions "
+                                    "initiales).")
+            return
+        self.run_2d(restart=ck)
+
+    def run_2d(self, restart=None):
         self._store_forms()
         cfg = copy.deepcopy(self.cfg)
         cfg.setdefault("output", {})["directory"] = str(self.out_dir())
+        if restart:
+            cfg.setdefault("initial", {})["restart"] = str(restart)
+        self._it0 = None
         mesh = self.mesh
         base = self.base_dir()
         self.history = []
@@ -1111,7 +1149,9 @@ class MainWindow(QMainWindow):
         steady, max_iter, t_end = self._run_meta
         self.progress.setRange(0, 1000)
         if steady and "iteration" in rec:
-            self.progress.setValue(int(1000 * rec["iteration"] / max(max_iter, 1)))
+            if self._it0 is None:
+                self._it0 = rec["iteration"] - 1          # suite d'un calcul repris
+            self.progress.setValue(int(1000 * (rec["iteration"] - self._it0) / max(max_iter, 1)))
             self.run_info.setText(f"itération {rec['iteration']} — " + ", ".join(
                 f"{k} {v:.1e}" for k, v in rec.items() if k != "iteration"))
         elif "time" in rec:
@@ -1291,7 +1331,8 @@ def _selftest(win: MainWindow, app, shot: str | None) -> int:
     win.load_cfg(win.cfg)
     win.quiet = True
     errors = win.errors
-    for action in (win.generate_mesh, win.run_2d):
+    its = []
+    for action in (win.generate_mesh, win.run_2d, win.continue_2d):
         action()
         t0 = time.time()
         while win.thread is not None and time.time() - t0 < 300:
@@ -1300,14 +1341,18 @@ def _selftest(win: MainWindow, app, shot: str | None) -> int:
         if errors:
             print("SELFTEST ÉCHEC :", errors[0])
             return 1
-    ok = win.solver is not None and win.summary is not None and win.summary["iterations"] > 10
+        if win.summary is not None:
+            its.append(win.summary["iterations"])
+    # « Continuer » : reprise exacte, 60 itérations de plus
+    ok = (win.solver is not None and len(its) == 2 and its[0] > 10 and its[1] > its[0]
+          and win.summary.get("restart", {}).get("mode") == "exact")
     for i in range(win.field_combo.count()):
         win.field_combo.setCurrentIndex(i)
         win.plot_field()
     app.processEvents()
     if shot:
         win.grab().save(shot)
-    print("SELFTEST", "OK" if ok else "ÉCHEC", win.summary and win.summary.get("iterations"))
+    print("SELFTEST", "OK" if ok else "ÉCHEC", its)
     return 0 if ok else 1
 
 
