@@ -68,3 +68,12 @@ def solve_transport(grid: Grid, gamma: np.ndarray, diag: np.ndarray | float,
     # (sinon √k pariétal ≈ 1e-7 pollue le terme D = 2ν(∂√k/∂y)² du k-ε).
     phi[0], phi[-1] = wall_values
     return phi
+
+
+def diffusion(grid: Grid, gamma: np.ndarray, phi: np.ndarray) -> np.ndarray:
+    """d/dy(Γ dφ/dy) explicite, même discrétisation que `solve_transport` (0 aux parois)."""
+    gamma_f = 0.5 * (gamma[:-1] + gamma[1:])
+    flux = gamma_f * np.diff(phi) / grid.dy
+    out = np.zeros_like(phi)
+    out[1:-1] = (flux[1:] - flux[:-1]) / grid.volumes[1:-1]
+    return out

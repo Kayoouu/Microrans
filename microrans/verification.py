@@ -81,7 +81,7 @@ def _womersley_error(n_cells, steps, scheme, nu=0.02, amp=5.0, omega=2 * np.pi):
 
 def womersley_time_order(scheme: str = "bdf2", steps=(20, 40, 80)) -> OrderStudy:
     errors = [_womersley_error(256, s, scheme) for s in steps]
-    expected = 2.0 if scheme == "bdf2" else 1.0
+    expected = {"euler": 1.0, "rk1": 1.0, "sdirk3": 3.0, "rk3": 3.0, "rk4": 4.0}.get(scheme, 2.0)
     return OrderStudy(f"Womersley laminaire, convergence en temps ({scheme})", list(steps),
                       errors, expected)
 

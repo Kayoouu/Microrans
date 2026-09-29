@@ -28,6 +28,52 @@ from .fvm import FVM, normalized_residual
 
 BC_TYPES = ("wall", "inlet", "outlet", "symmetry", "farfield")
 
+# Schémas en temps. Limites de stabilité des schémas explicites (convection linearUpwind) :
+# co_max = Courant convectif (mesuré sur le tourbillon de Taylor-Green advecté, avec marge :
+# instabilité observée à 1.04 / 1.31 / 1.47 / 1.66 / 0.73 pour rk1..rk4 / ab2 ; rk1 est de
+# plus faiblement instable en convection pure), dn_max = nombre de diffusion (théorie :
+# intervalle réel de stabilité / 2 : 2, 2, 2.51, 2.79, 1).
+TIME_SCHEMES = {
+    "euler": dict(kind="implicit", order=1, label="Euler implicite (PIMPLE)"),
+    "backward": dict(kind="implicit", order=2, label="BDF2 / backward (PIMPLE)"),
+    "crankNicolson": dict(kind="implicit", order=2, label="Crank-Nicolson (PIMPLE)"),
+    "rk1": dict(kind="explicit", order=1, co_max=0.5, dn_max=1.0, stages=1,
+                label="Euler explicite + projection"),
+    "rk2": dict(kind="explicit", order=2, co_max=1.0, dn_max=1.0, stages=2,
+                label="RK2 (Heun, SSP) + projection"),
+    "rk3": dict(kind="explicit", order=3, co_max=1.2, dn_max=1.25, stages=3,
+                label="RK3 SSP (Shu-Osher) + projection"),
+    "rk4": dict(kind="explicit", order=4, co_max=1.4, dn_max=1.39, stages=4,
+                label="RK4 classique + projection"),
+    "ab2": dict(kind="explicit", order=2, co_max=0.5, dn_max=0.5, stages=1,
+                label="Adams-Bashforth 2 + projection"),
+}
+_ALIASES = {"bdf1": "euler", "implicit_euler": "euler", "bdf2": "backward",
+            "cn": "crankNicolson", "cranknicolson": "crankNicolson", "crank-nicolson":
+            "crankNicolson", "explicit_euler": "rk1", "heun": "rk2", "ssprk3": "rk3"}
+
+# tableaux de Butcher (A strictement triangulaire inférieure, b, c)
+RK_TABLES = {
+    "rk1": ([[0.0]], [1.0], [0.0]),
+    "rk2": ([[0.0, 0.0], [1.0, 0.0]], [0.5, 0.5], [0.0, 1.0]),
+    "rk3": ([[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.25, 0.25, 0.0]], [1 / 6, 1 / 6, 2 / 3],
+            [0.0, 1.0, 0.5]),
+    "rk4": ([[0.0, 0.0, 0.0, 0.0], [0.5, 0.0, 0.0, 0.0], [0.0, 0.5, 0.0, 0.0],
+             [0.0, 0.0, 1.0, 0.0]], [1 / 6, 1 / 3, 1 / 3, 1 / 6], [0.0, 0.5, 0.5, 1.0]),
+}
+
+
+def canonical_time_scheme(name: str) -> str:
+    if str(name).lower() == "auto":
+        return "auto"
+    key = _ALIASES.get(str(name).lower(), str(name))
+    if key not in TIME_SCHEMES:
+        low = {k.lower(): k for k in TIME_SCHEMES}
+        key = low.get(key.lower(), key)
+    if key not in TIME_SCHEMES:
+        raise ValueError(f"Schéma en temps inconnu '{name}'. Choix : {list(TIME_SCHEMES)}")
+    return key
+
 
 @dataclass
 class Settings:
@@ -48,8 +94,13 @@ class Settings:
     solver_p: str = "auto"                # auto : LU si < 20 000 cellules, sinon AMG + CG
     solver_U: str = "auto"                # auto : BiCGStab + Jacobi
     solver_turb: str = "auto"
-    # instationnaire
-    time_scheme: str = "backward"         # euler | backward
+    # instationnaire (voir TIME_SCHEMES)
+    time_scheme: str = "backward"         # auto | euler | backward | crankNicolson | rk1..4 | ab2
+    adjust_dt: bool = False               # pas de temps adaptatif (comme adjustTimeStep)
+    max_co: float = 1.0                   # Courant visé si adjust_dt
+    max_dt: float = float("inf")
+    cn_theta: float = 0.5                 # Crank-Nicolson : 0.5 (ordre 2), >0.5 plus dissipatif
+    ddt_phi_coeff: float | None = 1.0     # correction ddtCorr (None = coefficient OpenFOAM)
     n_outer: int = 2
     n_corr: int = 2
     turbulence_every_outer: bool = False
@@ -169,7 +220,9 @@ class Solver2D:
         self.mesh = mesh
         self.nu = float(nu)
         self.settings = settings or Settings()
-        self.body_force = np.asarray(body_force, dtype=float)
+        # force volumique : constante (fx, fy) ou fonction du temps t -> (fx, fy)
+        self.body_force = body_force if callable(body_force) else np.asarray(body_force, float)
+        self._t_eval = 0.0
         missing = [p.name for p in mesh.patches if p.name not in boundaries]
         if missing:
             raise ValueError(f"Conditions aux limites manquantes pour les patches {missing}.")
@@ -211,6 +264,7 @@ class Solver2D:
         self.nut = np.zeros(nc)
         self.steady = True
         self.time = 0.0
+        self.dt = 0.0
         self.history: list[dict] = []
         self.residuals_now: dict = {}
         self.has_fixed_p = bool(np.any(self.kindP == 0))
@@ -340,8 +394,18 @@ class Solver2D:
         return (np.bincount(fvm.P, up * x[fvm.N], fvm.nc) + np.bincount(fvm.N, lo * x[fvm.P], fvm.nc))
 
     # ------------------------------------------------------------------ quantité de mouvement
-    def _momentum(self, a0=0.0, hist=None, relax=1.0):
+    def body_force_at(self, t):
+        bf = self.body_force
+        return np.asarray(bf(t) if callable(bf) else bf, dtype=float)
+
+    def _momentum(self, a0=0.0, hist=None, relax=1.0, theta=1.0, explicit=None):
+        """Équations de U (composantes x, y) : (diag, upper, lower, rhs) sans gradient de p.
+
+        theta < 1 (Crank-Nicolson) : opérateur spatial pondéré par θ, plus la partie
+        explicite `explicit` (= (1−θ)·R(Uⁿ)·V, tableau (nc, 2)).
+        """
         fvm, U = self.fvm, self.U
+        bf = self.body_force_at(self._t_eval)
         nu_eff = self.nu + self.nut
         gam_i = fvm.interp(nu_eff)
         gam_b = np.where(self.is_wall, self.nu, nu_eff[fvm.Pb])
@@ -361,7 +425,11 @@ class Solver2D:
             gb = gradU[fvm.Pb]
             tf_b = gam_b * (gb[:, 0, c] * fvm.Sb[:, 0] + gb[:, 1, c] * fvm.Sb[:, 1])
             rhs += fvm.sum_faces(tf_i, tf_b)
-            rhs += self.body_force[c] * V
+            rhs += bf[c] * V
+            if theta != 1.0:
+                diag, up, lo, rhs = theta * diag, theta * up, theta * lo, theta * rhs
+            if explicit is not None:
+                rhs = rhs + explicit[:, c]
             if a0:
                 diag = diag + a0 * V
                 rhs -= hist[:, c] * V
@@ -500,59 +568,99 @@ class Solver2D:
         return bool(converged)
 
     # ------------------------------------------------------------------ instationnaire
+    def courant(self, dt: float | None = None):
+        """(Co, Dn, taux_conv, taux_diff) : nombre de Courant convectif (définition
+        OpenFOAM : 0.5·Σ|φ_f|/V·Δt) et nombre de diffusion Dn = Σ ν_f|S|²/(d·S)/V·Δt
+        (maxima sur les cellules) ; les taux sont par unité de Δt."""
+        fvm = self.fvm
+        dt = self.dt if dt is None else dt
+        nu_eff = self.nu + self.nut
+        nu_f = fvm.interp(nu_eff) * fvm.g
+        nu_b = np.where(self.kindU != 1, np.where(self.is_wall, self.nu, nu_eff[fvm.Pb])
+                        * fvm.magSb / fvm.dperp, 0.0)
+        diff = (np.bincount(fvm.P, nu_f, fvm.nc) + np.bincount(fvm.N, nu_f, fvm.nc)
+                + np.bincount(fvm.Pb, nu_b, fvm.nc)) / fvm.V
+        aF = np.abs(self.F_i)
+        conv = 0.5 * (np.bincount(fvm.P, aF, fvm.nc) + np.bincount(fvm.N, aF, fvm.nc)
+                      + np.bincount(fvm.Pb, np.abs(self.F_b), fvm.nc)) / fvm.V
+        return float(conv.max() * dt), float(diff.max() * dt), conv, diff
+
+    def _stable_dt(self, info, dt_old):
+        """Pas de temps respectant max_co (et la limite de diffusion des schémas explicites)."""
+        s = self.settings
+        _, _, conv, diff = self.courant(1.0)
+        if info["kind"] == "explicit":
+            # combinaison des limites convective et diffusive du schéma
+            rate = np.max(conv / min(s.max_co, info["co_max"]) + diff / info["dn_max"])
+        else:
+            rate = conv.max() / s.max_co
+        dt = 0.9 / rate if rate > 0 else s.max_dt
+        if dt_old is not None:
+            dt = min(dt, 1.2 * dt_old)                  # croissance lissée (comme OpenFOAM)
+        return min(dt, s.max_dt)
+
+    def auto_time_scheme(self, dt: float) -> str:
+        """Choix automatique : RK3 explicite si la limite de diffusion (parois à y⁺ ~ 1,
+        ν_t) n'impose pas un Δt beaucoup plus petit que la limite convective, sinon BDF2
+        implicite. Les deux sont vérifiés (ordre 3 / 2) ; voir le README."""
+        info = TIME_SCHEMES["rk3"]
+        _, _, conv, diff = self.courant(1.0)
+        dt_conv = info["co_max"] / max(conv.max(), 1e-300)
+        dt_diff = info["dn_max"] / max(diff.max(), 1e-300)
+        if self.model.variables or dt_diff < 0.5 * dt_conv:
+            return "backward"
+        return "rk3"
+
     def run_transient(self, dt: float, t_end: float, verbose=False, log_every=50,
                       callback=None, probes=None):
-        """PIMPLE. probes : fonction(solver) -> dict appelée à chaque pas (historique)."""
-        s, fvm = self.settings, self.fvm
+        """Intégration en temps physique jusqu'à t_end.
+
+        Schémas (Settings.time_scheme) : voir TIME_SCHEMES. Implicites (PIMPLE) : euler,
+        backward (BDF2 à pas variable), crankNicolson. Explicites à projection : rk1, rk2,
+        rk3 (SSP), rk4, ab2. Si Settings.adjust_dt, Δt suit max_co (et la limite de
+        diffusion des schémas explicites). probes : fonction(solver) -> dict par pas.
+        """
+        s = self.settings
         self.steady = False
         self.update_nut()
-        n_steps = int(round((t_end - self.time) / dt))
-        U_old, U_old2 = self.U.copy(), None
-        F_old, F_old2 = self.F_i.copy(), None
-        st_old, st_old2 = {k: v.copy() for k, v in self.state.items()}, None
+        name = canonical_time_scheme(s.time_scheme)
+        if name == "auto":
+            name = self.auto_time_scheme(dt)
+            s.time_scheme = name
+        info = TIME_SCHEMES[name]
+        self.dt = float(dt)
+        if s.adjust_dt:
+            self.dt = min(self.dt, self._stable_dt(info, None))
+        elif info["kind"] == "explicit":
+            co, dn, _, _ = self.courant(self.dt)
+            if co / info["co_max"] + dn / info["dn_max"] > 1.0:
+                import warnings
+                warnings.warn(f"Δt = {self.dt:.3g} au-delà de la limite de stabilité de "
+                              f"{name} (Co = {co:.2f}, Dn = {dn:.2f}, limites "
+                              f"{info['co_max']:.2f} / {info['dn_max']:.2f}) : risque de "
+                              f"divergence. Réduire Δt ou activer adjust_dt.")
         series = []
         t0 = time.perf_counter()
-        for n in range(1, n_steps + 1):
-            self.time += dt
-            if s.time_scheme == "euler" or U_old2 is None:
-                a0 = 1.0 / dt
-                histU = -U_old / dt
-                histT = {k: -v / dt for k, v in st_old.items()}
-                corr_old = (F_old - np.sum(fvm.interp(U_old) * fvm.Si, axis=1))
-                coef = 1.0 - np.minimum(np.abs(corr_old) / (np.abs(F_old) + 1e-30), 1.0)
-                ddt_corr = coef * corr_old / dt
-            else:
-                a0 = 1.5 / dt
-                histU = (-2.0 * U_old + 0.5 * U_old2) / dt
-                histT = {k: (-2.0 * st_old[k] + 0.5 * st_old2[k]) / dt for k in st_old}
-                c1 = F_old - np.sum(fvm.interp(U_old) * fvm.Si, axis=1)
-                c2 = F_old2 - np.sum(fvm.interp(U_old2) * fvm.Si, axis=1)
-                coef = 1.0 - np.minimum(np.abs(c1) / (np.abs(F_old) + 1e-30), 1.0)
-                ddt_corr = coef * (2.0 * c1 - 0.5 * c2) / dt
-            for outer in range(s.n_outer):
-                self.residuals_now = {}
-                final = outer == s.n_outer - 1
-                eqs = self._momentum(a0=a0, hist=histU, relax=1.0)
-                for c, (diag, up, lo, rhs) in enumerate(eqs):
-                    A = fvm.matrix(diag, up, lo)
-                    gp = fvm.grad(self.p, self.boundary_p(self.p))[:, c] * fvm.V
-                    b = rhs - gp
-                    self.residuals_now["Ux" if c == 0 else "Uy"] = normalized_residual(
-                        A, self.U[:, c], b, self.u_scale)
-                    self.U[:, c] = fvm.lin.solve(A, b, self.U[:, c], s.solver_U, rtol=1e-4,
-                                                 tag="U")
-                for corr in range(s.n_corr):
-                    last = final and corr == s.n_corr - 1
-                    self._pressure_correction(eqs, ddt_corr=ddt_corr,
-                                              rtol=1e-6 if last else 0.01)
-                if final or s.turbulence_every_outer:
-                    self._turbulence(a0=a0, hist=histT)
+        n = 0
+        step = self._pimple_step if info["kind"] == "implicit" else self._explicit_step
+        self._hist = {"U": [], "F": [], "state": [], "dt": [], "R": []}
+        eps = 1e-9 * max(abs(t_end), 1.0)
+        while self.time < t_end - eps:
+            n += 1
+            if s.adjust_dt and n > 1:
+                self.dt = self._stable_dt(info, self.dt)
+            if s.adjust_dt or n == 1:
+                # dernier pas raccourci / allongé pour tomber exactement sur t_end
+                remaining = t_end - self.time
+                if self.dt > remaining or remaining - self.dt < 0.05 * self.dt:
+                    self.dt = remaining
+            step(name, info)
             if not np.all(np.isfinite(self.U)):
                 raise FloatingPointError(f"Divergence à t = {self.time:.4g}.")
-            U_old2, U_old = U_old, self.U.copy()
-            F_old2, F_old = F_old, self.F_i.copy()
-            st_old2, st_old = st_old, {k: v.copy() for k, v in self.state.items()}
-            rec = {"time": self.time, **self.residuals_now}
+            co, dn, _, _ = self.courant()
+            rec = {"time": self.time, "dt": self.dt, "Co": co, **self.residuals_now}
+            if info["kind"] == "explicit":
+                rec["Dn"] = dn
             if probes:
                 rec.update(probes(self))
             series.append(rec)
@@ -562,7 +670,178 @@ class Solver2D:
             if callback and callback(self, n):
                 break
         self.wall_time = time.perf_counter() - t0
+        self.time_steps = n
         return series
+
+    # ---------------------------------------------------------------- PIMPLE (implicite)
+    def _push_history(self):
+        h = self._hist
+        h["U"].insert(0, self.U.copy())
+        h["F"].insert(0, self.F_i.copy())
+        h["state"].insert(0, {k: v.copy() for k, v in self.state.items()})
+        h["dt"].insert(0, self.dt)
+        for key in ("U", "F", "state", "dt"):
+            del h[key][3:]
+
+    def _pimple_step(self, name, info):
+        s, fvm = self.settings, self.fvm
+        dt = self.dt
+        if not self._hist["U"]:
+            self._push_history()                      # niveau n
+        h = self._hist
+        U_old, F_old, st_old = h["U"][0], h["F"][0], h["state"][0]
+        second = name == "backward" and len(h["U"]) >= 2
+        theta, explicit = 1.0, None
+        if name == "crankNicolson":
+            # partie explicite (1−θ)·R(Uⁿ, tⁿ) évaluée avec les champs de l'instant n
+            theta = s.cn_theta
+            self._t_eval = self.time
+            R0 = self._spatial_operator()
+            explicit = (1.0 - theta) * R0
+        if second:
+            w = dt / h["dt"][1]                       # BDF2 à pas variable
+            a0 = (1.0 + 2.0 * w) / ((1.0 + w) * dt)
+            b1 = -(1.0 + w) / dt
+            b2 = w * w / ((1.0 + w) * dt)
+            U_old2, F_old2, st_old2 = h["U"][1], h["F"][1], h["state"][1]
+            histU = b1 * U_old + b2 * U_old2
+            histT = {k: b1 * st_old[k] + b2 * st_old2[k] for k in st_old}
+            c1 = F_old - np.sum(fvm.interp(U_old) * fvm.Si, axis=1)
+            c2 = F_old2 - np.sum(fvm.interp(U_old2) * fvm.Si, axis=1)
+            ddt_corr = -self._ddt_coef(c1, F_old) * (b1 * c1 + b2 * c2)
+        else:
+            a0 = 1.0 / dt
+            histU = -U_old / dt
+            histT = {k: -v / dt for k, v in st_old.items()}
+            c1 = F_old - np.sum(fvm.interp(U_old) * fvm.Si, axis=1)
+            ddt_corr = self._ddt_coef(c1, F_old) * c1 / dt
+        if name == "crankNicolson" and len(h["U"]) >= 2:
+            # turbulence : BDF2 (L-stable) même avec Crank-Nicolson sur la quantité de mvt
+            w = dt / h["dt"][1]
+            aT = (1.0 + 2.0 * w) / ((1.0 + w) * dt)
+            b1, b2 = -(1.0 + w) / dt, w * w / ((1.0 + w) * dt)
+            histT = {k: b1 * st_old[k] + b2 * h["state"][1][k] for k in st_old}
+        else:
+            aT = a0
+        self.time += dt
+        self._t_eval = self.time
+        for outer in range(s.n_outer):
+            self.residuals_now = {}
+            final = outer == s.n_outer - 1
+            eqs = self._momentum(a0=a0, hist=histU, relax=1.0, theta=theta, explicit=explicit)
+            gp = fvm.grad(self.p, self.boundary_p(self.p)) * fvm.V[:, None]
+            for c, (diag, up, lo, rhs) in enumerate(eqs):
+                A = fvm.matrix(diag, up, lo)
+                b = rhs - gp[:, c]
+                self.residuals_now["Ux" if c == 0 else "Uy"] = normalized_residual(
+                    A, self.U[:, c], b, self.u_scale)
+                self.U[:, c] = fvm.lin.solve(A, b, self.U[:, c], s.solver_U, rtol=1e-4,
+                                             tag="U")
+            for corr in range(s.n_corr):
+                last = final and corr == s.n_corr - 1
+                self._pressure_correction(eqs, ddt_corr=ddt_corr, rtol=1e-6 if last else 0.01)
+            if final or s.turbulence_every_outer:
+                self._turbulence(a0=aT, hist=histT)
+        self._push_history()
+
+    def _ddt_coef(self, c1, F_old):
+        """Coefficient de la correction ddtCorr du flux. 1 (défaut) : formulation cohérente
+        de Tuković, Perić & Jasak (2018) — les flux aux faces gardent leur propre dérivée
+        temporelle, résultat indépendant de Δt, ordre du schéma conservé. None : coefficient
+        adaptatif historique d'OpenFOAM (1 − |c|/|φ|), qui rend la solution dépendante de Δt."""
+        k = self.settings.ddt_phi_coeff
+        if k is None:
+            return 1.0 - np.minimum(np.abs(c1) / (np.abs(F_old) + 1e-30), 1.0)
+        return k
+
+    def _spatial_operator(self):
+        """R(U)·V = b − A·U : convection + diffusion + forces volumiques (sans pression),
+        avec les schémas et conditions aux limites de l'équation implicite."""
+        U = self.U
+        R = np.empty_like(U)
+        for c, (diag, up, lo, rhs) in enumerate(self._momentum()):
+            R[:, c] = rhs - diag * U[:, c] - self._offdiag_mult(up, lo, U[:, c])
+        return R
+
+    # ---------------------------------------------------------------- projection (explicite)
+    def _poisson(self):
+        """Laplacien géométrique de pression (Γ = 1) : constant, factorisé une seule fois."""
+        if getattr(self, "_poisson_cache", None) is None:
+            fvm = self.fvm
+            bc = self.pressure_bc()
+            diag, up, lo, rhs_bc = fvm.assemble(np.zeros(fvm.ni), np.zeros(fvm.nb),
+                                                np.ones(fvm.ni), np.ones(fvm.nb), bc)
+            if not self.has_fixed_p:
+                diag = diag.copy()
+                diag[0] += diag[0]
+            L = fvm.matrix(diag, up, lo)
+            if fvm.nc < 100000:
+                from scipy.sparse.linalg import splu
+                lu = splu(L.tocsc(), permc_spec="MMD_AT_PLUS_A")
+                solve = lambda b, x0: lu.solve(b)                       # noqa: E731
+            else:
+                from ..linalg import fcg
+                M = fvm.lin.amg.setup(L)
+                solve = lambda b, x0: fcg(L, b, x0, M, 1e-9, 500)[0]     # noqa: E731
+            self._poisson_cache = (L, rhs_bc, solve)
+        return self._poisson_cache
+
+    def _project(self, Ustar, tau):
+        """U* → champ à divergence (des flux) nulle : −∇·(τ∇p) = −∇·φ*."""
+        fvm = self.fvm
+        L, rhs_bc, solve = self._poisson()
+        Ub = self.boundary_U(Ustar)
+        Fi = np.sum(fvm.interp(Ustar) * fvm.Si, axis=1)
+        Fb = np.sum(Ub * fvm.Sb, axis=1)
+        rhs = rhs_bc - fvm.sum_faces(Fi, Fb) / tau
+        nf = 0.0
+        if not fvm.orthogonal:
+            # correction non orthogonale explicite avec la dernière pression connue
+            gp = fvm.grad(self.p, self.boundary_p(self.p))
+            nf = fvm.nonorth_flux(np.ones(fvm.ni), gp, self.p, self.settings.nonorth_limit)
+            rhs = rhs + np.bincount(fvm.P, nf, fvm.nc) - np.bincount(fvm.N, nf, fvm.nc)
+        p = solve(rhs, self.p)
+        _, _, g_, d_ = self.pressure_bc()
+        self.F_i = Fi - tau * (fvm.g * (p[fvm.N] - p[fvm.P]) + nf)
+        self.F_b = Fb - tau * fvm.magSb * (g_ * p[fvm.Pb] + d_)
+        self.p = p
+        self.U = Ustar - tau * fvm.grad(p, self.boundary_p(p))
+
+    def _explicit_step(self, name, info):
+        """Runge-Kutta explicite à projection à chaque étage (Sanderse & Koren 2012), ou
+        Adams-Bashforth 2. La pression est le multiplicateur de Lagrange de chaque étage."""
+        dt, V = self.dt, self.fvm.V[:, None]
+        t_n = self.time
+        U0, st_old = self.U.copy(), {k: v.copy() for k, v in self.state.items()}
+        if name == "ab2":
+            self._t_eval = t_n
+            R = self._spatial_operator() / V
+            if self._hist["R"]:
+                w = dt / self._hist["dt"][0]                 # AB2 à pas variable
+                incr = (1.0 + 0.5 * w) * R - 0.5 * w * self._hist["R"][0]
+            else:
+                incr = R                                     # 1er pas : Euler explicite
+            self._hist["R"] = [R]
+            self._hist["dt"] = [dt]
+            self._project(U0 + dt * incr, dt)
+        else:
+            A, b, c = RK_TABLES[name]
+            F0 = (self.F_i.copy(), self.F_b.copy())
+            Rs = []
+            for i in range(len(b)):
+                if i > 0:
+                    self.F_i, self.F_b = F0
+                    Ustar = U0 + dt * sum(A[i][j] * Rs[j] for j in range(i) if A[i][j])
+                    self._project(Ustar, c[i] * dt)
+                self._t_eval = t_n + c[i] * dt
+                Rs.append(self._spatial_operator() / V)
+            self.F_i, self.F_b = F0
+            self._project(U0 + dt * sum(bj * Rj for bj, Rj in zip(b, Rs) if bj), dt)
+        self.time = t_n + dt
+        self.residuals_now = {}
+        if self.model.variables:
+            # turbulence : Euler implicite (termes sources raides) après le pas de U
+            self._turbulence(a0=1.0 / dt, hist={k: -v / dt for k, v in st_old.items()})
 
     # ------------------------------------------------------------------ post-traitement
     def forces(self, patches=None):

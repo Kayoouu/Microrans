@@ -18,7 +18,7 @@ import numpy as np
 from .flow import FlowField, bulk_velocity, centerline_velocity, initial_guess, wall_shear
 from .grid import Grid
 from .models.base import TurbulenceModel
-from .numerics import solve_transport
+from .numerics import diffusion, solve_transport
 
 
 class ImplicitStep:
@@ -53,6 +53,93 @@ class ImplicitStep:
     def bdf2(cls, grid, dt, current, previous):
         return cls(grid, 1.5 / dt,
                    {k: (-2.0 * current[k] + 0.5 * previous[k]) / dt for k in current})
+
+
+class EvalStep:
+    """« Pas » d'évaluation explicite : calcule F(φ) = S − D·φ + d/dy(Γ dφ/dy) pour chaque
+    variable que le modèle résoudrait, sans rien résoudre (φ inchangé : évaluation de
+    Jacobi, chaque équation voit l'état de départ). Utilisé par les schémas explicites."""
+
+    def __init__(self, grid: Grid, state: dict[str, np.ndarray]):
+        self.grid, self.state, self.F, self.gamma, self.sink = grid, state, {}, {}, {}
+
+    def solve(self, name, gamma, source, sink, wall_values=(0.0, 0.0), model=None):
+        phi = self.state[name]
+        self.gamma[name] = np.broadcast_to(np.asarray(gamma, dtype=float), phi.shape)
+        self.sink[name] = np.broadcast_to(np.asarray(sink, dtype=float), phi.shape)
+        f = (np.asarray(source, dtype=float) - np.asarray(sink, dtype=float) * phi
+             + diffusion(self.grid, np.asarray(gamma, dtype=float), phi))
+        f[0] = f[-1] = 0.0
+        self.F[name] = f
+        return phi
+
+
+# Schémas en temps du solveur 1D.
+#   implicites : euler, bdf2 (multipas) ; cn (ESDIRK, 1er étage explicite, A-stable) ;
+#                sdirk2, sdirk3 (Alexander 1977, L-stables, raides-précis)
+#   explicites : rk1..rk4, ab2 (limités par Δt ≲ Δy²/ν_eff : voir `explicit_dt_limit`)
+_G2 = 1.0 - 1.0 / np.sqrt(2.0)
+_G3 = 0.435866521508459
+_T3 = 0.5 * (1.0 + _G3)
+_B31 = -(6 * _G3 ** 2 - 16 * _G3 + 1) / 4
+_B32 = (6 * _G3 ** 2 - 20 * _G3 + 5) / 4
+DIRK_TABLES = {   # (A triangulaire inférieure avec diagonale, c) ; b = dernière ligne
+    "cn": ([[0.0, 0.0], [0.5, 0.5]], [0.0, 1.0]),
+    "sdirk2": ([[_G2, 0.0], [1 - _G2, _G2]], [_G2, 1.0]),
+    "sdirk3": ([[_G3, 0.0, 0.0], [_T3 - _G3, _G3, 0.0], [_B31, _B32, _G3]], [_G3, _T3, 1.0]),
+}
+ERK_TABLES = {
+    "rk1": ([[0.0]], [1.0], [0.0]),
+    "rk2": ([[0.0, 0.0], [1.0, 0.0]], [0.5, 0.5], [0.0, 1.0]),
+    "rk3": ([[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.25, 0.25, 0.0]], [1 / 6, 1 / 6, 2 / 3],
+            [0.0, 1.0, 0.5]),
+    "rk4": ([[0.0, 0.0, 0.0, 0.0], [0.5, 0.0, 0.0, 0.0], [0.0, 0.5, 0.0, 0.0],
+             [0.0, 0.0, 1.0, 0.0]], [1 / 6, 1 / 3, 1 / 3, 1 / 6], [0.0, 0.5, 0.5, 1.0]),
+}
+TIME_SCHEMES_1D = {
+    "euler": "Euler implicite (ordre 1, L-stable)",
+    "bdf2": "BDF2 (ordre 2, L-stable, multipas)",
+    "cn": "Crank-Nicolson (ordre 2, A-stable non L-stable)",
+    "sdirk2": "SDIRK 2 étages (ordre 2, L-stable)",
+    "sdirk3": "SDIRK 3 étages (ordre 3, L-stable)",
+    "rk1": "Euler explicite (ordre 1)",
+    "rk2": "RK2 Heun (ordre 2, explicite)",
+    "rk3": "RK3 SSP (ordre 3, explicite)",
+    "rk4": "RK4 classique (ordre 4, explicite)",
+    "ab2": "Adams-Bashforth 2 (ordre 2, explicite)",
+}
+# demi-longueur de l'intervalle de stabilité réel des schémas explicites
+_REAL_STABILITY = {"rk1": 2.0, "rk2": 2.0, "rk3": 2.5127, "rk4": 2.7853, "ab2": 1.0}
+
+
+def explicit_dt_limit(grid: Grid, gammas, sinks=None, scheme: str = "rk4") -> float:
+    """Δt max de stabilité d'un schéma explicite (borne de Gershgorin du spectre).
+
+    Pour chaque équation : λ_max ≤ max_i [2(Γ_w/Δy_w + Γ_e/Δy_e)/vol_i + D_i], avec Γ la
+    diffusivité (U : ν + ν_t ; SA : (ν + ν̃)/σ...) et D le puits linéarisé (ex. 2βω pour
+    ω, très raide près de la paroi en k-ω). En proche paroi (Δy ~ y⁺/Re_τ) cette limite
+    est minuscule : c'est pourquoi le RANS/URANS résolu à la paroi utilise l'implicite.
+    """
+    if isinstance(gammas, np.ndarray):
+        gammas = [gammas]
+    sinks = list(sinks) if sinks is not None else [None] * len(gammas)
+    lam = 0.0
+    for gam, snk in zip(gammas, sinks):
+        g = 0.5 * (gam[:-1] + gam[1:]) / grid.dy
+        rate = 2.0 * (g[:-1] + g[1:]) / grid.volumes[1:-1]
+        if snk is not None:
+            rate = rate + np.maximum(snk[1:-1], 0.0)
+        lam = max(lam, float(np.max(rate)))
+    return float(_REAL_STABILITY[scheme] / lam)
+
+
+def model_diffusivities(model, grid, nu, U, state):
+    """(diffusivités, puits) de toutes les équations transportées (U et turbulence)."""
+    flow = FlowField.from_velocity(grid, U)
+    ev = EvalStep(grid, dict(state))
+    model.update(dict(state), flow, ev)
+    return ([nu + model.eddy_viscosity(state, flow), *ev.gamma.values()],
+            [None, *ev.sink.values()])
 
 
 @dataclass
@@ -178,19 +265,44 @@ class UnsteadyResult:
     stored_extra: dict[str, np.ndarray] = field(default_factory=dict)
 
 
+def _explicit_rhs(model, grid, nu, f, Y):
+    """F(Y, t) de tous les champs (U et turbulence), évaluation explicite."""
+    U = Y["U"]
+    state = {k: Y[k] for k in model.variables}
+    flow = FlowField.from_velocity(grid, U)
+    nut = model.eddy_viscosity(state, flow)
+    FU = f + diffusion(grid, nu + nut, U)
+    FU[0] = FU[-1] = 0.0
+    ev = EvalStep(grid, state)
+    model.update(state, flow, ev)
+    return {"U": FU, **ev.F}
+
+
+def _clip(model, Y):
+    """Valeurs pariétales et planchers après un étage explicite."""
+    Y["U"][0] = Y["U"][-1] = 0.0
+    for k in model.variables:
+        Y[k][0], Y[k][-1] = model.wall_values(k)
+        if k in model.floors:
+            Y[k][1:-1] = np.maximum(Y[k][1:-1], model.floors[k])
+    return Y
+
+
 def solve_unsteady(model: TurbulenceModel, grid: Grid, nu: float,
                    forcing: Callable[[float], float], initial: Solution,
                    t_end: float, dt: float, scheme: str = "bdf2",
                    max_inner: int = 30, inner_tol: float = 1e-8, relax: float = 1.0,
                    store_from: float | None = None, verbose: bool = False,
                    log_every: int = 1000) -> UnsteadyResult:
-    """URANS : intégration en temps physique (Euler implicite ou BDF2) avec sous-itérations.
+    """URANS : intégration en temps physique, schéma au choix (voir TIME_SCHEMES_1D).
 
+    Implicites : sous-itérations de Picard à chaque pas (ou étage) jusqu'à inner_tol.
+    Explicites : aucune sous-itération, mais Δt limité par `explicit_dt_limit`.
     Les profils U, ν_t (et les variables de turbulence) sont stockés à chaque pas pour
     t > store_from (moyennes de phase, analyse harmonique).
     """
-    if scheme not in ("bdf2", "euler"):
-        raise ValueError("scheme doit être 'bdf2' ou 'euler'.")
+    if scheme not in TIME_SCHEMES_1D:
+        raise ValueError(f"scheme doit être l'un de {list(TIME_SCHEMES_1D)}.")
     t0 = initial.time
     n_steps = int(round((t_end - t0) / dt))
     if n_steps < 1:
@@ -199,6 +311,7 @@ def solve_unsteady(model: TurbulenceModel, grid: Grid, nu: float,
 
     current = {"U": initial.U.copy(), **{k: v.copy() for k, v in initial.state.items()}}
     previous = None
+    F_prev = None
     rec = {k: np.empty(n_steps + 1) for k in ("t", "f", "tb", "tt", "ub", "uc", "inner")}
 
     def record(i, t, f, U, n_inner):
@@ -208,28 +321,9 @@ def solve_unsteady(model: TurbulenceModel, grid: Grid, nu: float,
         rec["uc"][i] = centerline_velocity(grid, U)
         rec["inner"][i] = n_inner
 
-    record(0, t0, forcing(t0), current["U"], 0)
-    stored_t, stored_u, stored_nut = [], [], []
-    stored_extra = {k: [] for k in model.variables}
-
-    for n in range(1, n_steps + 1):
-        t = t0 + n * dt
-        f = float(forcing(t))
-        if scheme == "euler" or previous is None:
-            step = ImplicitStep.euler(grid, dt, current)
-        else:
-            step = ImplicitStep.bdf2(grid, dt, current, previous)
+    def implicit_solve(step, f, U, state):
         source = np.full(grid.n, f)
-        if previous is None:
-            U = current["U"]
-            state = {k: current[k] for k in model.variables}
-        else:
-            # Prédicteur : extrapolation linéaire en temps (réduit les sous-itérations).
-            U = 2.0 * current["U"] - previous["U"]
-            state = {}
-            for k in model.variables:
-                guess = 2.0 * current[k] - previous[k]
-                state[k] = np.where(guess > 0.0, guess, current[k])
+        inner = 0
         for inner in range(1, max_inner + 1):
             nut = model.eddy_viscosity(state, FlowField.from_velocity(grid, U))
             U_new = step.solve("U", nu + nut, source, 0.0)
@@ -240,7 +334,82 @@ def solve_unsteady(model: TurbulenceModel, grid: Grid, nu: float,
             U, state = U_new, state_new
             if linear or max(change.values()) < inner_tol:
                 break
-        new = {"U": U, **state}
+        return U, state, inner
+
+    if scheme in ERK_TABLES or scheme == "ab2":
+        dt_lim = explicit_dt_limit(grid, *model_diffusivities(
+            model, grid, nu, initial.U, initial.state), scheme=scheme)
+        if dt > dt_lim:
+            import warnings
+            warnings.warn(f"{scheme} : Δt = {dt:.3g} > limite de stabilité explicite "
+                          f"≈ {dt_lim:.3g} (diffusion près des parois) : divergence probable.")
+
+    record(0, t0, forcing(t0), current["U"], 0)
+    stored_t, stored_u, stored_nut = [], [], []
+    stored_extra = {k: [] for k in model.variables}
+
+    for n in range(1, n_steps + 1):
+        t = t0 + n * dt
+        tn = t - dt
+        f = float(forcing(t))
+        if scheme in ("euler", "bdf2"):
+            if scheme == "euler" or previous is None:
+                step = ImplicitStep.euler(grid, dt, current)
+            else:
+                step = ImplicitStep.bdf2(grid, dt, current, previous)
+            if previous is None:
+                U = current["U"]
+                state = {k: current[k] for k in model.variables}
+            else:
+                # Prédicteur : extrapolation linéaire en temps (réduit les sous-itérations).
+                U = 2.0 * current["U"] - previous["U"]
+                state = {}
+                for k in model.variables:
+                    guess = 2.0 * current[k] - previous[k]
+                    state[k] = np.where(guess > 0.0, guess, current[k])
+            U, state, inner = implicit_solve(step, f, U, state)
+            new = {"U": U, **state}
+        elif scheme in DIRK_TABLES:
+            A, c = DIRK_TABLES[scheme]
+            Fs, inner = [], 0
+            Y = current
+            for i in range(len(c)):
+                ti = tn + c[i] * dt
+                if A[i][i] == 0.0:                   # étage explicite (ESDIRK)
+                    Fs.append(_explicit_rhs(model, grid, nu, float(forcing(ti)), current))
+                    continue
+                a0 = 1.0 / (A[i][i] * dt)
+                known = {k: current[k] + dt * sum(A[i][j] * Fs[j][k] for j in range(i))
+                         for k in current}
+                step = ImplicitStep(grid, a0, {k: -a0 * v for k, v in known.items()})
+                U, state, it_i = implicit_solve(step, float(forcing(ti)), Y["U"].copy(),
+                                                {k: Y[k].copy() for k in model.variables})
+                inner += it_i
+                Y = {"U": U, **state}
+                Fs.append({k: a0 * (Y[k] - known[k]) for k in Y})
+            new = Y                                  # schémas raides-précis : yⁿ⁺¹ = dernier étage
+        elif scheme in ERK_TABLES:
+            A, b, c = ERK_TABLES[scheme]
+            Fs = []
+            for i in range(len(b)):
+                Yi = current if i == 0 else _clip(model, {
+                    k: current[k] + dt * sum(A[i][j] * Fs[j][k] for j in range(i) if A[i][j])
+                    for k in current})
+                Fs.append(_explicit_rhs(model, grid, nu, float(forcing(tn + c[i] * dt)), Yi))
+            new = _clip(model, {k: current[k] + dt * sum(bj * Fj[k] for bj, Fj in zip(b, Fs))
+                                for k in current})
+            inner = len(b)
+        else:                                        # ab2
+            Fn = _explicit_rhs(model, grid, nu, float(forcing(tn)), current)
+            if F_prev is None:
+                new = {k: current[k] + dt * Fn[k] for k in current}
+            else:
+                new = {k: current[k] + dt * (1.5 * Fn[k] - 0.5 * F_prev[k]) for k in current}
+            new = _clip(model, new)
+            F_prev = Fn
+            inner = 1
+        U = new["U"]
+        state = {k: new[k] for k in model.variables}
         _check_finite(new, f"t = {t:.4g}")
         previous, current = current, new
         record(n, t, f, U, inner)

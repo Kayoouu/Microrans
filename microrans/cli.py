@@ -6,6 +6,7 @@ import sys
 from pathlib import Path
 
 from .models import MODELS, TURBULENT_MODELS, canonical_name
+from .solver import TIME_SCHEMES_1D
 
 
 def _model_list(values: list[str]) -> list[str]:
@@ -213,7 +214,9 @@ def build_parser() -> argparse.ArgumentParser:
                    help="durée de transitoire avant moyenne, en h/u_τ (défaut : 80)")
     p.add_argument("--steps-per-period", type=int, default=128)
     p.add_argument("--average", type=int, default=5, help="périodes moyennées (défaut : 5)")
-    p.add_argument("--scheme", choices=["bdf2", "euler"], default="bdf2")
+    p.add_argument("--scheme", choices=list(TIME_SCHEMES_1D), default="bdf2",
+                   help="schéma en temps (voir README) : implicites euler, bdf2, cn, sdirk2, "
+                        "sdirk3 ; explicites rk1..rk4, ab2 (Δt très petit requis)")
     p.add_argument("--max-inner", type=int, default=30)
     p.add_argument("--inner-tol", type=float, default=1e-6)
     p.add_argument("--relax", type=float, default=1.0,
@@ -237,7 +240,7 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("run2d", help="calcul 2D (RANS/URANS) décrit par un fichier de cas")
     p.add_argument("case", help="fichier de cas .toml ou .json (voir dossier cases/)")
     p.add_argument("-o", "--out", help="dossier de sortie")
-    p.add_argument("--set", nargs="+", metavar="SECTION.CLE=VALEUR",
+    p.add_argument("--set", nargs="+", action="extend", metavar="SECTION.CLE=VALEUR",
                    help="surcharge d'un paramètre, ex. physics.model=sst solver.max_iter=500")
     p.add_argument("--no-plot", action="store_true")
     p.add_argument("-q", "--quiet", action="store_true")

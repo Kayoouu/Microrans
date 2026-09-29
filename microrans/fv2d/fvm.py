@@ -95,7 +95,7 @@ class FVM:
                 + np.bincount(Pb, F_b * alpha - gam_b * self.magSb * gamma, nc))
         upper = Fm - dcoef
         lower = -Fp - dcoef
-        rhs = np.bincount(Pb, -F_b * beta + gam_b * self.magSb * delta, nc)
+        rhs = np.bincount(Pb, -F_b * beta + gam_b * self.magSb * delta, nc).astype(float)
         if bounded:
             diag -= self.sum_faces(F_i, F_b)
         if grad_phi is not None:
