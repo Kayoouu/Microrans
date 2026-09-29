@@ -38,6 +38,17 @@ def strouhal(times, signal, frac: float = 0.5):
     return float(1.0 / np.mean(np.diff(tz))), len(z) - 1
 
 
+def _energy_from(cfg):
+    """Section [energy] : Pr, Pr_t, beta, T_ref, gravity, T0, delta_T, source ;
+    ou [physics] rayleigh = Ra (convection naturelle adimensionnée, voir exemples)."""
+    e = cfg.get("energy")
+    if e is None or e.get("enabled", True) is False:
+        return None
+    e = dict(e)
+    e.pop("enabled", None)
+    return e
+
+
 def build_solver(cfg: dict, base_dir=".", verbose=False, mesh=None):
     """Solveur prêt à calculer (maillage construit, ou fourni via `mesh`)."""
     mcfg = cfg.get("mesh", {})
@@ -61,7 +72,8 @@ def build_solver(cfg: dict, base_dir=".", verbose=False, mesh=None):
                       initial_U=init.get("U", (0.0, 0.0)),
                       turbulence_inflow=cfg.get("turbulence"),
                       settings=_settings_from(cfg.get("solver", {})),
-                      reference_velocity=ph.get("reference_velocity"))
+                      reference_velocity=ph.get("reference_velocity"),
+                      energy=_energy_from(cfg))
     amp = init.get("perturbation", 0.0)
     if amp:
         # tourbillon gaussien dans le sillage pour déclencher une instabilité (lâcher)
@@ -131,11 +143,22 @@ def run_case(cfg: dict, base_dir=".", out_dir=None, verbose=True, plot=True, cal
             Cd_pressure=float(f["pressure"][0] / qdyn), Cd_viscous=float(f["viscous"][0] / qdyn))
         xf, tau, yp = solver.wall_shear(name)
         summary[name].update(yplus_max=float(yp.max()), yplus_mean=float(yp.mean()))
-        # distribution pariétale (comme les « XY plots » de Fluent) : Cf, Cp, y+
+        # distribution pariétale (comme les « XY plots » de Fluent) : Cf, Cp, y+ (, T, q)
         pb = solver.boundary_p(solver.p)[solver.patch_slices[name]]
-        np.savetxt(out / f"wall_{name}.csv",
-                   np.column_stack([xf, tau, tau / (0.5 * Uref ** 2), pb / (0.5 * Uref ** 2), yp]),
-                   delimiter=",", header="x,y,tau_w,Cf,Cp,yplus", comments="")
+        cols = [xf, tau, tau / (0.5 * Uref ** 2), pb / (0.5 * Uref ** 2), yp]
+        header = "x,y,tau_w,Cf,Cp,yplus"
+        if solver.energy is not None:
+            Tw, q = solver.wall_heat_flux(name)
+            e = solver.energy
+            alpha = solver.nu / float(e["Pr"])
+            nu_ref = float(e.get("delta_T", 1.0)) * alpha / Lref
+            mag = solver.fvm.magSb[solver.patch_slices[name]]
+            summary[name].update(heat_flux=float(np.sum(q * mag)),
+                                 Nu_mean=float(np.sum(q * mag) / np.sum(mag) / nu_ref))
+            cols += [Tw, q, q / nu_ref]
+            header += ",T_wall,q,Nu"
+        np.savetxt(out / f"wall_{name}.csv", np.column_stack(cols), delimiter=",",
+                   header=header, comments="", encoding="utf-8")
     (out / "summary.json").write_text(json.dumps(summary, indent=2, ensure_ascii=False),
                                       encoding="utf-8")
     if hist:

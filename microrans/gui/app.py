@@ -46,7 +46,7 @@ MESH_TYPES = [("rectangle", "Rectangle structuré"), ("ogrid", "Structuré en O 
               ("blocks", "Multi-blocs (édition dans l'onglet TOML)")]
 BODY_TYPES = [("circle", "Cercle"), ("rectangle", "Rectangle"), ("ellipse", "Ellipse"),
               ("naca", "Profil NACA 4 chiffres"), ("file", "Contour importé (.dat .csv .svg .dxf)")]
-FIELD_LABELS = {"U_mag": "|U|", "Ux": "U_x", "Uy": "U_y", "p": "pression p", "vorticity":
+FIELD_LABELS = {"T": "température T", "U_mag": "|U|", "Ux": "U_x", "Uy": "U_y", "p": "pression p", "vorticity":
                 "vorticité ω_z", "nut_over_nu": "ν_t / ν", "k": "k", "omega": "ω", "eps": "ε",
                 "nu_tilde": "ν̃", "wall_distance": "distance à la paroi"}
 
@@ -403,6 +403,22 @@ class MainWindow(QMainWindow):
         f.addRow(_note("SA : ν̃ = 3ν en amont (recommandation NASA TMR). Parois résolues "
                        "(y⁺ ≈ 1) : pas de lois de paroi."))
         lay.addWidget(box)
+        self.box_energy, f = _form("Thermique (équation de l'énergie, Boussinesq)")
+        self.energy_on = self._check("Résoudre la température", False)
+        self.energy_on.toggled.connect(self._energy_toggled)
+        f.addRow(self.energy_on)
+        self.energy_fields = [
+            ("Prandtl Pr = ν/α", B.sci(("energy", "Pr"), 0.71)),
+            ("Prandtl turbulent Pr_t", B.sci(("energy", "Pr_t"), 0.85)),
+            ("β (dilatation ; 0 = sans flottabilité)", B.sci(("energy", "beta"), 0.0)),
+            ("Gravité (gx, gy)", B.vec(("energy", "gravity"), (0.0, -9.81))),
+            ("Température de référence", B.sci(("energy", "T_ref"), 0.0)),
+            ("ΔT de référence (Nusselt)", B.sci(("energy", "delta_T"), 1.0))]
+        for lab, wdg in self.energy_fields:
+            f.addRow(lab, wdg)
+        f.addRow(_note("Conditions de paroi : colonne T (température imposée) ou q (flux "
+                       "entrant) de la page Conditions limites ; sinon adiabatique."))
+        lay.addWidget(self.box_energy)
         box, f = _form("Conditions initiales et forces")
         f.addRow("Vitesse initiale (Ux, Uy)", B.vec(("initial", "U"), (0.0, 0.0)))
         f.addRow("Perturbation du sillage", B.sci(("initial", "perturbation"), None, True, "0"))
@@ -419,8 +435,8 @@ class MainWindow(QMainWindow):
                             "Champ lointain : U∞ en entrée, p∞ en sortie selon le signe de U∞·n. "
                             "Les composantes de U acceptent des expressions en x, y "
                             "(ex. 6*y*(1-y))."))
-        self.bc_table = QTableWidget(0, 5)
-        self.bc_table.setHorizontalHeaderLabels(["Patch", "Type", "Ux", "Uy", "p"])
+        self.bc_table = QTableWidget(0, 7)
+        self.bc_table.setHorizontalHeaderLabels(["Patch", "Type", "Ux", "Uy", "p", "T", "flux q"])
         self.bc_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         self.bc_table.itemChanged.connect(lambda *_: self._bc_changed())
         lay.addWidget(self.bc_table, 1)
@@ -525,7 +541,8 @@ class MainWindow(QMainWindow):
         box, f = _form("Distributions pariétales")
         self.wall_combo = combo([])
         self.wall_q = combo([("Cp", "Coefficient de pression Cp"), ("Cf", "Frottement Cf"),
-                             ("yplus", "y⁺")])
+                             ("yplus", "y⁺"), ("q", "Flux de chaleur q"),
+                             ("Tw", "Température de paroi")])
         f.addRow("Paroi", self.wall_combo)
         f.addRow("Grandeur", self.wall_q)
         b = QPushButton("Tracer")
@@ -583,6 +600,9 @@ class MainWindow(QMainWindow):
         self._mesh_type_changed()
         self._nu_mode_changed()
         self._mode_changed()
+        self.energy_on.setChecked("energy" in cfg)
+        for _, wdg in self.energy_fields:
+            wdg.setEnabled("energy" in cfg)
         self._fill_bc_table()
         self._syncing = False
         self._refresh_toml()
@@ -595,6 +615,8 @@ class MainWindow(QMainWindow):
 
     def _store_forms(self):
         self.binder.store(self.cfg)
+        if not self.energy_on.isChecked():
+            self.cfg.pop("energy", None)
         ph = self.cfg.setdefault("physics", {})
         if self.nu_mode.currentData() == "nu":
             ph.pop("reynolds", None)
@@ -879,6 +901,19 @@ class MainWindow(QMainWindow):
         if not self._syncing:
             self._form_changed()
 
+    def _energy_toggled(self, on=None):
+        on = self.energy_on.isChecked()
+        for _, wdg in self.energy_fields:
+            wdg.setEnabled(on)
+        if self._syncing:
+            return
+        if on:
+            self.cfg.setdefault("energy", {})
+            self.binder.store(self.cfg)
+        else:
+            self.cfg.pop("energy", None)
+        self._toml_timer.start()
+
     def _mode_changed(self):
         steady = self.mode_combo.currentData() == "steady"
         self.box_steady.setVisible(steady)
@@ -930,6 +965,7 @@ class MainWindow(QMainWindow):
         self._bc_sync = True
         bnd = self.cfg.get("boundary", {})
         names = self._patch_names() or list(bnd)
+        self.bc_table.setRowCount(0)             # supprime aussi les anciennes listes
         self.bc_table.setRowCount(len(names))
         for r, n in enumerate(names):
             spec = bnd.get(n, {"type": "wall"})
@@ -944,6 +980,8 @@ class MainWindow(QMainWindow):
             self.bc_table.setItem(r, 2, QTableWidgetItem(str(U[0])))
             self.bc_table.setItem(r, 3, QTableWidgetItem(str(U[1])))
             self.bc_table.setItem(r, 4, QTableWidgetItem(str(spec.get("p", ""))))
+            self.bc_table.setItem(r, 5, QTableWidgetItem(str(spec.get("T", ""))))
+            self.bc_table.setItem(r, 6, QTableWidgetItem(str(spec.get("q", ""))))
         self._bc_sync = False
 
     def _bc_changed(self):
@@ -970,6 +1008,12 @@ class MainWindow(QMainWindow):
             p = num(self.bc_table.item(r, 4).text() if self.bc_table.item(r, 4) else "")
             if t in ("outlet", "farfield") and p is not None:
                 spec["p"] = p
+            T = num(self.bc_table.item(r, 5).text() if self.bc_table.item(r, 5) else "")
+            q = num(self.bc_table.item(r, 6).text() if self.bc_table.item(r, 6) else "")
+            if T is not None and t in ("wall", "inlet", "farfield"):
+                spec["T"] = T
+            elif q is not None and t == "wall":
+                spec["q"] = q
             bnd[name] = spec
         self.cfg["boundary"] = bnd
         self._toml_timer.start()
@@ -1168,7 +1212,14 @@ class MainWindow(QMainWindow):
         q = 0.5 * s.U_ref ** 2
         pb = s.boundary_p(s.p)[s.patch_slices[name]]
         what = self.wall_q.currentData()
-        y = {"Cp": pb / q, "Cf": tau / q, "yplus": yp}[what]
+        if what in ("q", "Tw"):
+            if s.energy is None:
+                self.canvas.message("Pas de thermique dans ce calcul.")
+                return
+            Tw, qw = s.wall_heat_flux(name)
+            y = qw if what == "q" else Tw
+        else:
+            y = {"Cp": pb / q, "Cf": tau / q, "yplus": yp}[what]
         o = np.argsort(xf[:, 0])
         ax = self.canvas.axes()
         ax.plot(xf[o, 0], y[o], "o", ms=3, color="#2a78d6")

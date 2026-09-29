@@ -1,0 +1,48 @@
+# Convection naturelle en cavité carrée chauffée latéralement, Ra = 1e5, Pr = 0.71
+# Référence : de Vahl Davis (1983) — Nu moyen = 4.519, u_max = 34.73, v_max = 68.59
+# Adimensionnement : L = 1, ΔT = 1, diffusivité α = 1 (vitesses en α/L) → ν = Pr,
+# β g = Ra·Pr. microrans run2d convection_naturelle_ra1e5
+[mesh]
+type = "rectangle"
+x0 = 0.0
+x1 = 1.0
+y0 = 0.0
+y1 = 1.0
+nx = 48
+ny = 48
+# resserrement symétrique vers les parois (multi-grading à la blockMesh)
+grading = [[[0.5, 0.5, 3.0], [0.5, 0.5, 0.3333333333333333]], [[0.5, 0.5, 3.0], [0.5, 0.5, 0.3333333333333333]]]
+names = { left = "chaud", right = "froid", bottom = "adiabatique", top = "adiabatique" }
+
+[physics]
+nu = 0.71
+model = "laminar"
+reference_velocity = 30.0
+reference_length = 1.0
+
+[energy]
+Pr = 0.71
+beta = 71000.0             # Ra·Pr (avec |g| = 1)
+gravity = [0.0, -1.0]
+T_ref = 0.0
+delta_T = 1.0              # pour le nombre de Nusselt
+
+[boundary.chaud]
+type = "wall"
+T = 0.5
+
+[boundary.froid]
+type = "wall"
+T = -0.5
+
+[boundary.adiabatique]
+type = "wall"              # sans T ni q : paroi adiabatique
+
+[solver]
+mode = "steady"
+max_iter = 4000
+tol = 1e-6
+
+[output]
+directory = "results/convection_naturelle"
+forces = ["chaud", "froid"]

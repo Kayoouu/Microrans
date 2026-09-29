@@ -23,6 +23,9 @@ def grading_distribution(n: int, grading=1.0) -> np.ndarray:
         segs = [(1.0, 1.0, float(grading))]
     else:
         segs = [tuple(map(float, s)) for s in grading]
+    if any(len(sg) != 3 or sg[2] <= 0 or sg[0] <= 0 or sg[1] <= 0 for sg in segs):
+        raise ValueError(f"Progression (grading) invalide : {grading} — rapports > 0 attendus, "
+                         "ou segments (fraction de longueur, fraction de mailles, rapport).")
     lf = np.array([s[0] for s in segs])
     nf = np.array([s[1] for s in segs])
     lf, nf = lf / lf.sum(), nf / nf.sum()

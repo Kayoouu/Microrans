@@ -84,6 +84,8 @@ class Settings:
     relax_turb: float = 0.8
     convection_U: str = "linearUpwind"    # upwind | linearUpwind
     convection_turb: str = "upwind"
+    convection_T: str = "linearUpwind"
+    relax_T: float = 0.9
     max_iter: int = 3000
     tol: float = 1e-5                     # résidus normalisés (OpenFOAM) de tous les champs
     # critère complémentaire (comme les moniteurs de Fluent) : arrêt quand les efforts sur
@@ -225,8 +227,13 @@ class Solver2D:
     def __init__(self, mesh: Mesh2D, nu: float, boundaries: dict, model: str = "laminar",
                  model_options: dict | None = None, body_force=(0.0, 0.0),
                  initial_U=(0.0, 0.0), turbulence_inflow: dict | None = None,
-                 settings: Settings | None = None, reference_velocity: float | None = None):
+                 settings: Settings | None = None, reference_velocity: float | None = None,
+                 energy: dict | None = None):
         self.mesh = mesh
+        # thermique (optionnelle) : Pr, Pr_t, beta (Boussinesq), T_ref, gravity, T0, source
+        self.energy = None if energy is None else {
+            "Pr": 0.71, "Pr_t": 0.85, "beta": 0.0, "T_ref": 0.0, "gravity": (0.0, -9.81),
+            **energy}
         self.nu = float(nu)
         self.settings = settings or Settings()
         # force volumique : constante (fx, fy) ou fonction du temps t -> (fx, fy)
@@ -275,6 +282,8 @@ class Solver2D:
         self.F_i = xp.sum(fvm.interp(self.U) * fvm.Si, axis=1)
         self.F_b = xp.sum(Ub * fvm.Sb, axis=1)
         self.nut = xp.zeros(nc)
+        if self.energy is not None:
+            self.T = xp.full(nc, float(self.energy.get("T0", self.energy["T_ref"])))
         self.steady = True
         self.time = 0.0
         self.dt = 0.0
@@ -327,8 +336,34 @@ class Solver2D:
                 self.kindP[sl] = np.where(inflow, 1, 0)
                 self.p_fixed[sl] = spec.get("p", 0.0)
                 self.kindT[sl] = np.where(inflow, 0, 1)
+        # température : 0 valeur imposée, 1 gradient (flux) imposé
+        self.kindTemp = np.ones(nb, dtype=int)
+        self.T_fixed = np.zeros(nb)
+        self.T_grad = np.zeros(nb)
+        if self.energy is not None:
+            Tref = float(self.energy["T_ref"])
+            alpha = self.nu / float(self.energy["Pr"])
+            for p in m.patches:
+                spec, sl = self.boundaries[p.name], self.patch_slices[p.name]
+                kind = spec["type"]
+                if kind == "wall" and "T" in spec:
+                    self.kindTemp[sl] = 0
+                    self.T_fixed[sl] = spec["T"]
+                elif kind == "wall" and "q" in spec:
+                    # flux q entrant dans le fluide (unités cinématiques q/(ρ c_p)) :
+                    # q = −(−α∇T)·n_sortante = α ∂T/∂n  ⇒  ∂T/∂n = q/α
+                    self.T_grad[sl] = float(spec["q"]) / alpha
+                elif kind == "inlet":
+                    self.kindTemp[sl] = 0
+                    self.T_fixed[sl] = spec.get("T", Tref)
+                elif kind == "farfield":
+                    inflow = nhat[sl] @ np.asarray(spec["U"], dtype=float) < 0.0
+                    self.kindTemp[sl] = np.where(inflow, 0, 1)
+                    self.T_fixed[sl] = spec.get("T", Tref)
         host = (self.kindU.copy(), self.U_fixed.copy(), self.kindP.copy())
         A = self.backend.asarray
+        self.kindTemp, self.T_fixed = A(self.kindTemp), A(self.T_fixed)
+        self.T_grad = A(self.T_grad)
         self.kindU, self.U_fixed, self.kindP = A(self.kindU), A(self.U_fixed), A(self.kindP)
         self.p_fixed, self.kindT, self.is_wall = A(self.p_fixed), A(self.kindT), A(self.is_wall)
         return host
@@ -366,14 +401,33 @@ class Solver2D:
         return out
 
     def pressure_bc(self):
+        """Pression imposée (sorties) ou gradient normal imposé ailleurs. Avec une force
+        volumique, ce gradient vaut f·n (« fixedFluxPressure » d'OpenFOAM) : l'équilibre
+        hydrostatique est respecté jusqu'à la paroi, sinon des courants parasites
+        apparaissent dans les cellules pariétales."""
         xp = self.xp
         dp = self.fvm.dperp
         fx = self.kindP == 0
+        G = self._boundary_force_normal() if self._has_force() else 0.0
         a = xp.where(fx, 0.0, 1.0)
-        b = xp.where(fx, self.p_fixed, 0.0)
+        b = xp.where(fx, self.p_fixed, dp * G)
         g = xp.where(fx, -1.0 / dp, 0.0)
-        d = xp.where(fx, self.p_fixed / dp, 0.0)
+        d = xp.where(fx, self.p_fixed / dp, G)
         return a, b, g, d
+
+    def _boundary_force(self):
+        """Force volumique aux faces frontières (flottabilité avec la température de paroi)."""
+        xp = self.xp
+        f = xp.zeros((self.fvm.nb, 2)) + self.body_force_at(self._t_eval)[None, :]
+        e = self.energy
+        if e is not None and e["beta"]:
+            g = xp.asarray(np.asarray(e["gravity"], dtype=float))
+            Tb = self.boundary_T(self.T)
+            f = f - float(e["beta"]) * (Tb - float(e["T_ref"]))[:, None] * g[None, :]
+        return f
+
+    def _boundary_force_normal(self):
+        return self.xp.sum(self._boundary_force() * self.fvm.nb_hat, axis=1)
 
     def boundary_p(self, p):
         a, b, _, _ = self.pressure_bc()
@@ -423,10 +477,73 @@ class Solver2D:
         return (xp.bincount(fvm.P, up * x[fvm.N], fvm.nc) + xp.bincount(fvm.N, lo * x[fvm.P], fvm.nc))
 
     # ------------------------------------------------------------------ quantité de mouvement
+    def _has_force(self):
+        e = self.energy
+        if e is not None and e["beta"]:
+            return True
+        return callable(self.body_force) or bool(np.any(np.asarray(self.body_force) != 0))
+
     def body_force_at(self, t):
         xp = self.xp
         bf = self.body_force
         return xp.asarray(bf(t) if callable(bf) else bf, dtype=float)
+
+    def cell_force(self, face=False):
+        """Force volumique par unité de masse aux cellules (ou aux faces internes) :
+        force imposée + flottabilité de Boussinesq −β(T − T_ref) g."""
+        xp = self.xp
+        n = self.fvm.ni if face else self.fvm.nc
+        f = xp.zeros((n, 2)) + self.body_force_at(self._t_eval)[None, :]
+        e = self.energy
+        if e is not None and e["beta"]:
+            T = self.fvm.interp(self.T) if face else self.T
+            g = xp.asarray(np.asarray(e["gravity"], dtype=float))
+            f = f - float(e["beta"]) * (T - float(e["T_ref"]))[:, None] * g[None, :]
+        return f
+
+    def temperature_bc(self):
+        xp = self.xp
+        dp = self.fvm.dperp
+        fx = self.kindTemp == 0
+        a = xp.where(fx, 0.0, 1.0)
+        b = xp.where(fx, self.T_fixed, dp * self.T_grad)
+        g = xp.where(fx, -1.0 / dp, 0.0)
+        d = xp.where(fx, self.T_fixed / dp, self.T_grad)
+        return a, b, g, d
+
+    def boundary_T(self, T):
+        a, b, _, _ = self.temperature_bc()
+        return a * T[self.fvm.Pb] + b
+
+    def _energy_eq(self, a0=0.0, hist=None, relax=1.0):
+        """Équation de la température : ∂T/∂t + ∇·(UT) = ∇·((ν/Pr + ν_t/Pr_t)∇T) + Q."""
+        if self.energy is None:
+            return
+        xp = self.xp
+        fvm, s, e = self.fvm, self.settings, self.energy
+        alpha = self.nu / float(e["Pr"])
+        a_eff = alpha + self.nut / float(e["Pr_t"])
+        gam_i = fvm.interp(a_eff)
+        gam_b = xp.where(self.is_wall, alpha, a_eff[fvm.Pb])
+        bc = self.temperature_bc()
+        grad = fvm.grad(self.T, bc[0] * self.T[fvm.Pb] + bc[1])
+        diag, up, lo, rhs = fvm.assemble(self.F_i, self.F_b, gam_i, gam_b, bc, grad_phi=grad,
+                                         scheme=s.convection_T, bounded=self.steady,
+                                         phi=self.T, nonorth_limit=s.nonorth_limit)
+        if e.get("source"):
+            rhs = rhs + float(e["source"]) * fvm.V
+        if a0:
+            diag = diag + a0 * fvm.V
+            rhs = rhs - hist * fvm.V
+        if relax < 1.0:
+            rhs = rhs + (1.0 - relax) / relax * diag * self.T
+            diag = diag / relax
+        A = fvm.matrix(diag, up, lo)
+        dT = max(float(xp.max(xp.abs(self.T_fixed))) if bool(xp.any(self.kindTemp == 0))
+                 else 0.0, 1.0)
+        self.residuals_now["T"] = normalized_residual(A, self.T, rhs, dT)
+        self.T = fvm.lin.solve(A, rhs, self.T, s.solver_U, rtol=0.1 if self.steady else 1e-6,
+                               tag="T")
 
     def _momentum(self, a0=0.0, hist=None, relax=1.0, theta=1.0, explicit=None):
         """Équations de U (composantes x, y) : (diag, upper, lower, rhs) sans gradient de p.
@@ -436,7 +553,7 @@ class Solver2D:
         """
         xp = self.xp
         fvm, U = self.fvm, self.U
-        bf = self.body_force_at(self._t_eval)
+        force = self.cell_force()
         nu_eff = self.nu + self.nut
         gam_i = fvm.interp(nu_eff)
         gam_b = xp.where(self.is_wall, self.nu, nu_eff[fvm.Pb])
@@ -456,7 +573,7 @@ class Solver2D:
             gb = gradU[fvm.Pb]
             tf_b = gam_b * (gb[:, 0, c] * fvm.Sb[:, 0] + gb[:, 1, c] * fvm.Sb[:, 1])
             rhs += fvm.sum_faces(tf_i, tf_b)
-            rhs += bf[c] * V
+            rhs += force[:, c] * V
             if theta != 1.0:
                 diag, up, lo, rhs = theta * diag, theta * up, theta * lo, theta * rhs
             if explicit is not None:
@@ -486,6 +603,16 @@ class Solver2D:
         HbyA_b = self.boundary_U(HbyA)
         phiHbyA_i = xp.sum(fvm.interp(HbyA) * fvm.Si, axis=1)
         phiHbyA_b = xp.sum(HbyA_b * fvm.Sb, axis=1)
+        if self._has_force():
+            # force évaluée AUX FACES (comme le gradient de pression) au lieu de
+            # l'interpolation de la force des cellules : l'équilibre hydrostatique
+            # (flottabilité ⇄ ∇p) est représenté sans courants parasites.
+            fc, ff = self.cell_force(), self.cell_force(face=True)
+            phiHbyA_i = phiHbyA_i + xp.sum(
+                (fvm.interp(rAU)[:, None] * ff - fvm.interp(rAU[:, None] * fc)) * fvm.Si, axis=1)
+            # faces à gradient de p imposé (= f·n) : flux de force compensé → débit inchangé
+            fb = xp.sum(self._boundary_force() * fvm.Sb, axis=1)
+            phiHbyA_b = phiHbyA_b + xp.where(self.kindP == 1, rAU[fvm.Pb] * fb, 0.0)
         rAtU = rAU
         if s.algorithm.upper() == "SIMPLEC" and self.steady:
             H1 = -0.5 * (xp.bincount(fvm.P, eqs[0][1], fvm.nc) + xp.bincount(fvm.N, eqs[0][2], fvm.nc)
@@ -569,6 +696,7 @@ class Solver2D:
                                                   tag="U")
             self._pressure_correction(eqs, relax_p=relax_p, rtol=0.01)
             self._turbulence(relax=s.relax_turb)
+            self._energy_eq(relax=s.relax_T)
             cont = float(xp.sum(xp.abs(self.fvm.div(self.F_i, self.F_b))) /
                          (self.u_scale * float(np.sum(self.fvm.mesh.magSf)) + 1e-300))
             rec = {"iteration": it, **self.residuals_now, "continuity": cont}
@@ -682,7 +810,7 @@ class Solver2D:
         t0 = time.perf_counter()
         n = 0
         step = self._pimple_step if info["kind"] == "implicit" else self._explicit_step
-        self._hist = {"U": [], "F": [], "state": [], "dt": [], "R": []}
+        self._hist = {"U": [], "F": [], "state": [], "dt": [], "R": [], "T": []}
         eps = 1e-9 * max(abs(t_end), 1.0)
         while self.time < t_end - eps:
             n += 1
@@ -718,8 +846,9 @@ class Solver2D:
         h["U"].insert(0, self.U.copy())
         h["F"].insert(0, self.F_i.copy())
         h["state"].insert(0, {k: v.copy() for k, v in self.state.items()})
+        h["T"].insert(0, self.T.copy() if self.energy is not None else None)
         h["dt"].insert(0, self.dt)
-        for key in ("U", "F", "state", "dt"):
+        for key in ("U", "F", "state", "dt", "T"):
             del h[key][3:]
 
     def _pimple_step(self, name, info):
@@ -782,6 +911,8 @@ class Solver2D:
                 self._pressure_correction(eqs, ddt_corr=ddt_corr, rtol=1e-6 if last else 0.01)
             if final or s.turbulence_every_outer:
                 self._turbulence(a0=aT, hist=histT)
+            if self.energy is not None:
+                self._energy_eq(a0=aT, hist=self._T_hist(aT, name))
         self._push_history()
 
     def _ddt_coef(self, c1, F_old):
@@ -794,6 +925,15 @@ class Solver2D:
         if k is None:
             return 1.0 - xp.minimum(xp.abs(c1) / (xp.abs(F_old) + 1e-30), 1.0)
         return k
+
+    def _T_hist(self, a0, name):
+        """Termes d'histoire de T (Euler ou BDF2 à pas variable, comme la turbulence)."""
+        h = self._hist
+        T1 = h["T"][0]
+        if name in ("backward", "crankNicolson") and len(h["T"]) >= 2:
+            w = self.dt / h["dt"][1]
+            return -(1.0 + w) / self.dt * T1 + w * w / ((1.0 + w) * self.dt) * h["T"][1]
+        return -T1 / self.dt
 
     def _spatial_operator(self):
         """R(U)·V = b − A·U : convection + diffusion + forces volumiques (sans pression),
@@ -857,6 +997,7 @@ class Solver2D:
         dt, V = self.dt, self.fvm.V[:, None]
         t_n = self.time
         U0, st_old = self.U.copy(), {k: v.copy() for k, v in self.state.items()}
+        T0 = self.T.copy() if self.energy is not None else None
         if name == "ab2":
             self._t_eval = t_n
             R = self._spatial_operator() / V
@@ -886,6 +1027,8 @@ class Solver2D:
         if self.model.variables:
             # turbulence : Euler implicite (termes sources raides) après le pas de U
             self._turbulence(a0=1.0 / dt, hist={k: -v / dt for k, v in st_old.items()})
+        if self.energy is not None:
+            self._energy_eq(a0=1.0 / dt, hist=-T0 / dt)
 
     # ------------------------------------------------------------------ matériel
     def to_cpu(self):
@@ -894,9 +1037,11 @@ class Solver2D:
             return self
         h = self.backend.to_host
         for name in ("U", "p", "F_i", "F_b", "nut", "kindU", "U_fixed", "kindP", "p_fixed",
-                     "kindT", "is_wall"):
+                     "kindT", "is_wall", "kindTemp", "T_fixed", "T_grad"):
             setattr(self, name, h(getattr(self, name)))
         self.state = {k: h(v) for k, v in self.state.items()}
+        if self.energy is not None:
+            self.T = h(self.T)
         self.model.d = h(self.model.d)
         self.model.wall_nodes = h(self.model.wall_nodes)
         self.settings.backend = "cpu"
@@ -944,5 +1089,15 @@ class Solver2D:
         if self.model.variables:
             out["nut_over_nu"] = self.nut / self.nu
             out.update(self.state)
+        if self.energy is not None:
+            out["T"] = self.T
         out["wall_distance"] = self.mesh.wall_distance
         return out
+
+    def wall_heat_flux(self, patch):
+        """(T_paroi, flux q entrant dans le fluide, en unités cinématiques q/(ρ c_p))."""
+        fvm = self.fvm
+        sl = self.patch_slices[patch]
+        alpha = self.nu / float(self.energy["Pr"])
+        Tb = self.boundary_T(self.T)[sl]
+        return Tb, alpha * (Tb - self.T[fvm.Pb[sl]]) / fvm.dperp[sl]

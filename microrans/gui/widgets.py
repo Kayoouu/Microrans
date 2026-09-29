@@ -149,7 +149,15 @@ class Binder(QObject):
             v = self._get(cfg, path)
             v = default if v is None else v
             w.blockSignals(True)
-            if kind in ("sci", "vec"):
+            if kind == "vec":
+                simple = v is None or (len(v) == 2 and all(isinstance(c, (int, float))
+                                                           for c in v))
+                # valeur avancée (ex. multi-grading) : non éditable ici, conservée telle quelle
+                w.setEnabled(simple)
+                w.setToolTip("" if simple else "Valeur avancée : modifiez-la dans l'onglet TOML")
+                if simple:
+                    w.set_value(v)
+            elif kind == "sci":
                 w.set_value(v)
             elif kind == "int":
                 w.setValue(int(v or 0))
