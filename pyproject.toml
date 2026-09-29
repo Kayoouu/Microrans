@@ -8,7 +8,7 @@ version = "0.1.0"
 description = "Micro-solveur RANS/URANS 1D (canal plan) : Spalart-Allmaras, k-epsilon, k-omega, k-omega SST"
 readme = "README.md"
 requires-python = ">=3.10"
-dependencies = ["numpy>=1.22", "scipy>=1.8", "matplotlib>=3.5"]
+dependencies = ["numpy>=1.22", "scipy>=1.8", "matplotlib>=3.5", "tomli>=1.1; python_version < '3.11'"]
 
 [project.optional-dependencies]
 test = ["pytest>=7"]

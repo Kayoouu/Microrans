@@ -1,10 +1,10 @@
 # Profil NACA 0012 à 4° d'incidence, Re = 1e6, modèle Spalart-Allmaras, maillage en O.
-# Exemple de démonstration (pas de référence quantitative embarquée).
+# Démonstration (pas de référence quantitative embarquée) : Cl ≈ 0.433, Cd ≈ 0.0125, ~5 min.
 # microrans run2d cases/naca0012_sa.toml
 [mesh]
 type = "ogrid"
-n_around = 192
-n_radial = 96
+n_around = 128
+n_radial = 64
 farfield_radius = 30.0
 first_height = 2e-5          # y+ ~ 1 à Re = 1e6
 

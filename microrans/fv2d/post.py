@@ -9,30 +9,39 @@ from ..mesh2d.plot import plot_field, plot_mesh
 from ..postprocess import MODEL_COLORS, REF_COLOR, _pyplot
 
 
-def _zoom(solver):
+def _body_size(solver):
     walls = [p.name for p in solver.mesh.patches if p.type == "wall"]
     if not walls:
-        return None
+        return None, None
     pts = np.vstack([solver.mesh.points[solver.mesh.patch_face_nodes(w)].reshape(-1, 2)
                      for w in walls])
+    return pts, float(max(np.ptp(pts[:, 0]), np.ptp(pts[:, 1])))
+
+
+def _zoom(solver, downstream: float = 4.0):
+    pts, L = _body_size(solver)
+    if pts is None:
+        return None
     (x0, y0), (x1, y1) = pts.min(axis=0), pts.max(axis=0)
-    L = max(x1 - x0, y1 - y0)
     bb = solver.mesh.bbox()
     if L > 0.5 * max(bb[2] - bb[0], bb[3] - bb[1]):
         return None                       # parois = frontières du domaine : vue globale
-    return (x0 - 1.0 * L, x1 + 4.0 * L, y0 - 1.5 * L, y1 + 1.5 * L)
+    return (x0 - 1.0 * L, x1 + downstream * L, y0 - 1.5 * L, y1 + 1.5 * L)
 
 
 def plot_case(solver, hist, out: Path, mode, force_patches, qdyn):
     plt = _pyplot()
-    zoom = _zoom(solver)
+    zoom = _zoom(solver, 4.0 if mode == "steady" else 14.0)
     f = solver.fields()
     plot_mesh(solver.mesh, out / "mesh.png", zoom=zoom)
     plot_field(solver.mesh, f["U_mag"], out / "U.png", title="|U|", zoom=zoom, cmap="viridis")
     plot_field(solver.mesh, f["p"], out / "p.png", title="p (cinématique)", zoom=zoom,
                cmap="RdBu_r")
     w = f["vorticity"]
-    lim = np.percentile(np.abs(w), 98)
+    # échelle de couleur calée hors couche limite (sinon le sillage paraît délavé)
+    _, L = _body_size(solver)
+    far = solver.mesh.wall_distance > 0.2 * L if L else np.ones(len(w), dtype=bool)
+    lim = np.percentile(np.abs(w[far]) if np.any(far) else np.abs(w), 99)
     omz = solver.grad_U(solver.U)
     plot_field(solver.mesh, omz[:, 1, 0] - omz[:, 0, 1], out / "vorticity.png",
                title="vorticité ω_z", zoom=zoom, cmap="RdBu_r", vmin=-lim, vmax=lim)

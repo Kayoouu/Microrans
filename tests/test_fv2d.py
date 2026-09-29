@@ -120,6 +120,27 @@ def test_cylinder_re20_drag():
     assert abs(f[1] / 0.5) < 1e-6    # portance nulle (symétrie)
 
 
+def test_hybrid_mesh_does_not_diverge():
+    """Non-régression : SIMPLEC divergeait sur maillage hybride (non-orthogonalité ~60°)
+    tant que le terme (rAtU − rAU)∂p/∂n ignorait la correction non orthogonale."""
+    import warnings
+
+    from microrans.mesh2d import Rectangle, hybrid_mesh
+    dom = Rectangle(-6, -6, 12, 6, names={"left": "inlet", "right": "outlet",
+                                          "bottom": "side", "top": "side"})
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        m = hybrid_mesh(dom, [Circle((0, 0), 0.5, "cylinder").as_wall()], 1.5, 0.1,
+                        n_layers=5, first_height=0.02, ratio=1.2, max_iter=150)
+    bcs = {"cylinder": {"type": "wall"}, "inlet": {"type": "inlet", "U": [1, 0]},
+           "outlet": {"type": "outlet"}, "side": {"type": "symmetry"}}
+    s = Solver2D(m, 1 / 20, bcs, initial_U=(1, 0), settings=Settings(relax_U=0.9))
+    s.run_steady(max_iter=400, tol=1e-5)          # ne doit pas lever FloatingPointError
+    cd = s.forces()["cylinder"]["total"][0] / 0.5
+    assert 2.0 < cd < 2.8                          # domaine confiné : Cd > valeur non confinée
+    assert s.history[-1]["Ux"] < 1e-3
+
+
 def test_cli_run2d(tmp_path):
     case = tmp_path / "cav.toml"
     case.write_text("""

@@ -54,7 +54,7 @@ microrans run2d cases/cavite_re100.toml               # cavité entraînée (Ghi
 microrans run2d cases/cylindre_re20.toml              # cylindre stationnaire
 microrans run2d cases/cylindre_re100_urans.toml       # lâcher de tourbillons (URANS)
 microrans run2d cases/plaque_plane_sa.toml            # plaque plane turbulente
-microrans run2d cases/plaque_plane_sa.toml --set physics.model=\"sst\" solver.max_iter=3000
+microrans run2d cases/plaque_plane_sa.toml --set physics.model=sst solver.max_iter=3000
 ```
 
 (`python -m microrans ...` est équivalent sans installation.)
@@ -130,6 +130,8 @@ internes d'abord (owner < neighbour), puis faces frontières groupées par patch
 | Canal turbulent périodique Re_τ = 395, SA | U_b | 17.6402 | 17.6398 (solveur 1D, même modèle) |
 | Plaque plane turbulente Re_L = 5e6 (géométrie NASA TMR), SA | C_f à x = 0.97 | 0.00273 | 0.00273 (Schultz-Grunow) ; 0.00287 (White) |
 | idem, SST | C_f à x = 0.97 | 0.00260 | idem |
+| Cylindre Re = 20, domaine confiné (±15 D, symétrie), même tailles de maille | C_d hybride / triangles | 2.160 / 2.237 | — (effet du type de maillage : 3.6 %) |
+| NACA 0012, α = 4°, Re = 1e6, SA, O-grid 128×64 | C_l ; C_d (frottement + pression) | 0.433 ; 0.0125 (0.0089 + 0.0037) | 2πα = 0.439 (profil mince) ; frottement ≈ 0.009 (estimation plaque plane) |
 
 Commentaires honnêtes :
 - **Cylindre Re = 100** : St passe de 0.160 à 0.163 quand on raffine (référence 0.164–0.167) ;
@@ -139,12 +141,31 @@ Commentaires honnêtes :
   on raffine (SST : 17.557 → 17.402 → 17.346 pour 96 → 192 → 384 cellules, contre 17.291 en 1D
   très fin). C'est la sensibilité à y⁺ déjà observée en 1D (voir plus bas), pas une différence
   d'équations.
+- **Triangles contre hybride** : à tailles comparables, le maillage 100 % triangles donne une
+  traînée 3.6 % plus élevée que l'hybride (couches de quadrilatères à la paroi) : le gradient
+  pariétal est moins bien représenté par des triangles. Préférer `hybrid` ou `ogrid` près des parois.
+- **NACA 0012** : cas de démonstration, pas de validation. C_l est cohérent avec la théorie des
+  profils minces ; la part frottement de C_d aussi ; la part pression (0.0037) est probablement
+  surestimée : derrière le bord de fuite les mailles de l'O-grid s'élargissent très vite et le
+  sillage turbulent est étalé en éventail par la diffusion numérique (visible sur la carte de
+  ν_t/ν). Un maillage en C, qui suit le sillage, serait nécessaire (non implémenté).
 - **Plaque plane SST** : C_f 5 % sous les corrélations sur ce maillage (y⁺ du 1er centre ≈ 0.5–0.9),
   alors que SA tombe sur Schultz-Grunow. Non investigué davantage : probablement la sensibilité de
   la condition pariétale sur ω à la résolution. Les corrélations de C_f sont elles-mêmes à
   quelques % près.
 
 ![Cavité](docs/cavite_U.png)
+
+Lâcher tourbillonnaire derrière le cylindre (Re = 100, O-grid 96×64). On voit aussi la limite de
+résolution : au-delà de x ≈ 8 D les mailles de l'O-grid deviennent grandes et diffusent les
+tourbillons.
+
+![Cylindre Re = 100, vorticité](docs/cylindre_re100_vorticite.png)
+
+NACA 0012, SA : ν_t/ν. Le sillage est étalé en éventail par l'élargissement des mailles de
+l'O-grid derrière le bord de fuite (voir commentaires ci-dessus).
+
+![NACA 0012, nu_t](docs/naca0012_nut.png)
 
 ---
 
@@ -216,13 +237,15 @@ trancher.
 ## Limites connues (à lire avant d'utiliser les résultats)
 
 1. **Performances** : Python pur, solveurs linéaires directs par défaut (< 40 000 cellules).
-   Ordres de grandeur mesurés : cavité 64×64 ≈ 12 s ; plaque plane SA (7 200 cellules) ≈ 30 s ;
-   cylindre Re = 100 instationnaire (6 144 cellules, 4 000 pas) ≈ 7 min.
+   Ordres de grandeur mesurés : cavité 64×64 ≈ 12 s ; plaque plane SA (7 200 cellules) ≈ 35 s ;
+   NACA 0012 SA (8 200 cellules) ≈ 5 min ; cylindre Re = 100 instationnaire (6 144 cellules,
+   4 000 pas) ≈ 7 min (144×96 : 30 min).
 2. **SIMPLE converge lentement** sur les maillages très fins et étirés (modes lisses mal amortis
    par la sous-relaxation implicite) : ex. canal 2D à 384 cellules non convergé en 8 000
    itérations. Pas de multigrille ni de solveur couplé.
-3. **Maillages non orthogonaux** (triangles, hybrides) : plus délicats pour SIMPLEC ; baisser
-   `relax_U` (0.7) si le calcul diverge. Le mailleur hybride produit des cellules très asymétriques
+3. **Maillages non orthogonaux** (triangles, hybrides) : `relax_U` passe automatiquement à 0.7
+   au-delà de 30° de non-orthogonalité ; les résidus y plafonnent souvent vers 1e-5 (tolérance à
+   adapter) alors que les efforts sont stables. Le mailleur hybride produit des cellules très asymétriques
    au bord de fuite aigu des profils (couches extrudées) ; l'O-grid y a une non-orthogonalité ~80°.
 4. **Incompressible uniquement**, pas de loi de paroi (y⁺ ≲ 1 requis), pas de transition.
 5. **k-ω / SST** : sensibilité notable à la hauteur de la 1re maille (condition pariétale de
