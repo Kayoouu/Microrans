@@ -14,7 +14,7 @@ Outil de simulation d'écoulements **incompressibles turbulents ou laminaires**,
   idéal pour comparer les modèles ;
 - **modèles de turbulence** : Spalart-Allmaras, k-ε (Launder-Sharma), k-ω (Wilcox 2006),
   k-ω SST (Menter 2003) — le même code sert en 1D et en 2D ;
-- **interface graphique** (Windows, Linux, macOS) et **ligne de commande** partageant le même
+- **interface graphique** et **ligne de commande** partageant le même
   format de cas (TOML) ; calcul sur **CPU**, ou **GPU** NVIDIA via CuPy (expérimental).
 
 Les méthodes sont reprises des grands codes (OpenFOAM, Fluent, SU2) et **chaque choix numérique
@@ -33,15 +33,15 @@ est justifié par une mesure** reproductible dans ce dépôt (sections « Métho
 1. Télécharger l'archive de votre système :
    - onglet **Releases** du dépôt (versions étiquetées `v*`), ou
    - onglet **Actions → executables → dernier run → Artifacts** : `microrans-Windows`,
-     `microrans-Linux`, `microrans-macOS` (compte GitHub requis).
+     `microrans-Linux` (compte GitHub requis). Pas d'exécutable macOS : sur Mac, installer
+     la version Python (section 2), qui fonctionne à l'identique.
 2. Décompresser, puis lancer **`microrans-gui`** (`microrans-gui.exe` sous Windows).
    Le même dossier contient **`microrans`**, la ligne de commande (double-cliqué sans
    argument, il ouvre aussi l'interface). En cas de problème, le journal
    `microrans_resultats/microrans-gui.log` (dossier personnel) indique la cause.
 
 Honnêtement : les exécutables ne sont **pas signés**. Windows affiche un avertissement
-SmartScreen (« Informations complémentaires → Exécuter quand même ») ; sous macOS faire
-clic droit → Ouvrir, ou `xattr -dr com.apple.quarantine microrans`. Le dossier pèse ~350 Mo
+SmartScreen (« Informations complémentaires → Exécuter quand même »). Le dossier pèse ~350 Mo
 (Qt, SciPy, Matplotlib embarqués). Chaque archive est construite et testée automatiquement
 (calcul en ligne de commande + auto-test de l'interface) sur les machines GitHub.
 
@@ -445,7 +445,7 @@ microrans/
   examples/              cas fournis (microrans examples)
 packaging/               PyInstaller (microrans.spec) : exécutables GUI + CLI
 tests/                   pytest (157 tests : vérification, validation, GUI hors écran, faux GPU)
-.github/workflows/       tests (Python 3.10 / 3.12) ; exécutables Windows / Linux / macOS
+.github/workflows/       tests (Python 3.10 / 3.12) ; exécutables Windows / Linux
 ```
 
 **Ajouter un modèle de turbulence** : dériver `TurbulenceModel` (`models/base.py`), définir

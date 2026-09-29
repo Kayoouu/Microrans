@@ -1,7 +1,7 @@
 name: executables
 
-# Construit les exécutables (interface graphique + ligne de commande) pour Windows, Linux et
-# macOS avec PyInstaller, les teste (calcul + auto-test de l'interface hors écran) et les
+# Construit les exécutables (interface graphique + ligne de commande) pour Windows et Linux
+# avec PyInstaller (macOS retiré : pas d'utilisateurs visés ; installation Python possible), les teste (calcul + auto-test de l'interface hors écran) et les
 # publie comme artefacts. Quand une « release » est publiée sur GitHub (onglet Releases →
 # Draft a new release → tag v0.2.0 → Publish), les archives et les notes de version
 # (packaging/RELEASE_NOTES.md) y sont attachées automatiquement.
@@ -21,7 +21,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, ubuntu-22.04, macos-14]
+        os: [windows-latest, ubuntu-22.04]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -61,14 +61,6 @@ jobs:
           $p = Start-Process -FilePath dist\microrans\microrans-gui.exe -ArgumentList "--selftest","smoke\gui.png" -Wait -PassThru
           if ($p.ExitCode -ne 0) { Write-Error "auto-test : code $($p.ExitCode)"; exit 1 }
           if (-not (Test-Path smoke\gui.png)) { Write-Error "pas de capture"; exit 1 }
-      - name: Auto-test de l'interface (macOS, affichage natif)
-        if: runner.os == 'macOS'
-        shell: bash
-        env:
-          MICRORANS_RESULTS: ${{ github.workspace }}/smoke
-        run: |
-          ./dist/microrans/microrans-gui --selftest smoke/gui.png
-          test -f smoke/gui.png
       - name: Auto-test de l'interface (Linux, hors écran, pas d'écran sur le serveur)
         if: runner.os == 'Linux'
         shell: bash

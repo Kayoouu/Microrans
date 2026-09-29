@@ -12,7 +12,7 @@ def log_path() -> Path:
 def _install_crash_log():
     """Journal de diagnostic : erreurs Python non rattrapées et plantages bas niveau
     (faulthandler) écrits dans ~/microrans_resultats/microrans-gui.log. Indispensable pour
-    l'exécutable Windows/macOS, qui n'a pas de console où afficher les erreurs."""
+    l'exécutable Windows, qui n'a pas de console où afficher les erreurs."""
     import datetime
     import faulthandler
     import platform

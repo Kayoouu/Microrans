@@ -5,8 +5,10 @@
 | Votre ordinateur | Fichier à télécharger |
 |---|---|
 | Windows | `microrans-Windows.zip` |
-| Mac (puce Apple M1/M2/M3…) | `microrans-macOS.zip` |
 | Linux | `microrans-Linux.zip` |
+
+Pas de version Mac à télécharger : sur Mac, installer la version Python (voir le README,
+section « Installation Python »).
 
 **2. Décompresser** l'archive (clic droit → « Extraire tout… » sous Windows). Le dossier
 `microrans` fait environ 350 Mo : c'est normal (tout ce qu'il faut est dedans).
@@ -18,7 +20,6 @@ double-cliqué sans rien taper, il ouvre lui aussi l'interface.)
 Le programme n'est pas signé numériquement (cela demande un certificat payant) :
 - **Windows** affiche « Windows a protégé votre ordinateur » → cliquer
   **« Informations complémentaires »** puis **« Exécuter quand même »** ;
-- **Mac** : faire **clic droit → Ouvrir** (la première fois seulement) ;
 - **Linux** : `./microrans-gui` dans un terminal ouvert dans le dossier.
 
 ## Premier essai (2 minutes)
