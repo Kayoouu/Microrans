@@ -1,0 +1,28 @@
+# Maillage hybride autour d'un cylindre : couches de quadrilatères + triangles
+# microrans mesh cases/mesh_cylindre_hybride.toml -f msh su2 vtk foam
+[mesh]
+type = "hybrid"            # blocks | rectangle | ogrid | unstructured | hybrid | file
+h_max = 1.0                # taille maximale des triangles
+h_surface = 0.04           # taille des mailles sur les corps
+growth = 0.12              # croissance de la taille avec la distance aux corps
+layers = { n = 12, first_height = 2e-3, ratio = 1.2 }
+
+[domain]
+type = "rectangle"
+x0 = -10.0
+y0 = -10.0
+x1 = 30.0
+y1 = 10.0
+names = { left = "inlet", right = "outlet", bottom = "bottom", top = "top" }
+
+[[bodies]]
+type = "circle"
+center = [0.0, 0.0]
+radius = 0.5
+name = "cylinder"
+
+# Zone de raffinement du sillage (optionnelle)
+[[mesh.refinements]]
+shape = { type = "rectangle", x0 = 0.0, y0 = -1.5, x1 = 12.0, y1 = 1.5 }
+h = 0.15
+growth = 0.1
