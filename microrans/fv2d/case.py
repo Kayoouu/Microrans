@@ -18,7 +18,8 @@ d'un corps). Efforts et flux de chaleur totaux (sur 360°) ; Cd rapporté à
 Sorties supplémentaires ([output]) : probes = [[x, y], …] (sondes : Ux, Uy, p (, T) à
 chaque itération / pas de temps dans history.csv) ; [[output.lines]] name, start, end, n
 (profils line_<name>.csv/.png) ; average_from = t (instationnaire : moyennes et écarts-types
-Ux_mean, Ux_rms, p_mean…).
+Ux_mean, Ux_rms, p_mean…) ; animate = "vorticity" (| U_mag | p | T…), animate_every = N
+(instationnaire : animation_<grandeur>.gif, voir animation.py).
 
 Reprise : [initial] restart = "…/checkpoint.npz" (reprise exacte sur le même maillage,
 interpolation sinon) ; [output] checkpoint = true (défaut) écrit checkpoint.npz à la fin
@@ -257,10 +258,18 @@ def run_case(cfg: dict, base_dir=".", out_dir=None, verbose=True, plot=True, cal
         vtk_every = oc.get("vtk_every", 0)
 
         n0 = len(solver.series_restart)
+        recorder = None
+        if oc.get("animate"):
+            from .animation import Recorder
+            est = max((float(sc["t_end"]) - solver.time) / float(sc["dt"]), 1.0)
+            recorder = Recorder(solver, oc["animate"],
+                                oc.get("animate_every", max(1, int(round(est / 100)))))
 
         def cb(s, n):
             if s.averager is not None:
                 s.averager.update()
+            if recorder is not None:
+                recorder.record(s, n0 + n)
             if vtk_every and (n0 + n) % vtk_every == 0:
                 write_vtk(s.mesh, out / f"fields_{n0 + n:06d}.vtk", s.fields())
             autosave(s)
@@ -328,6 +337,17 @@ def run_case(cfg: dict, base_dir=".", out_dir=None, verbose=True, plot=True, cal
             w.writeheader()
             for h in hist:
                 w.writerow(h)
+    if mode != "steady" and recorder is not None:
+        from .post import _body_size, _zoom
+        _, Lb = _body_size(solver)
+        far = solver.mesh.wall_distance > 0.2 * Lb if Lb else None
+        gif = recorder.write(solver.mesh, out / f"animation_{recorder.key}.gif",
+                             zoom=_zoom(solver, 14.0),
+                             mirror=(-1 if recorder.key in ("vorticity", "Uy") else 1)
+                             if axi else None,
+                             fps=int(oc.get("animate_fps", 15)), far_mask=far)
+        if gif is not None:
+            summary["animation"] = str(gif)
     if sampler is not None:
         v = sampler.sample(probe_fields)
         summary["probes"] = [{"x": float(p[0]), "y": float(p[1]),

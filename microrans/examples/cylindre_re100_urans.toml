@@ -44,3 +44,6 @@ log_every = 200
 directory = "results/cylindre_re100"
 forces = ["cylinder"]
 vtk_every = 0              # > 0 : un fichier VTK tous les N pas
+animate = "vorticity"      # animation_vorticity.gif (lâcher de tourbillons)
+average_from = 100.0       # champs moyens et fluctuations (Ux_mean, Ux_rms…) sur la fin
+probes = [[3.0, 0.0]]      # sonde dans le sillage (history.csv : probe1_Ux, probe1_Uy, probe1_p)

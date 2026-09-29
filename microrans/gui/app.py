@@ -530,6 +530,10 @@ class MainWindow(QMainWindow):
         f.addRow("Sondes (Ux, Uy, p à chaque itération)", self.probes_edit)
         f.addRow("Moyennes temporelles à partir de t =",
                  B.sci(("output", "average_from"), None, True, "vide : non (instationnaire)"))
+        f.addRow("Animation GIF (instationnaire)", B.combo(
+            ("output", "animate"), [(None, "aucune"), ("vorticity", "vorticité"),
+                                    ("U_mag", "|U|"), ("p", "pression"),
+                                    ("T", "température")], None))
         lay.addWidget(box)
         lay.addStretch(1)
         return w
@@ -627,6 +631,9 @@ class MainWindow(QMainWindow):
         self.summary_view.setMinimumHeight(180)
         lay.addWidget(QLabel("<b>Résumé</b>"))
         lay.addWidget(self.summary_view)
+        b = QPushButton("Ouvrir l'animation")
+        b.clicked.connect(self.open_animation)
+        lay.addWidget(b)
         b = QPushButton("Ouvrir le dossier de résultats")
         b.clicked.connect(lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(str(self.out_dir()))))
         lay.addWidget(b)
@@ -1368,6 +1375,15 @@ class MainWindow(QMainWindow):
             ax.set_title(FIELD_LABELS.get(key, key))
         self.canvas.draw()
         self.tabs.setCurrentIndex(0)
+
+    def open_animation(self):
+        path = (self.summary or {}).get("animation")
+        if not path or not Path(path).is_file():
+            QMessageBox.information(self, "Animation", "Pas d'animation : choisir une grandeur "
+                                    "dans Numérique → Sorties → Animation, puis lancer un calcul "
+                                    "instationnaire.")
+            return
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(path)))
 
     def plot_line(self):
         from ..fv2d.sampling import Sampler, line_points

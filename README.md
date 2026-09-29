@@ -145,6 +145,7 @@ moment_center = [0.25, 0.0]   # Cm autour du quart de corde
 nusselt = "bulk"           # conduites : Nu local sur la température de mélange
 probes = [[1.0, 0.0], [2.0, 0.5]]   # sondes : Ux, Uy, p à chaque itération (history.csv)
 average_from = 50.0        # instationnaire : moyennes et écarts-types (Ux_mean, p_rms…)
+animate = "vorticity"      # instationnaire : animation_vorticity.gif (~100 images)
 [[output.lines]]           # profil le long d'une ligne : line_sillage.csv / .png
 name = "sillage"
 start = [1.0, -2.0]
@@ -178,7 +179,7 @@ API Python : `from microrans.fv2d import Solver2D, Settings`, `from microrans.me
 | Axisymétrique | secteur d'un radian (volumes et surfaces pondérés par r), gradient avec faces latérales, contrainte circonférentielle −2ν_eff u_r/r², déformation (u_r/r)², moyenne des diagonales dans H/A | `wedge` d'OpenFOAM, « Axisymmetric » de Fluent |
 | Arrêt | résidus normalisés (OpenFOAM) ou stabilisation des efforts (moniteurs Fluent) | — |
 | Études | reprise exacte / interpolation sur un autre maillage ; démarrage multigrille ; polaire (incidence de l'écoulement, continuation) ; balayage de n'importe quel paramètre | `mapFields`, FMG de Fluent, polaires Fluent / SU2 |
-| Post-traitement | sondes (suivi à chaque itération), profils le long d'une ligne (cellule + gradient), moyennes et écarts-types temporels (reprise exacte) | `probes`, `sample`, `fieldAverage` d'OpenFOAM |
+| Post-traitement | sondes (suivi à chaque itération), profils le long d'une ligne (cellule + gradient), moyennes et écarts-types temporels (reprise exacte), animations GIF à échelle de couleurs fixe | `probes`, `sample`, `fieldAverage` d'OpenFOAM |
 | Matériel | CPU (NumPy/SciPy) ou GPU (CuPy) par un module de tableaux interchangeable | — |
 
 ---
@@ -472,11 +473,12 @@ microrans/
     restart.py           sauvegarde / reprise, interpolation sur un autre maillage
     fmg.py               démarrage multigrille (maillages grossiers reconstruits)
     sampling.py          sondes, profils sur ligne, moyennes temporelles
+    animation.py         animations GIF des calculs instationnaires
     sweep.py             polaires et balayages de paramètres
   gui/                   interface PySide6 (app.py, widgets.py)
   examples/              cas fournis (microrans examples)
 packaging/               PyInstaller (microrans.spec) : exécutables GUI + CLI
-tests/                   pytest (168 tests : vérification, validation, GUI hors écran, faux GPU)
+tests/                   pytest (169 tests : vérification, validation, GUI hors écran, faux GPU)
 .github/workflows/       tests (Python 3.10 / 3.12) ; exécutables Windows / Linux
 ```
 

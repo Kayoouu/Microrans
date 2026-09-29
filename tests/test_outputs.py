@@ -113,3 +113,15 @@ def test_time_averages_and_exact_restart(tmp_path):
         assert np.array_equal(ma[k], mb[k])
     # démarrage de la cavité : le champ évolue, donc les fluctuations ne sont pas nulles
     assert ma["Ux_rms"].max() > 1e-3
+
+
+def test_animation_gif(tmp_path):
+    from PIL import Image
+    cfg = _cavity(12, animate="vorticity", animate_every=2)
+    cfg["solver"].update(mode="transient", dt=0.05, t_end=0.5)
+    s = run_case(cfg, out_dir=tmp_path, verbose=False, plot=False)
+    with Image.open(s["animation"]) as im:
+        assert im.n_frames == 5                      # pas 2, 4, 6, 8, 10
+    cfg["output"]["animate"] = "inconnue"
+    with pytest.raises(ValueError, match="grandeur inconnue"):
+        run_case(cfg, out_dir=tmp_path / "b", verbose=False, plot=False)

@@ -75,7 +75,10 @@ def combo(options, parent=None) -> QComboBox:
 
 def set_combo(c: QComboBox, value):
     c.blockSignals(True)
-    i = c.findData(value)
+    if value is None:                        # option « aucune » (donnée None)
+        i = next((k for k in range(c.count()) if c.itemData(k) is None), -1)
+    else:
+        i = c.findData(value)
     if i < 0 and isinstance(value, str):
         low = [str(c.itemData(k)).lower() for k in range(c.count())]
         i = low.index(value.lower()) if value.lower() in low else -1
