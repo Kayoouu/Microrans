@@ -421,7 +421,8 @@ def write_su2(mesh: Mesh2D, path):
 
 
 def read_su2(path, patch_types: dict | None = None) -> Mesh2D:
-    lines = [ln.split("%")[0].strip() for ln in Path(path).read_text().splitlines()]
+    lines = [ln.split("%")[0].strip() for ln in
+             Path(path).read_text(encoding="utf-8", errors="replace").splitlines()]
     lines = [ln for ln in lines if ln]
     i = 0
     cells, pts, boundary = [], [], {}

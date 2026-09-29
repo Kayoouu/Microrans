@@ -18,9 +18,11 @@ import scipy.sparse as sp
 
 # ------------------------------------------------------------------------ backend
 def array_module(x):
-    """numpy ou cupy selon le type du tableau."""
-    mod = type(x).__module__
-    if mod.startswith("cupy"):
+    """numpy, cupy (ou module de test) selon le type du tableau."""
+    mod = getattr(type(x), "__xp_module__", None)
+    if mod is not None:
+        return mod
+    if type(x).__module__.startswith("cupy"):
         import cupy
         return cupy
     return np
@@ -29,6 +31,9 @@ def array_module(x):
 def sparse_module(xp):
     if xp is np:
         return sp
+    mod = getattr(xp, "__sparse_module__", None)
+    if mod is not None:
+        return mod
     import cupyx.scipy.sparse as csp
     return csp
 
@@ -169,7 +174,7 @@ class AggregationAMG:
         if xp is np:
             lu = sp.linalg.splu(Al.tocsc())
             csolve = lu.solve
-        else:
+        else:                                    # GPU : inverse dense du niveau grossier
             inv = xp.linalg.inv(Al.toarray())
             csolve = lambda r: inv @ r            # noqa: E731
         return AMGPrecond(ops, self._xp_levels[1], csolve, xp, smoother, scale_correction)
@@ -205,7 +210,9 @@ def _level_data(A, xp, need_lmax=True):
     if not need_lmax:
         return A, dinv, 2.0
     # borne de Gershgorin de λmax(D⁻¹A) (≈ 2 pour une M-matrice)
-    rs = abs(A) @ xp.ones(A.shape[0])
+    n = A.shape[0]
+    rows = xp.repeat(xp.arange(n), xp.diff(A.indptr))
+    rs = xp.bincount(rows, weights=xp.abs(A.data), minlength=n)
     lmax = float(xp.max(rs * xp.abs(dinv)))
     return A, dinv, lmax
 
@@ -420,6 +427,10 @@ class LinearSolver:
         its = 0
         if method == "direct":
             x = _direct(A, b, symmetric, xp)
+        elif method == "pyamg" and xp is not np:
+            method = "amg"
+            M = self.amg.setup(A, scale_correction=symmetric)
+            x, its, _ = (fcg if symmetric else pbicgstab)(A, b, x0, M, rtol, maxiter)
         elif method == "pyamg":
             try:
                 import pyamg
@@ -452,5 +463,7 @@ def _direct(A, b, symmetric, xp):
     if xp is np:
         lu = sp.linalg.splu(A.tocsc(), permc_spec="MMD_AT_PLUS_A" if symmetric else "COLAMD")
         return lu.solve(b)
-    from cupyx.scipy.sparse.linalg import spsolve
-    return spsolve(A.tocsr(), b)
+    solve = getattr(xp, "__spsolve__", None)
+    if solve is None:
+        from cupyx.scipy.sparse.linalg import spsolve as solve
+    return solve(A.tocsr(), b)

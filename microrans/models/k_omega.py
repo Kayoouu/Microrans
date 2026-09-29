@@ -9,7 +9,8 @@ from __future__ import annotations
 
 import numpy as np
 
-from .base import TurbulenceModel, k_omega_freestream, k_omega_guess, linearize_source
+from .base import (TurbulenceModel, float_array, k_omega_freestream, k_omega_guess,
+                   linearize_source)
 
 
 class WilcoxKOmega2006(TurbulenceModel):
@@ -22,10 +23,10 @@ class WilcoxKOmega2006(TurbulenceModel):
     sigma, sigma_star, sigma_do, c_lim = 0.5, 0.6, 1.0 / 8.0, 7.0 / 8.0
 
     def wall_value(self, name, d1):
-        d1 = np.asarray(d1, dtype=float)
+        d1 = float_array(d1)
         if name == "omega":
             return 60.0 * self.nu / (self.beta * d1 ** 2)
-        return np.zeros_like(d1)
+        return d1 * 0.0
 
     def initial_state(self, flow, nut0):
         k, omega = k_omega_guess(self, nut0, beta=self.beta)

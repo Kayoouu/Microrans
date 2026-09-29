@@ -101,6 +101,8 @@ class Settings:
     max_dt: float = float("inf")
     cn_theta: float = 0.5                 # Crank-Nicolson : 0.5 (ordre 2), >0.5 plus dissipatif
     ddt_phi_coeff: float | None = 1.0     # correction ddtCorr (None = coefficient OpenFOAM)
+    # matériel : cpu (NumPy/SciPy) | gpu (CuPy, expérimental : voir microrans/backend.py)
+    backend: str = "cpu"
     n_outer: int = 2
     n_corr: int = 2
     turbulence_every_outer: bool = False
@@ -130,24 +132,27 @@ class FlowField2D:
 
     @property
     def strain(self):
+        xp = self.solver.xp
         g = self.gradU
-        return np.sqrt(2 * g[:, 0, 0] ** 2 + 2 * g[:, 1, 1] ** 2 + (g[:, 0, 1] + g[:, 1, 0]) ** 2)
+        return xp.sqrt(2 * g[:, 0, 0] ** 2 + 2 * g[:, 1, 1] ** 2 + (g[:, 0, 1] + g[:, 1, 0]) ** 2)
 
     @property
     def vorticity(self):
+        xp = self.solver.xp
         g = self.gradU
-        return np.abs(g[:, 1, 0] - g[:, 0, 1])
+        return xp.abs(g[:, 1, 0] - g[:, 0, 1])
 
     @property
     def second_derivative_sq(self):
+        xp = self.solver.xp
         if self._d2 is None:
             s = self.solver
-            tot = np.zeros(s.fvm.nc)
+            tot = xp.zeros(s.fvm.nc)
             for i in range(2):
                 for j in range(2):
                     comp = self.gradU[:, i, j]
                     gg = s.fvm.grad(comp, comp[s.fvm.Pb])
-                    tot += np.sum(gg ** 2, axis=1)
+                    tot += xp.sum(gg ** 2, axis=1)
             self._d2 = tot
         return self._d2
 
@@ -159,19 +164,22 @@ class Ops2D:
         self.s = solver
 
     def _grad(self, f, name):
+        xp = self.s.xp
         s = self.s
         fb = f[s.fvm.Pb].copy()
-        if name is not None and np.any(s.is_wall):
+        if name is not None and xp.any(s.is_wall):
             base = "k" if name == "sqrt_k" else name
             wv = s.model.wall_value(base, s.fvm.dperp[s.is_wall])
-            fb[s.is_wall] = np.sqrt(np.maximum(wv, 0.0)) if name == "sqrt_k" else wv
+            fb[s.is_wall] = xp.sqrt(xp.maximum(wv, 0.0)) if name == "sqrt_k" else wv
         return s.fvm.grad(f, fb)
 
     def grad_sq(self, f, name=None):
-        return np.sum(self._grad(f, name) ** 2, axis=1)
+        xp = self.s.xp
+        return xp.sum(self._grad(f, name) ** 2, axis=1)
 
     def grad_dot(self, f, g, fname=None, gname=None):
-        return np.sum(self._grad(f, fname) * self._grad(g, gname), axis=1)
+        xp = self.s.xp
+        return xp.sum(self._grad(f, fname) * self._grad(g, gname), axis=1)
 
 
 class Step2D:
@@ -181,6 +189,7 @@ class Step2D:
         self.s, self.a0, self.hist, self.relax = solver, a0, hist, relax
 
     def solve(self, name, gamma, source, sink, model=None):
+        xp = self.s.xp
         s = self.s
         fvm = s.fvm
         phi = s.state[name]
@@ -192,8 +201,8 @@ class Step2D:
                                          scheme=s.settings.convection_turb, bounded=s.steady,
                                          phi=phi, nonorth_limit=s.settings.nonorth_limit)
         V = fvm.V
-        rhs += np.asarray(source) * V
-        diag += np.asarray(sink) * V
+        rhs += xp.asarray(source) * V
+        diag += xp.asarray(sink) * V
         if self.a0:
             diag += self.a0 * V
             rhs -= self.hist[name] * V
@@ -206,7 +215,7 @@ class Step2D:
                               rtol=0.1 if s.steady else 1e-4, tag=name)
         floor = s.model.floors.get(name)
         if floor is not None:
-            new = np.maximum(new, floor)
+            new = xp.maximum(new, floor)
         return new
 
 
@@ -234,46 +243,53 @@ class Solver2D:
             types[name] = {"wall": "wall", "symmetry": "symmetry"}.get(spec["type"], "patch")
         mesh.set_patch_types({k: v for k, v in types.items() if k in mesh.patch_types})
         self.boundaries = boundaries
-        self.fvm = FVM(mesh)
+        self.fvm = FVM(mesh, self.settings.backend)
         fvm = self.fvm
+        self.backend, self.xp = fvm.backend, fvm.xp
+        xp = self.xp
         if self.settings.relax_U is None:
             # SIMPLEC à 0.9 peut diverger sur maillage très non orthogonal (triangles, hybride)
             nonorth = mesh.quality()["non_orthogonality_max_deg"]
             self.settings.relax_U = 0.9 if nonorth < 30.0 else 0.7
-        self._setup_bc()
+        kindU_h, U_fixed_h, kindP_h = self._setup_bc()
         uref = reference_velocity
         if uref is None:
-            uref = max([np.max(np.linalg.norm(self.U_fixed[self.kindU == 0], axis=1))
-                        if np.any(self.kindU == 0) else 0.0, 1e-30])
+            uref = max([float(np.max(np.linalg.norm(U_fixed_h[kindU_h == 0], axis=1)))
+                        if np.any(kindU_h == 0) else 0.0, 1e-30])
             uref = max(uref, float(np.linalg.norm(initial_U)), 1e-12)
         self.U_ref = uref
         self.model_name = canonical_name(model)
         self.model = get_model(self.model_name, mesh, self.nu, **(model_options or {}))
         self.model.ops = Ops2D(self)
+        self.model.d = self.backend.asarray(self.model.d)
+        self.model.wall_nodes = self.backend.asarray(self.model.wall_nodes)
         ti = {"intensity": 0.001, "viscosity_ratio": 0.1, **(turbulence_inflow or {})}
         self.freestream = self.model.freestream_values(uref, ti["intensity"],
                                                        ti["viscosity_ratio"])
         # champs
         nc = fvm.nc
-        self.U = np.tile(np.asarray(initial_U, dtype=float), (nc, 1))
-        self.p = np.zeros(nc)
-        self.state = {k: np.full(nc, v) for k, v in self.freestream.items()}
+        self.U = xp.tile(xp.asarray(np.asarray(initial_U, dtype=float)), (nc, 1))
+        self.p = xp.zeros(nc)
+        self.state = {k: xp.full(nc, float(v)) for k, v in self.freestream.items()}
         Ub = self.boundary_U(self.U)
-        self.F_i = np.sum(fvm.interp(self.U) * fvm.Si, axis=1)
-        self.F_b = np.sum(Ub * fvm.Sb, axis=1)
-        self.nut = np.zeros(nc)
+        self.F_i = xp.sum(fvm.interp(self.U) * fvm.Si, axis=1)
+        self.F_b = xp.sum(Ub * fvm.Sb, axis=1)
+        self.nut = xp.zeros(nc)
         self.steady = True
         self.time = 0.0
         self.dt = 0.0
         self.history: list[dict] = []
         self.residuals_now: dict = {}
-        self.has_fixed_p = bool(np.any(self.kindP == 0))
+        self.has_fixed_p = bool(np.any(kindP_h == 0))
 
     # ------------------------------------------------------------------ conditions limites
     def _setup_bc(self):
+        """Types et valeurs de conditions aux limites par face (préparés sur CPU, puis
+        transférés sur le matériel de calcul). Retourne les copies CPU utiles."""
         m, fvm = self.mesh, self.fvm
         nb = fvm.nb
         Cb = m.face_centers[m.n_internal:]
+        nhat = m.nf[m.n_internal:]
         self.kindU = np.ones(nb, dtype=int)          # 0 fixe, 1 gradient nul, 2 glissement
         self.U_fixed = np.zeros((nb, 2))
         self.kindP = np.ones(nb, dtype=int)          # 0 fixe, 1 gradient nul
@@ -305,18 +321,24 @@ class Solver2D:
                 self.kindU[sl] = 2
             elif kind == "farfield":
                 uinf = np.asarray(spec["U"], dtype=float)
-                inflow = self.fvm.nb_hat[sl] @ uinf < 0.0
+                inflow = nhat[sl] @ uinf < 0.0
                 self.kindU[sl] = np.where(inflow, 0, 1)
                 self.U_fixed[sl] = uinf
                 self.kindP[sl] = np.where(inflow, 1, 0)
                 self.p_fixed[sl] = spec.get("p", 0.0)
                 self.kindT[sl] = np.where(inflow, 0, 1)
+        host = (self.kindU.copy(), self.U_fixed.copy(), self.kindP.copy())
+        A = self.backend.asarray
+        self.kindU, self.U_fixed, self.kindP = A(self.kindU), A(self.U_fixed), A(self.kindP)
+        self.p_fixed, self.kindT, self.is_wall = A(self.p_fixed), A(self.kindT), A(self.is_wall)
+        return host
 
     def vector_bc(self, c: int, U):
         """Coefficients (α, β, γ, δ) de la composante c de la vitesse."""
+        xp = self.xp
         fvm = self.fvm
         nb, dp = fvm.nb, fvm.dperp
-        a, b, g, d = np.zeros(nb), np.zeros(nb), np.zeros(nb), np.zeros(nb)
+        a, b, g, d = xp.zeros(nb), xp.zeros(nb), xp.zeros(nb), xp.zeros(nb)
         fx = self.kindU == 0
         b[fx] = self.U_fixed[fx, c]
         g[fx] = -1.0 / dp[fx]
@@ -324,7 +346,7 @@ class Solver2D:
         zg = self.kindU == 1
         a[zg] = 1.0
         sl = self.kindU == 2
-        if np.any(sl):
+        if xp.any(sl):
             n = fvm.nb_hat[sl]
             o = 1 - c
             uo = U[fvm.Pb[sl], o]
@@ -335,20 +357,22 @@ class Solver2D:
         return a, b, g, d
 
     def boundary_U(self, U):
+        xp = self.xp
         Pb = self.fvm.Pb
-        out = np.empty((self.fvm.nb, 2))
+        out = xp.empty((self.fvm.nb, 2))
         for c in range(2):
             a, b, _, _ = self.vector_bc(c, U)
             out[:, c] = a * U[Pb, c] + b
         return out
 
     def pressure_bc(self):
+        xp = self.xp
         dp = self.fvm.dperp
         fx = self.kindP == 0
-        a = np.where(fx, 0.0, 1.0)
-        b = np.where(fx, self.p_fixed, 0.0)
-        g = np.where(fx, -1.0 / dp, 0.0)
-        d = np.where(fx, self.p_fixed / dp, 0.0)
+        a = xp.where(fx, 0.0, 1.0)
+        b = xp.where(fx, self.p_fixed, 0.0)
+        g = xp.where(fx, -1.0 / dp, 0.0)
+        d = xp.where(fx, self.p_fixed / dp, 0.0)
         return a, b, g, d
 
     def boundary_p(self, p):
@@ -356,8 +380,9 @@ class Solver2D:
         return a * p[self.fvm.Pb] + b
 
     def scalar_bc(self, name):
+        xp = self.xp
         nb, dp = self.fvm.nb, self.fvm.dperp
-        a, b, g, d = np.zeros(nb), np.zeros(nb), np.zeros(nb), np.zeros(nb)
+        a, b, g, d = xp.zeros(nb), xp.zeros(nb), xp.zeros(nb), xp.zeros(nb)
         fx = self.kindT == 0
         val = self.freestream.get(name, 0.0)
         b[fx] = val
@@ -365,7 +390,7 @@ class Solver2D:
         d[fx] = val / dp[fx]
         a[self.kindT == 1] = 1.0
         w = self.kindT == 2
-        if np.any(w):
+        if xp.any(w):
             wv = self.model.wall_value(name, dp[w])
             b[w] = wv
             g[w] = -1.0 / dp[w]
@@ -375,28 +400,33 @@ class Solver2D:
     # ------------------------------------------------------------------ outils
     @property
     def u_scale(self) -> float:
-        return max(float(np.abs(self.U).max()), self.U_ref)
+        xp = self.xp
+        return max(float(xp.abs(self.U).max()), self.U_ref)
 
     def grad_U(self, U):
+        xp = self.xp
         Ub = self.boundary_U(U)
-        return np.stack([self.fvm.grad(U[:, 0], Ub[:, 0]), self.fvm.grad(U[:, 1], Ub[:, 1])],
+        return xp.stack([self.fvm.grad(U[:, 0], Ub[:, 0]), self.fvm.grad(U[:, 1], Ub[:, 1])],
                         axis=1)
 
     def flow(self):
         return FlowField2D(self, self.U, self.grad_U(self.U))
 
     def update_nut(self):
+        xp = self.xp
         self.nut = self.model.eddy_viscosity(self.state, self.flow()) if self.model.variables \
-            else np.zeros(self.fvm.nc)
+            else xp.zeros(self.fvm.nc)
 
     def _offdiag_mult(self, up, lo, x):
+        xp = self.xp
         fvm = self.fvm
-        return (np.bincount(fvm.P, up * x[fvm.N], fvm.nc) + np.bincount(fvm.N, lo * x[fvm.P], fvm.nc))
+        return (xp.bincount(fvm.P, up * x[fvm.N], fvm.nc) + xp.bincount(fvm.N, lo * x[fvm.P], fvm.nc))
 
     # ------------------------------------------------------------------ quantité de mouvement
     def body_force_at(self, t):
+        xp = self.xp
         bf = self.body_force
-        return np.asarray(bf(t) if callable(bf) else bf, dtype=float)
+        return xp.asarray(bf(t) if callable(bf) else bf, dtype=float)
 
     def _momentum(self, a0=0.0, hist=None, relax=1.0, theta=1.0, explicit=None):
         """Équations de U (composantes x, y) : (diag, upper, lower, rhs) sans gradient de p.
@@ -404,11 +434,12 @@ class Solver2D:
         theta < 1 (Crank-Nicolson) : opérateur spatial pondéré par θ, plus la partie
         explicite `explicit` (= (1−θ)·R(Uⁿ)·V, tableau (nc, 2)).
         """
+        xp = self.xp
         fvm, U = self.fvm, self.U
         bf = self.body_force_at(self._t_eval)
         nu_eff = self.nu + self.nut
         gam_i = fvm.interp(nu_eff)
-        gam_b = np.where(self.is_wall, self.nu, nu_eff[fvm.Pb])
+        gam_b = xp.where(self.is_wall, self.nu, nu_eff[fvm.Pb])
         gradU = self.grad_U(U)
         gUf = fvm.interp(gradU)
         V = fvm.V
@@ -441,24 +472,25 @@ class Solver2D:
 
     # ------------------------------------------------------------------ pression
     def _pressure_correction(self, eqs, ddt_corr=None, relax_p=1.0, rtol=1e-6):
+        xp = self.xp
         fvm, s = self.fvm, self.settings
         V = fvm.V
-        H = np.column_stack([rhs - self._offdiag_mult(up, lo, self.U[:, c])
+        H = xp.column_stack([rhs - self._offdiag_mult(up, lo, self.U[:, c])
                              for c, (diag, up, lo, rhs) in enumerate(eqs)])
         diag_u, diag_v = eqs[0][0], eqs[1][0]
         aP = 0.5 * (diag_u + diag_v)
         rAU = V / aP
-        HbyA = np.column_stack([H[:, 0] / diag_u, H[:, 1] / diag_v])
+        HbyA = xp.column_stack([H[:, 0] / diag_u, H[:, 1] / diag_v])
         pb = self.boundary_p(self.p)
         gradp = fvm.grad(self.p, pb)
         HbyA_b = self.boundary_U(HbyA)
-        phiHbyA_i = np.sum(fvm.interp(HbyA) * fvm.Si, axis=1)
-        phiHbyA_b = np.sum(HbyA_b * fvm.Sb, axis=1)
+        phiHbyA_i = xp.sum(fvm.interp(HbyA) * fvm.Si, axis=1)
+        phiHbyA_b = xp.sum(HbyA_b * fvm.Sb, axis=1)
         rAtU = rAU
         if s.algorithm.upper() == "SIMPLEC" and self.steady:
-            H1 = -0.5 * (np.bincount(fvm.P, eqs[0][1], fvm.nc) + np.bincount(fvm.N, eqs[0][2], fvm.nc)
-                         + np.bincount(fvm.P, eqs[1][1], fvm.nc) + np.bincount(fvm.N, eqs[1][2], fvm.nc))
-            rAtU = V / np.maximum(aP - H1, 1e-3 * aP)
+            H1 = -0.5 * (xp.bincount(fvm.P, eqs[0][1], fvm.nc) + xp.bincount(fvm.N, eqs[0][2], fvm.nc)
+                         + xp.bincount(fvm.P, eqs[1][1], fvm.nc) + xp.bincount(fvm.N, eqs[1][2], fvm.nc))
+            rAtU = V / xp.maximum(aP - H1, 1e-3 * aP)
             # (rAtU − rAU) ∂p/∂n |S| avec le MÊME gradient normal (partie non orthogonale
             # comprise) que l'équation de pression, faces internes et frontières.
             drA = rAtU - rAU
@@ -485,7 +517,7 @@ class Solver2D:
             gp_k = gradp if k == 0 else fvm.grad(p_new, a_ * p_new[fvm.Pb] + b_)
             if not fvm.orthogonal:
                 nf_used = fvm.nonorth_flux(gam_i, gp_k, p_new, s.nonorth_limit)
-            diag, up, lo, rhs = fvm.assemble(np.zeros(fvm.ni), np.zeros(fvm.nb), gam_i, gam_b,
+            diag, up, lo, rhs = fvm.assemble(xp.zeros(fvm.ni), xp.zeros(fvm.nb), gam_i, gam_b,
                                              bc, grad_phi=gp_k, phi=p_new,
                                              nonorth_limit=s.nonorth_limit)
             rhs -= div_hbya
@@ -514,6 +546,7 @@ class Solver2D:
 
     # ------------------------------------------------------------------ stationnaire
     def run_steady(self, max_iter=None, tol=None, verbose=False, log_every=50, callback=None):
+        xp = self.xp
         s = self.settings
         max_iter = max_iter or s.max_iter
         tol = tol or s.tol
@@ -536,21 +569,21 @@ class Solver2D:
                                                   tag="U")
             self._pressure_correction(eqs, relax_p=relax_p, rtol=0.01)
             self._turbulence(relax=s.relax_turb)
-            cont = float(np.sum(np.abs(self.fvm.div(self.F_i, self.F_b))) /
-                         (self.u_scale * np.sum(self.fvm.mesh.magSf) + 1e-300))
+            cont = float(xp.sum(xp.abs(self.fvm.div(self.F_i, self.F_b))) /
+                         (self.u_scale * float(np.sum(self.fvm.mesh.magSf)) + 1e-300))
             rec = {"iteration": it, **self.residuals_now, "continuity": cont}
             self.history.append(rec)
-            if not all(np.isfinite(v) for v in rec.values()) or not np.all(np.isfinite(self.U)):
+            if not all(xp.isfinite(v) for v in rec.values()) or not xp.all(xp.isfinite(self.U)):
                 raise FloatingPointError(f"Divergence à l'itération {it}.")
             if verbose and (it % log_every == 0 or it == 1):
                 print("  it %5d  " % it + "  ".join(f"{k}={v:.2e}" for k, v in rec.items()
                                                     if k != "iteration"))
             if s.monitor_tol:
-                forces.append(np.concatenate([f["total"] for f in self.forces().values()]))
+                forces.append(xp.concatenate([f["total"] for f in self.forces().values()]))
                 w = s.monitor_window
                 if len(forces) > w:
-                    ref = np.maximum(np.abs(forces[-1]), 1e-12 * self.u_scale ** 2)
-                    if np.max(np.abs(forces[-1] - forces[-1 - w]) / ref) < s.monitor_tol:
+                    ref = xp.maximum(xp.abs(forces[-1]), 1e-12 * self.u_scale ** 2)
+                    if xp.max(xp.abs(forces[-1] - forces[-1 - w]) / ref) < s.monitor_tol:
                         converged = "forces"
             if callback and callback(self, it):
                 break                                  # arrêt demandé (interface graphique)
@@ -572,26 +605,28 @@ class Solver2D:
         """(Co, Dn, taux_conv, taux_diff) : nombre de Courant convectif (définition
         OpenFOAM : 0.5·Σ|φ_f|/V·Δt) et nombre de diffusion Dn = Σ ν_f|S|²/(d·S)/V·Δt
         (maxima sur les cellules) ; les taux sont par unité de Δt."""
+        xp = self.xp
         fvm = self.fvm
         dt = self.dt if dt is None else dt
         nu_eff = self.nu + self.nut
         nu_f = fvm.interp(nu_eff) * fvm.g
-        nu_b = np.where(self.kindU != 1, np.where(self.is_wall, self.nu, nu_eff[fvm.Pb])
+        nu_b = xp.where(self.kindU != 1, xp.where(self.is_wall, self.nu, nu_eff[fvm.Pb])
                         * fvm.magSb / fvm.dperp, 0.0)
-        diff = (np.bincount(fvm.P, nu_f, fvm.nc) + np.bincount(fvm.N, nu_f, fvm.nc)
-                + np.bincount(fvm.Pb, nu_b, fvm.nc)) / fvm.V
-        aF = np.abs(self.F_i)
-        conv = 0.5 * (np.bincount(fvm.P, aF, fvm.nc) + np.bincount(fvm.N, aF, fvm.nc)
-                      + np.bincount(fvm.Pb, np.abs(self.F_b), fvm.nc)) / fvm.V
+        diff = (xp.bincount(fvm.P, nu_f, fvm.nc) + xp.bincount(fvm.N, nu_f, fvm.nc)
+                + xp.bincount(fvm.Pb, nu_b, fvm.nc)) / fvm.V
+        aF = xp.abs(self.F_i)
+        conv = 0.5 * (xp.bincount(fvm.P, aF, fvm.nc) + xp.bincount(fvm.N, aF, fvm.nc)
+                      + xp.bincount(fvm.Pb, xp.abs(self.F_b), fvm.nc)) / fvm.V
         return float(conv.max() * dt), float(diff.max() * dt), conv, diff
 
     def _stable_dt(self, info, dt_old):
         """Pas de temps respectant max_co (et la limite de diffusion des schémas explicites)."""
+        xp = self.xp
         s = self.settings
         _, _, conv, diff = self.courant(1.0)
         if info["kind"] == "explicit":
             # combinaison des limites convective et diffusive du schéma
-            rate = np.max(conv / min(s.max_co, info["co_max"]) + diff / info["dn_max"])
+            rate = xp.max(conv / min(s.max_co, info["co_max"]) + diff / info["dn_max"])
         else:
             rate = conv.max() / s.max_co
         dt = 0.9 / rate if rate > 0 else s.max_dt
@@ -604,11 +639,12 @@ class Solver2D:
         que PIMPLE à précision égale en convection dominante) si le Δt demandé respecte sa
         stabilité et que la diffusion (parois à y⁺ ~ 1, ν_t) ne limite pas le pas ; sinon
         BDF2 implicite. Turbulence → BDF2 (termes sources raides)."""
+        xp = self.xp
         info = TIME_SCHEMES["rk3"]
         _, _, conv, diff = self.courant(1.0)
         dt_conv = info["co_max"] / max(conv.max(), 1e-300)
         dt_diff = info["dn_max"] / max(diff.max(), 1e-300)
-        explicit_ok = np.max(conv * dt / info["co_max"] + diff * dt / info["dn_max"]) <= 1.0
+        explicit_ok = xp.max(conv * dt / info["co_max"] + diff * dt / info["dn_max"]) <= 1.0
         if self.model.variables or dt_diff < 0.5 * dt_conv or not explicit_ok:
             return "backward"
         return "rk3"
@@ -622,6 +658,7 @@ class Solver2D:
         rk3 (SSP), rk4, ab2. Si Settings.adjust_dt, Δt suit max_co (et la limite de
         diffusion des schémas explicites). probes : fonction(solver) -> dict par pas.
         """
+        xp = self.xp
         s = self.settings
         self.steady = False
         self.update_nut()
@@ -657,7 +694,7 @@ class Solver2D:
                 if self.dt > remaining or remaining - self.dt < 0.05 * self.dt:
                     self.dt = remaining
             step(name, info)
-            if not np.all(np.isfinite(self.U)):
+            if not xp.all(xp.isfinite(self.U)):
                 raise FloatingPointError(f"Divergence à t = {self.time:.4g}.")
             co, dn, _, _ = self.courant()
             rec = {"time": self.time, "dt": self.dt, "Co": co, **self.residuals_now}
@@ -686,6 +723,7 @@ class Solver2D:
             del h[key][3:]
 
     def _pimple_step(self, name, info):
+        xp = self.xp
         s, fvm = self.settings, self.fvm
         dt = self.dt
         if not self._hist["U"]:
@@ -708,14 +746,14 @@ class Solver2D:
             U_old2, F_old2, st_old2 = h["U"][1], h["F"][1], h["state"][1]
             histU = b1 * U_old + b2 * U_old2
             histT = {k: b1 * st_old[k] + b2 * st_old2[k] for k in st_old}
-            c1 = F_old - np.sum(fvm.interp(U_old) * fvm.Si, axis=1)
-            c2 = F_old2 - np.sum(fvm.interp(U_old2) * fvm.Si, axis=1)
+            c1 = F_old - xp.sum(fvm.interp(U_old) * fvm.Si, axis=1)
+            c2 = F_old2 - xp.sum(fvm.interp(U_old2) * fvm.Si, axis=1)
             ddt_corr = -self._ddt_coef(c1, F_old) * (b1 * c1 + b2 * c2)
         else:
             a0 = 1.0 / dt
             histU = -U_old / dt
             histT = {k: -v / dt for k, v in st_old.items()}
-            c1 = F_old - np.sum(fvm.interp(U_old) * fvm.Si, axis=1)
+            c1 = F_old - xp.sum(fvm.interp(U_old) * fvm.Si, axis=1)
             ddt_corr = self._ddt_coef(c1, F_old) * c1 / dt
         if name == "crankNicolson" and len(h["U"]) >= 2:
             # turbulence : BDF2 (L-stable) même avec Crank-Nicolson sur la quantité de mvt
@@ -751,16 +789,18 @@ class Solver2D:
         de Tuković, Perić & Jasak (2018) — les flux aux faces gardent leur propre dérivée
         temporelle, résultat indépendant de Δt, ordre du schéma conservé. None : coefficient
         adaptatif historique d'OpenFOAM (1 − |c|/|φ|), qui rend la solution dépendante de Δt."""
+        xp = self.xp
         k = self.settings.ddt_phi_coeff
         if k is None:
-            return 1.0 - np.minimum(np.abs(c1) / (np.abs(F_old) + 1e-30), 1.0)
+            return 1.0 - xp.minimum(xp.abs(c1) / (xp.abs(F_old) + 1e-30), 1.0)
         return k
 
     def _spatial_operator(self):
         """R(U)·V = b − A·U : convection + diffusion + forces volumiques (sans pression),
         avec les schémas et conditions aux limites de l'équation implicite."""
+        xp = self.xp
         U = self.U
-        R = np.empty_like(U)
+        R = xp.empty_like(U)
         for c, (diag, up, lo, rhs) in enumerate(self._momentum()):
             R[:, c] = rhs - diag * U[:, c] - self._offdiag_mult(up, lo, U[:, c])
         return R
@@ -768,16 +808,17 @@ class Solver2D:
     # ---------------------------------------------------------------- projection (explicite)
     def _poisson(self):
         """Laplacien géométrique de pression (Γ = 1) : constant, factorisé une seule fois."""
+        xp = self.xp
         if getattr(self, "_poisson_cache", None) is None:
             fvm = self.fvm
             bc = self.pressure_bc()
-            diag, up, lo, rhs_bc = fvm.assemble(np.zeros(fvm.ni), np.zeros(fvm.nb),
-                                                np.ones(fvm.ni), np.ones(fvm.nb), bc)
+            diag, up, lo, rhs_bc = fvm.assemble(xp.zeros(fvm.ni), xp.zeros(fvm.nb),
+                                                xp.ones(fvm.ni), xp.ones(fvm.nb), bc)
             if not self.has_fixed_p:
                 diag = diag.copy()
                 diag[0] += diag[0]
             L = fvm.matrix(diag, up, lo)
-            if fvm.nc < 100000:
+            if fvm.nc < 100000 and not self.backend.is_gpu:
                 from scipy.sparse.linalg import splu
                 lu = splu(L.tocsc(), permc_spec="MMD_AT_PLUS_A")
                 solve = lambda b, x0: lu.solve(b)                       # noqa: E731
@@ -790,18 +831,19 @@ class Solver2D:
 
     def _project(self, Ustar, tau):
         """U* → champ à divergence (des flux) nulle : −∇·(τ∇p) = −∇·φ*."""
+        xp = self.xp
         fvm = self.fvm
         L, rhs_bc, solve = self._poisson()
         Ub = self.boundary_U(Ustar)
-        Fi = np.sum(fvm.interp(Ustar) * fvm.Si, axis=1)
-        Fb = np.sum(Ub * fvm.Sb, axis=1)
+        Fi = xp.sum(fvm.interp(Ustar) * fvm.Si, axis=1)
+        Fb = xp.sum(Ub * fvm.Sb, axis=1)
         rhs = rhs_bc - fvm.sum_faces(Fi, Fb) / tau
         nf = 0.0
         if not fvm.orthogonal:
             # correction non orthogonale explicite avec la dernière pression connue
             gp = fvm.grad(self.p, self.boundary_p(self.p))
-            nf = fvm.nonorth_flux(np.ones(fvm.ni), gp, self.p, self.settings.nonorth_limit)
-            rhs = rhs + np.bincount(fvm.P, nf, fvm.nc) - np.bincount(fvm.N, nf, fvm.nc)
+            nf = fvm.nonorth_flux(xp.ones(fvm.ni), gp, self.p, self.settings.nonorth_limit)
+            rhs = rhs + xp.bincount(fvm.P, nf, fvm.nc) - xp.bincount(fvm.N, nf, fvm.nc)
         p = solve(rhs, self.p)
         _, _, g_, d_ = self.pressure_bc()
         self.F_i = Fi - tau * (fvm.g * (p[fvm.N] - p[fvm.P]) + nf)
@@ -845,9 +887,28 @@ class Solver2D:
             # turbulence : Euler implicite (termes sources raides) après le pas de U
             self._turbulence(a0=1.0 / dt, hist={k: -v / dt for k, v in st_old.items()})
 
+    # ------------------------------------------------------------------ matériel
+    def to_cpu(self):
+        """Rapatrie champs et opérateurs sur CPU (post-traitement après un calcul GPU)."""
+        if not self.backend.is_gpu:
+            return self
+        h = self.backend.to_host
+        for name in ("U", "p", "F_i", "F_b", "nut", "kindU", "U_fixed", "kindP", "p_fixed",
+                     "kindT", "is_wall"):
+            setattr(self, name, h(getattr(self, name)))
+        self.state = {k: h(v) for k, v in self.state.items()}
+        self.model.d = h(self.model.d)
+        self.model.wall_nodes = h(self.model.wall_nodes)
+        self.settings.backend = "cpu"
+        self.fvm = FVM(self.mesh, "cpu")
+        self.backend, self.xp = self.fvm.backend, self.fvm.xp
+        self._poisson_cache = None
+        return self
+
     # ------------------------------------------------------------------ post-traitement
     def forces(self, patches=None):
         """Efforts (par unité d'envergure, ρ = 1) sur des patches : pression + frottement."""
+        xp = self.xp
         fvm = self.fvm
         names = patches or [p.name for p in self.mesh.patches if p.type == "wall"]
         out = {}
@@ -855,28 +916,30 @@ class Solver2D:
         for name in names:
             sl = self.patch_slices[name]
             Pb = fvm.Pb[sl]
-            Fp = np.sum(pb[sl, None] * fvm.Sb[sl], axis=0)
+            Fp = xp.sum(pb[sl, None] * fvm.Sb[sl], axis=0)
             du = self.U[Pb] - self.U_fixed[sl]
-            Fv = np.sum((self.nu * fvm.magSb[sl] / fvm.dperp[sl])[:, None] * du, axis=0)
+            Fv = xp.sum((self.nu * fvm.magSb[sl] / fvm.dperp[sl])[:, None] * du, axis=0)
             out[name] = {"pressure": Fp, "viscous": Fv, "total": Fp + Fv}
         return out
 
     def wall_shear(self, patch):
         """(abscisse curviligne implicite) centres de faces, τ_w signé (tangente locale), y⁺."""
+        xp = self.xp
         fvm = self.fvm
         sl = self.patch_slices[patch]
         Pb = fvm.Pb[sl]
         n = fvm.nb_hat[sl]
-        t = np.column_stack([-n[:, 1], n[:, 0]])
+        t = xp.column_stack([-n[:, 1], n[:, 0]])
         du = self.U[Pb] - self.U_fixed[sl]
-        ut = np.sum(du * t, axis=1)
+        ut = xp.sum(du * t, axis=1)
         tau = self.nu * ut / fvm.dperp[sl]
-        yplus = fvm.dperp[sl] * np.sqrt(np.abs(tau)) / self.nu
+        yplus = fvm.dperp[sl] * xp.sqrt(xp.abs(tau)) / self.nu
         xf = self.mesh.face_centers[self.mesh.n_internal:][sl]
         return xf, tau, yplus
 
     def fields(self) -> dict:
-        out = {"U": self.U, "p": self.p, "U_mag": np.linalg.norm(self.U, axis=1),
+        xp = self.xp
+        out = {"U": self.U, "p": self.p, "U_mag": xp.linalg.norm(self.U, axis=1),
                "vorticity": self.flow().vorticity}
         if self.model.variables:
             out["nut_over_nu"] = self.nut / self.nu

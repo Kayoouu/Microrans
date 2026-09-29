@@ -468,6 +468,13 @@ class MainWindow(QMainWindow):
         sol = [(s, s) for s in SOLVERS]
         f.addRow("Solveur pression", B.combo(("solver", "solver_p"), sol, "auto"))
         f.addRow("Solveur vitesse / turbulence", B.combo(("solver", "solver_U"), sol, "auto"))
+        f.addRow("Matériel de calcul", B.combo(("solver", "backend"),
+                                                [("cpu", "CPU (NumPy / SciPy)"),
+                                                 ("gpu", "GPU NVIDIA (CuPy, expérimental)")],
+                                                "cpu"))
+        f.addRow(_note("GPU : nécessite une carte NVIDIA, CUDA et CuPy (pip install "
+                       "cupy-cuda12x) ; utile seulement au-delà de ~10⁵ cellules. Chemin "
+                       "testé par émulation, pas sur une vraie carte : voir le README."))
         lay.addWidget(box)
         box, f = _form("Sorties")
         f.addRow("Dossier de résultats", B.text(("output", "directory"), "results/cas"))

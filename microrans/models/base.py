@@ -76,7 +76,7 @@ class TurbulenceModel(ABC):
     # -- utilitaires -------------------------------------------------------------
     def wall_value(self, name: str, d1) -> np.ndarray:
         """Valeur imposée à la paroi pour la variable `name` (d1 : distance du 1er point)."""
-        return np.zeros_like(np.asarray(d1, dtype=float))
+        return float_array(d1) * 0.0
 
     def wall_values(self, name: str) -> tuple[float, float]:
         """(1D) valeurs aux deux parois du canal."""
@@ -108,10 +108,17 @@ class Laminar(TurbulenceModel):
         return {}
 
     def eddy_viscosity(self, state, flow):
-        return np.zeros(len(self.d))
+        return self.d * 0.0
 
     def update(self, state, flow, step):
         return {}
+
+
+def float_array(x):
+    """Tableau de réels sans changer de module (NumPy ou CuPy) ; accepte les scalaires."""
+    if hasattr(x, "astype"):
+        return x.astype(float, copy=False)
+    return np.asarray(x, dtype=float)
 
 
 def linearize_source(phi: np.ndarray, q: np.ndarray, dq: np.ndarray):

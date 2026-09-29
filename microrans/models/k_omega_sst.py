@@ -10,7 +10,8 @@ from __future__ import annotations
 
 import numpy as np
 
-from .base import TurbulenceModel, k_omega_freestream, k_omega_guess, linearize_source
+from .base import (TurbulenceModel, float_array, k_omega_freestream, k_omega_guess,
+                   linearize_source)
 
 
 class MenterSST(TurbulenceModel):
@@ -24,10 +25,10 @@ class MenterSST(TurbulenceModel):
     sigma_k2, sigma_w2, beta2, gamma2 = 1.0, 0.856, 0.0828, 0.44
 
     def wall_value(self, name, d1):
-        d1 = np.asarray(d1, dtype=float)
+        d1 = float_array(d1)
         if name == "omega":
             return 60.0 * self.nu / (self.beta1 * d1 ** 2)
-        return np.zeros_like(d1)
+        return d1 * 0.0
 
     def initial_state(self, flow, nut0):
         k, omega = k_omega_guess(self, nut0, beta=self.beta1)

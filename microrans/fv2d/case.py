@@ -67,7 +67,8 @@ def build_solver(cfg: dict, base_dir=".", verbose=False, mesh=None):
         # tourbillon gaussien dans le sillage pour déclencher une instabilité (lâcher)
         c = np.asarray(init.get("perturbation_center", (1.5, 0.0)))
         C = mesh.cell_centers
-        solver.U[:, 1] += amp * solver.U_ref * np.exp(-np.sum((C - c) ** 2, axis=1))
+        solver.U[:, 1] += solver.backend.asarray(
+            amp * solver.U_ref * np.exp(-np.sum((C - c) ** 2, axis=1)))
     return solver
 
 
@@ -122,6 +123,8 @@ def run_case(cfg: dict, base_dir=".", out_dir=None, verbose=True, plot=True, cal
                              "Cl_amplitude": float(0.5 * (cl[late].max() - cl[late].min())),
                              "strouhal": f * Lref / Uref, "periods_used": n}
     summary["wall_time_s"] = round(time.perf_counter() - t0, 2)
+    summary["backend"] = solver.backend.name
+    solver.to_cpu()                     # post-traitement sur CPU (no-op si déjà CPU)
     for name, f in solver.forces(force_patches).items():
         summary.setdefault(name, {}).update(
             Cd=float(f["total"][0] / qdyn), Cl=float(f["total"][1] / qdyn),
@@ -137,7 +140,7 @@ def run_case(cfg: dict, base_dir=".", out_dir=None, verbose=True, plot=True, cal
                                       encoding="utf-8")
     if hist:
         keys = list(dict.fromkeys(k for h in hist for k in h))
-        with open(out / "history.csv", "w", newline="") as fh:
+        with open(out / "history.csv", "w", newline="", encoding="utf-8") as fh:
             w = csv.DictWriter(fh, fieldnames=keys)
             w.writeheader()
             for h in hist:

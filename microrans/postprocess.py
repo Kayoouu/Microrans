@@ -44,7 +44,8 @@ def write_json(path: Path, data: dict):
 def write_columns(path: Path, columns: dict[str, np.ndarray]):
     names = list(columns)
     data = np.column_stack([np.asarray(columns[k], dtype=float) for k in names])
-    np.savetxt(path, data, delimiter=",", header=",".join(names), comments="", fmt="%.10e")
+    np.savetxt(path, data, delimiter=",", header=",".join(names), comments="", fmt="%.10e",
+               encoding="utf-8")
 
 
 def write_table(path: Path, rows: list[dict]):

@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from .base import TurbulenceModel, linearize_source
+from .base import TurbulenceModel, float_array, linearize_source
 
 
 class SpalartAllmaras(TurbulenceModel):
@@ -38,7 +38,7 @@ class SpalartAllmaras(TurbulenceModel):
 
     def nu_tilde_from_nut(self, nut):
         """Inverse de ν_t = ν̃ f_v1(ν̃/ν) par dichotomie (fonction monotone croissante)."""
-        target = np.asarray(nut, dtype=float) / self.nu
+        target = float_array(nut) / self.nu
         lo = np.zeros_like(target)
         hi = np.maximum(2.0 * target, 20.0)
         for _ in range(80):

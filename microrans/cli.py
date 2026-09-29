@@ -314,7 +314,20 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _utf8_console():
+    """Consoles Windows (cp1252...) : sortie UTF-8 tolérante au lieu d'un plantage sur
+    les symboles (≈, ν, τ, ⁺...)."""
+    for stream in (sys.stdout, sys.stderr):
+        enc = (getattr(stream, "encoding", None) or "").lower().replace("-", "")
+        if stream is not None and enc != "utf8" and hasattr(stream, "reconfigure"):
+            try:
+                stream.reconfigure(encoding="utf-8", errors="replace")
+            except (ValueError, OSError):
+                pass
+
+
 def main(argv=None) -> int:
+    _utf8_console()
     args = build_parser().parse_args(argv)
     try:
         return args.func(args)
