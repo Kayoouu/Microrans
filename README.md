@@ -394,3 +394,10 @@ CPU et sur GPU.
 onglet **Releases → Draft a new release**, tag `v0.x.y` (« Create new tag on publish »),
 **Publish release** ; le workflow `executables` construit, teste et attache les trois
 archives et les notes de version (`packaging/RELEASE_NOTES.md`) en ~5 minutes.
+
+## 11. Licence
+
+Code sous **licence MIT** (fichier `LICENSE`) : utilisation, modification et redistribution
+libres, y compris commerciales, à condition de conserver la mention de copyright ; aucune
+garantie. Les exécutables contiennent aussi Python, NumPy, SciPy, Matplotlib, PyAMG et Qt
+(PySide6, LGPL v3), chacun sous sa propre licence : voir `packaging/THIRD_PARTY_NOTICES.txt`.

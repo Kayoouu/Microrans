@@ -82,6 +82,8 @@ jobs:
         shell: bash
         run: |
           cp README.md dist/microrans/LISEZMOI.md
+          cp LICENSE dist/microrans/LICENSE.txt
+          cp packaging/THIRD_PARTY_NOTICES.txt dist/microrans/
           cd dist
           if [ "$RUNNER_OS" = "Windows" ]; then 7z a -tzip ../microrans-${{ runner.os }}.zip microrans > /dev/null; else zip -qry ../microrans-${{ runner.os }}.zip microrans; fi
       - uses: actions/upload-artifact@v4
