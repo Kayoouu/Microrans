@@ -316,6 +316,7 @@ maillage et la préparation restent sur CPU.
 |-----|----------|-----------|-----------|
 | Hagen-Poiseuille (tuyau) | ordre en espace ; débit | 2.00 ; écart 1/N² | exact |
 | Source radiale u_r = C/r (ν grand : termes circonférentiels dominants) | ordre u_r ; p loin des bords | 1.9 ; ≥ 2 | exact |
+| Démarrage brusque en tuyau (instationnaire) | ordre en espace ; CN / BDF2 / RK3 | 2.0 ; mêmes résultats | exact (série de Bessel) |
 | Sphère Re = 20 (4 096 cellules, 2 s) | C_d | 2.722 | 2.735 (corrélation de Clift et al. 1978) |
 | Sphère Re = 100 (4 096 / 9 216 cellules) | C_d | 1.092 / 1.090 | 1.085 (Fornberg 1988) |
 | Tuyau chauffé à flux uniforme, laminaire | Nu établi (N_r = 12 / 24 / 48) | 4.386 / 4.370 / 4.366 | 48/11 = 4.364 |
@@ -443,7 +444,7 @@ microrans/
   gui/                   interface PySide6 (app.py, widgets.py)
   examples/              cas fournis (microrans examples)
 packaging/               PyInstaller (microrans.spec) : exécutables GUI + CLI
-tests/                   pytest (156 tests : vérification, validation, GUI hors écran, faux GPU)
+tests/                   pytest (157 tests : vérification, validation, GUI hors écran, faux GPU)
 .github/workflows/       tests (Python 3.10 / 3.12) ; exécutables Windows / Linux / macOS
 ```
 

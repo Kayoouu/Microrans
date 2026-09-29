@@ -157,3 +157,27 @@ def test_axisymmetric_input_checks():
     cfg["physics"]["angle_of_attack"] = 5.0
     with pytest.raises(ValueError, match="incidence"):
         run_case(cfg, out_dir=None, verbose=False, plot=False)
+
+
+def test_pipe_startup_transient_implicit_and_explicit():
+    """Démarrage brusque d'un écoulement en tuyau (solution exacte en série de Bessel) :
+    ordre 2 en espace ; Crank-Nicolson et RK3 explicite (projection) concordent."""
+    from scipy.special import j0, j1, jn_zeros
+    nu, f, t_end = 0.1, 1.0, 1.0
+    lam = jn_zeros(0, 200)
+
+    def exact(r):
+        s = sum(8 * j0(k * r) / (k ** 3 * j1(k)) * np.exp(-k ** 2 * nu * t_end) for k in lam)
+        return f / (4 * nu) * ((1 - r ** 2) - s)
+
+    res = {}
+    for scheme, ny in (("crankNicolson", 16), ("crankNicolson", 32), ("rk3", 32)):
+        m = _pipe(ny)
+        s = Solver2D(m, nu, {"axis": {"type": "axis"}, "wall": {"type": "wall"}},
+                     body_force=(f, 0.0), axisymmetric=True, reference_velocity=1.0,
+                     settings=Settings(time_scheme=scheme, adjust_dt=scheme == "rk3"))
+        s.run_transient(0.02, t_end)
+        ex = exact(m.cell_centers[:, 1])
+        res[scheme, ny] = np.abs(s.U[:, 0] - ex).max() / ex.max()
+    assert res["crankNicolson", 16] / res["crankNicolson", 32] > 3.6
+    assert res["rk3", 32] == pytest.approx(res["crankNicolson", 32], rel=0.02)
