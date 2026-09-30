@@ -315,7 +315,7 @@ Le même code s'exécute sur plusieurs matériels en changeant le module de tabl
 | `cpu` (défaut) | processeur | NumPy / SciPy | toute la validation de ce README |
 | `cuda` (alias `gpu`) | cartes NVIDIA | `pip install cupy-cuda12x` | « faux GPU » (`tests/fake_device.py`) : stationnaire, 4 schémas en temps, 4 modèles de turbulence, scalaires, non newtonien, zones poreuses ; **jamais sur une vraie carte** |
 | `rocm` | cartes AMD (Linux) | CuPy compilé pour ROCm | même code que `cuda` ; jamais exécuté |
-| `intel` | cartes et puces Intel (Arc, Iris Xe, UHD) | `pip install dpnp` (~2.5 Go avec oneMKL) | exécuté sur processeur via le runtime OpenCL d'Intel : résultats identiques au CPU à 1e-15 (même algorithme) ; **jamais sur une vraie carte Intel** ; laminaire seulement pour l'instant (modèles de turbulence : en cours) |
+| `intel` | cartes et puces Intel (Arc, Iris Xe, UHD) | `pip install dpnp` (~2.5 Go avec oneMKL) | exécuté sur processeur via le runtime OpenCL d'Intel : laminaire identique au CPU à 1e-15 (même algorithme) ; turbulent (SA, SST) convergé : U_b identique à 8 chiffres, écart ≤ 1.2e-7 ; **jamais sur une vraie carte Intel** |
 
 Les exécutables téléchargeables sont **CPU seulement** (dpnp ou CuPy pèsent des Go).
 Condition indispensable : **double précision (FP64)** matérielle ; le backend la vérifie et
@@ -506,8 +506,7 @@ Un seul calcul n'utilise toujours qu'un cœur (non parallélisé). Script Python
 1. **Taille des problèmes** : Python vectorisé ; ~10⁵ cellules restent raisonnables en
    stationnaire (minutes), l'instationnaire long est lent (cylindre Re = 100 : 2 à 16 min).
    Un calcul n'utilise qu'un cœur (seuls les balayages / polaires sont parallèles).
-2. **Cartes graphiques non testées sur matériel réel** (§ 5.3) ; backend `intel` limité au
-   laminaire pour l'instant ; exécutables CPU seulement.
+2. **Cartes graphiques non testées sur matériel réel** (§ 5.3) ; exécutables CPU seulement.
 3. **SIMPLE** converge lentement sur les maillages très fins et étirés (O(N²) itérations) ;
    l'option `pseudo_cfl` règle le cas des écoulements dominés par la diffusion (canal) mais
    pas en général (§ 5.4) : pas de solveur couplé pression-vitesse. Sur maillages non
@@ -579,7 +578,7 @@ Maillage en C et validation NASA TMR (profils) ; étude de convergence en mailla
 parallélisme multi-cœur (Numba) ou CuPy validé sur carte ; transition avec gradient de
 pression et décollement laminaire (T3C, profils à bas Reynolds), rugosité, crossflow ;
 corrections de courbure et de rotation, loi de paroi thermique et k-ε haut-Reynolds ;
-turbulence sur le backend Intel ; viscoélasticité ; compressible (Roe/HLLC, RK SSP) ; en
+viscoélasticité ; compressible (Roe/HLLC, RK SSP) ; en
 option, plus tard : solveur couplé pression-vitesse (type « Coupled » de Fluent).
 
 ---
