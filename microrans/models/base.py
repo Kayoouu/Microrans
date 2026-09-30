@@ -40,6 +40,8 @@ class TurbulenceModel(ABC):
     label: str = "base"
     variables: tuple[str, ...] = ()
     floors: dict[str, float] = {}
+    # variables à gradient nul aux parois (au lieu de la valeur `wall_value` imposée)
+    wall_zero_gradient: tuple[str, ...] = ()
 
     def __init__(self, grid, nu: float):
         self.grid = grid

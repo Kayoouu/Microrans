@@ -17,7 +17,8 @@ Outil de simulation d'écoulements **incompressibles turbulents ou laminaires**,
 - **1D** : canal plan turbulent intégré jusqu'à la paroi (RANS et URANS pulsé), très rapide,
   idéal pour comparer les modèles ;
 - **modèles de turbulence** : Spalart-Allmaras, k-ε (Launder-Sharma), k-ω (Wilcox 2006),
-  k-ω SST (Menter 2003) — le même code sert en 1D et en 2D ;
+  k-ω SST (Menter 2003) — le même code sert en 1D et en 2D ; transition laminaire-turbulent
+  (SST + γ de Menter 2015) ;
 - **interface graphique** et **ligne de commande** partageant le même
   format de cas (TOML) ; calcul sur **CPU**, ou carte graphique NVIDIA / AMD / Intel
   (expérimental, à mesurer sur sa machine : `microrans devices`, `microrans bench`).
@@ -204,6 +205,7 @@ API Python : `from microrans.fv2d import Solver2D, Settings`, `from microrans.me
 | Temps | Euler, BDF2 à pas variable, Crank-Nicolson, RK1–RK4 et AB2 à projection, pas adaptatif sur le Courant, choix automatique | OpenFOAM, SU2, codes DNS |
 | Solveurs linéaires | multigrille algébrique par agrégation (hiérarchie réutilisée), CG flexible, BiCGStab, LU creuse | GAMG d'OpenFOAM, PETSc |
 | Turbulence | SA, k-ε LS, k-ω 2006, SST 2003 (formes NASA TMR), sources linéarisées par Newton | NASA TMR |
+| Transition | γ à une équation (Menter et al. 2015) couplé au SST : corrélation locale Re_θc(Tu_L, λ_θL), P_k × γ, D_k × max(γ, 0.1), P_k^lim ; γ à gradient nul en paroi ; détails `docs/transition.md` | Menter, Smirnov, Liu & Avancha (2015) ; implémentation SU2 « SLM » (équations vérifiées contre elle, article non consulté) |
 | Parois | résolues (y⁺ ≈ 1) ou **lois de paroi** : loi de Spalding (viscosité pariétale), ω imposé dans les cellules pariétales, k à gradient nul, cisaillement de la loi de paroi pour la production | nutUSpaldingWallFunction, omegaWallFunction, kqRWallFunction d'OpenFOAM |
 | Thermique | température, Boussinesq, flux / température imposés, Nusselt ; force aux faces + `fixedFluxPressure` | buoyantBoussinesq d'OpenFOAM |
 | Scalaires passifs | transport convection-diffusion (D + ν_t/Sc_t), sources, limiteur de Barth-Jespersen (`linearUpwindLimited`), bilans par frontière, âge du fluide | `scalarTransport` / `cellLimited` d'OpenFOAM, UDS de Fluent |
@@ -406,6 +408,23 @@ deux côtés, écart affiché). Sélection d'un matériel Intel précis : `backe
 | Éolienne en disque actuateur, C_T = 0.5 | vitesse au disque et puissance : 120×60 / 240×120 (Re = 100) ; 240×120 (Re = 500) | −0.76 % / +0.81 % ; +0.09 % | théorie de Froude (a = 0.146, C_P = 0.427) |
 | Disque avec couple Q | flux de moment cinétique en sortie | Q à 2 % | conservation |
 
+### 2D, transition laminaire-turbulent (SST + γ, plaques ERCOFTAC)
+
+13 760 cellules (y⁺ ≤ 0.7 pour x > 1 cm), `convection_turb = "linearUpwindLimited"`, entrée
+0.04 m en amont du bord d'attaque. Exemple `plaque_plane_transition_t3a` (~40 s).
+
+| Cas | Grandeur | microrans | Référence |
+|-----|----------|-----------|-----------|
+| T3A, U = 5.4 m/s, Tu = 3.35 % au bord d'attaque (décroissance ajustée sur les mesures) | Re_x du minimum de C_f / mi-transition / C_f max | 1.47e5 / 1.91e5 / 2.9e5 | ≈ 1.42e5 / 2.28e5 / 2.9-3.2e5 (Savill 1993) |
+| idem | C_f max ; C_f(x = 1.495 m) | 0.00449 ; 0.00403 | 0.00486 ; 0.00408 |
+| idem | C_f / Blasius avant transition | 1.10 à 1.26 | mesures 1.00 à 1.19 |
+| idem, maillage fin (27 720 cellules) | minimum / mi-transition / C_f max | 1.50e5 / 1.95e5 / 0.00455 | écart de maillage ≤ 2 % |
+| T3A-, U = 19.8 m/s, Tu = 0.85 % | minimum de C_f ; 90 % de la transition | 1.36e6 ; 1.45e6 | ≈ 1.45e6 ; > 2.0e6 (lecture graphique ±5 %) |
+| T3B, U = 9.4 m/s, Tu = 6.1 % | minimum / maximum de C_f ; C_f min | 7.5e4 / 1.5e5 ; 0.0045 | ≈ 6e4 / 1.25e5 ; ≈ 0.0034 (lecture graphique) |
+| Canal 1D Re_τ = 395 (entièrement turbulent) | U_b⁺ | 17.18 (SST seul 17.38) | 17.20 (Dean) |
+
+Vérifié indépendamment sur l'exemple T3A : minimum de C_f à Re_x = 1.47e5, maximum 0.00449.
+
 ### 2D, thermique (convection naturelle, de Vahl Davis 1983, Pr = 0.71)
 
 | Ra | Maillage | Nu moyen | écart | u_max | écart | v_max | écart |
@@ -480,7 +499,13 @@ limites turbulentes, dont la convergence est dominée par les équations de turb
    l'option `pseudo_cfl` règle le cas des écoulements dominés par la diffusion (canal) mais
    pas en général (§ 5.4) : pas de solveur couplé pression-vitesse. Sur maillages non
    orthogonaux, les résidus plafonnent souvent vers 1e-5 — utiliser `monitor_tol`.
-4. **Incompressible uniquement**, pas de transition, pas de LES/DES.
+4. **Incompressible uniquement**, pas de LES/DES. **Transition (`sst_gamma`)** : validée
+   seulement sur plaques planes sans gradient de pression ; début de transition bien placé
+   (T3A +3 %, T3A- −6 %) mais transition **trop raide** (mi-transition T3A 16 % trop tôt,
+   C_f max −8 %), C_f laminaire 10 à 26 % au-dessus de Blasius à Tu élevé (T3B : creux
+   laminaire manqué) ; **très sensible** à la turbulence amont (0.3 point de Tu au bord
+   d'attaque déplace la transition de 17 %) et au schéma de convection de la turbulence
+   (utiliser `linearUpwindLimited`) ; y⁺ ≈ 1 obligatoire. Voir `docs/transition.md`.
    **Lois de paroi** : la loi de Spalding impose une loi log universelle (κ = 0.41, B = 5.2) ;
    chaque modèle résolu a la sienne, d'où 2 à 5 % d'écart sur le débit par rapport au même
    modèle résolu (canal ci-dessus) ; moins précises dans la zone tampon (y⁺ ≈ 5-30) ; pas pour
@@ -538,10 +563,11 @@ limites turbulentes, dont la convergence est dominée par les équations de turb
 ## 9. Feuille de route
 
 Maillage en C et validation NASA TMR (profils) ; étude de convergence en maillage (GCI) ;
-parallélisme multi-cœur (Numba) ou CuPy validé sur carte ; transition γ-Re_θ ; rugosité,
-corrections de courbure, loi de paroi thermique et k-ε haut-Reynolds ; rotation propre
-(swirl) en axisymétrique ; viscoélasticité ; compressible (Roe/HLLC, RK SSP) ; en option, plus tard : solveur
-couplé pression-vitesse (type « Coupled » de Fluent).
+parallélisme multi-cœur (Numba) ou CuPy validé sur carte ; transition avec gradient de
+pression et décollement laminaire (T3C, profils à bas Reynolds), rugosité, crossflow ;
+corrections de courbure et de rotation, loi de paroi thermique et k-ε haut-Reynolds ;
+turbulence sur le backend Intel ; viscoélasticité ; compressible (Roe/HLLC, RK SSP) ; en
+option, plus tard : solveur couplé pression-vitesse (type « Coupled » de Fluent).
 
 ---
 
@@ -558,7 +584,7 @@ microrans/
   safe_expr.py           formules des fichiers de cas évaluées sans exécution de code
   studies.py             études précision / coût des schémas en temps
   grid.py numerics.py flow.py solver.py cases.py   solveur 1D (canal) et ses schémas en temps
-  models/                modèles de turbulence (communs 1D/2D)
+  models/                modèles de turbulence (communs 1D/2D), transition γ
   mesh2d/                géométrie CSG, blocs, O-grid, triangles, hybride, E/S, qualité, tracés
   fv2d/
     fvm.py               opérateurs volumes finis, assemblage CSR
@@ -573,13 +599,14 @@ microrans/
   gui/                   interface PySide6 (app.py, widgets.py)
   examples/              cas fournis (microrans examples)
 packaging/               PyInstaller (microrans.spec) : exécutables GUI + CLI
-tests/                   pytest (222 tests : vérification, validation, GUI hors écran, faux GPU)
+tests/                   pytest (234 tests : vérification, validation, GUI hors écran, faux GPU)
 .github/workflows/       tests (Python 3.10 / 3.12) ; exécutables Windows / Linux
 ```
 
 **Ajouter un modèle de turbulence** : dériver `TurbulenceModel` (`models/base.py`), définir
 `variables`, `eddy_viscosity`, `update` (+ `initial_state`, `freestream_values`,
-`wall_value`). Dans `update`, pour chaque équation, passer Q et dQ/dφ à `linearize_source`,
+`wall_value` ; une variable à gradient nul aux parois se déclare dans `wall_zero_gradient`,
+comme le γ de la transition). Dans `update`, pour chaque équation, passer Q et dQ/dφ à `linearize_source`,
 appeler `self._solve(step, nom, Γ, source, puits)` et utiliser `self.ops.grad_sq`,
 `self.ops.grad_dot`, `flow.strain`, `flow.vorticity` : le même code marche en 1D, en 2D, sur
 CPU et sur GPU.

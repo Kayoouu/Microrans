@@ -36,7 +36,8 @@ APP_NAME = "microrans"
 PAGES = ["Accueil", "Canal 1D", "Maillage", "Physique", "Conditions limites", "Numérique",
          "Calcul", "Résultats"]
 MODEL_LABELS = [("laminar", "Laminaire"), ("sa", "Spalart-Allmaras"), ("ke", "k-ε (Launder-Sharma)"),
-                ("kw", "k-ω (Wilcox 2006)"), ("sst", "k-ω SST (Menter)")]
+                ("kw", "k-ω (Wilcox 2006)"), ("sst", "k-ω SST (Menter)"),
+                ("sst_gamma", "k-ω SST + transition γ (Menter 2015)")]
 BC_LABELS = {"wall": "Paroi", "inlet": "Entrée (vitesse)", "outlet": "Sortie (pression)",
              "symmetry": "Symétrie", "farfield": "Champ lointain",
              "axis": "Axe (axisymétrique)", "pressure_inlet": "Entrée (pression totale)"}
@@ -602,6 +603,11 @@ class MainWindow(QMainWindow):
         f.addRow("Convection U", B.combo(("solver", "convection_U"),
                                          [("linearUpwind", "linearUpwind (ordre 2)"),
                                           ("upwind", "upwind (ordre 1, robuste)")], "linearUpwind"))
+        f.addRow("Convection turbulence", B.combo(
+            ("solver", "convection_turb"),
+            [("upwind", "upwind (ordre 1, robuste)"),
+             ("linearUpwindLimited", "linearUpwindLimited (ordre 2 limité, conseillé en transition)"),
+             ("linearUpwind", "linearUpwind (ordre 2)")], "upwind"))
         sol = [(s, s) for s in SOLVERS]
         f.addRow("Solveur pression", B.combo(("solver", "solver_p"), sol, "auto"))
         f.addRow("Solveur vitesse / turbulence", B.combo(("solver", "solver_U"), sol, "auto"))

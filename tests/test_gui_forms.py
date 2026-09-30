@@ -94,3 +94,14 @@ def test_swirl_and_actuator_disk_forms(win):
     win.bc_table.item(rows["wall"], 9).setText("Ω=5")
     assert win.cfg["boundary"]["wall"]["omega"] == 5.0
     assert win.cfg["boundary"]["inlet"]["U_theta"] == "2*y"
+
+
+def test_transition_example_roundtrip(win):
+    """Cas T3A : modèle sst_gamma et convection de la turbulence conservés par les formulaires."""
+    from microrans.cli import examples_dir
+    from microrans.mesh2d.builder import load_config
+    win.load_cfg(load_config(examples_dir() / "plaque_plane_transition_t3a.toml"))
+    assert win.model_combo.currentData() == "sst_gamma"
+    win._store_forms()
+    assert win.cfg["physics"]["model"] == "sst_gamma"
+    assert win.cfg["solver"]["convection_turb"] == "linearUpwindLimited"

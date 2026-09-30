@@ -1,0 +1,84 @@
+# Transition laminaire-turbulent sur plaque plane : cas T3A de l'ERCOFTAC (Roach & Brierley
+# 1992 ; Savill 1993), U∞ = 5.4 m/s, ν = 1.5e-5 m²/s, Tu ≈ 3.3 % au bord d'attaque.
+# Modèle k-ω SST + transition γ à une équation (Menter, Smirnov, Liu & Avancha 2015).
+# microrans run2d plaque_plane_transition_t3a      (résultat : wall_plate.csv, colonne Cf)
+#
+# Turbulence amont : l'entrée est à 0.04 m en amont du bord d'attaque ; Tu = 3.7 % et
+# ν_t/ν = 12.4 y ont été AJUSTÉS (moindres carrés) sur la décroissance mesurée de Tu le long
+# de la plaque (3.04 % à x = 0.045 m … 1.10 % à x = 1.495 m ; écart max 0.05 point jusqu'à
+# x = 1.2 m) → Tu = 3.35 % au bord d'attaque. Avec les valeurs de Langtry & Menter (2009)
+# (Tu = 3.3 %, ν_t/ν = 12 à la même entrée → 3.04 % au bord d'attaque), Tu est trop faible
+# de 0.1 à 0.2 point dans la zone de transition et le minimum de Cf recule à Re_x = 1.72e5.
+# Convection des équations de turbulence au 2e ordre limité (linearUpwindLimited) : le
+# 1er ordre (upwind, défaut du code) retarde ici la transition de ~10 % et, pour le cas à
+# faible turbulence T3A-, l'avance de 36 % (diffusion numérique).
+#
+# Résultats MESURÉS avec ce fichier (13 760 cellules, y⁺ max 1.6 au bord d'attaque, ≤ 0.7
+# pour x > 1 cm ; 449 itérations, 35 s sur un cœur d'une machine chargée).
+# Expérience : Savill (1993), un point tous les 0.1 m :
+#   minimum de Cf (début de transition)  Re_x = 1.47e5 (x = 0.41 m) ; exp. ≈ 1.42e5 (0.395 m)
+#   mi-transition (Cf à mi-chemin entre Blasius et 0.0576 Re_x^-0.2) Re_x = 1.91e5 ; exp. 2.28e5
+#   90 % de la transition                Re_x = 2.59e5 ; exp. ≈ 2.70e5
+#   maximum de Cf (fin de transition)    Re_x = 2.9e5, Cf = 0.00449 ; exp. 2.9-3.2e5, 0.00486
+#   zone laminaire (x ≤ 0.4 m) : Cf 10 à 26 % au-dessus de Blasius (exp. : 0 à 19 %)
+#   x = 1.495 m : Cf = 0.00403 ; exp. 0.00408 ; corrélation 0.0576 Re_x^-0.2 : 0.00411
+# Maillage fin (27 720 cellules, y⁺ ≤ 0.9) : 1.50e5 / 1.95e5 / 2.56e5, Cf max 0.00455,
+# Cf(1.495 m) = 0.00410 (écarts de maillage ≤ 2 %).
+# Transition prédite plus raide que mesurée (Cf monte trop vite après le minimum),
+# surpassement de Cf en fin de transition sous-estimé de 7 à 8 %. Voir docs/notes_transition.md.
+[mesh]
+type = "blocks"
+vertices = [[-0.04, 0.0], [0.0, 0.0], [1.6, 0.0], [1.6, 0.5], [0.0, 0.5], [-0.04, 0.5]]
+blocks = [
+  # 1re maille 5e-5 m (centre à y⁺ ≈ 0.4 dans la zone turbulente) ; 1.5 mm au bord d'attaque
+  { vertices = [0, 1, 4, 5], cells = [12, 80], grading = [0.2451, 814.3] },
+  { vertices = [1, 2, 3, 4], cells = [160, 80], grading = [21.31, 814.3] },
+]
+
+[mesh.patches]
+inlet = { type = "patch", faces = [[5, 0]] }
+outlet = { type = "patch", faces = [[2, 3]] }
+top = { type = "patch", faces = [[3, 4], [4, 5]] }
+symmetry = { type = "symmetry", faces = [[0, 1]] }
+plate = { type = "wall", faces = [[1, 2]] }
+
+[physics]
+nu = 1.5e-5
+model = "sst_gamma"        # option : model_options = { kato_launder = true } (écart < 3 % ici)
+reference_velocity = 5.4
+reference_length = 1.0
+
+[initial]
+U = [5.4, 0.0]
+
+[turbulence]
+intensity = 0.037          # à l'entrée (x = −0.04 m) ; 3.35 % au bord d'attaque
+viscosity_ratio = 12.4
+
+[boundary.inlet]
+type = "inlet"
+U = [5.4, 0.0]
+
+[boundary.outlet]
+type = "outlet"
+p = 0.0
+
+[boundary.top]
+type = "outlet"
+
+[boundary.symmetry]
+type = "symmetry"
+
+[boundary.plate]
+type = "wall"
+
+[solver]
+mode = "steady"
+convection_turb = "linearUpwindLimited"
+max_iter = 3000
+tol = 1e-6
+log_every = 100
+
+[output]
+directory = "results/plaque_plane_transition_t3a"
+forces = ["plate"]

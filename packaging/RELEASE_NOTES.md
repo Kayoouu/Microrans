@@ -40,7 +40,8 @@ courants, filtre poreux, éolienne, canal 1D.
 ## Contenu de cette version
 
 - Simulation d'écoulements 1D, 2D plans et **axisymétriques** (tuyaux, jets, corps de
-  révolution), laminaires ou turbulents (modèles Spalart-Allmaras, k-ε, k-ω, k-ω SST),
+  révolution), laminaires ou turbulents (modèles Spalart-Allmaras, k-ε, k-ω, k-ω SST,
+  **transition laminaire-turbulent** SST + γ),
   stationnaires ou instationnaires, avec thermique et lois de paroi ;
 - **scalaires transportés** (concentration, polluant, âge du fluide / temps de séjour) et
   **fluides non newtoniens** (sang, polymères, boues : loi puissance, Carreau, Bingham…) ;
