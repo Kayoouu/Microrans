@@ -203,7 +203,7 @@ class MainWindow(QMainWindow):
         h = self.menuBar().addMenu("&Aide")
         a = QAction("Documentation (GitHub)", self)
         a.triggered.connect(lambda: QDesktopServices.openUrl(
-            QUrl("https://github.com/Kayoouu/Claude-test#readme")))
+            QUrl("https://github.com/Kayoouu/Microrans#readme")))
         h.addAction(a)
         a = QAction("À propos", self)
         a.triggered.connect(lambda: QMessageBox.about(

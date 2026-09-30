@@ -8,7 +8,7 @@ VSVersionInfo(
       StringStruct('FileDescription', 'microrans - simulation RANS/URANS 1D et 2D'),
       StringStruct('FileVersion', '0.2.0'),
       StringStruct('InternalName', 'microrans'),
-      StringStruct('LegalCopyright', 'Code source : github.com/Kayoouu/Claude-test'),
+      StringStruct('LegalCopyright', 'Code source : github.com/Kayoouu/Microrans'),
       StringStruct('OriginalFilename', 'microrans-gui.exe'),
       StringStruct('ProductName', 'microrans'),
       StringStruct('ProductVersion', '0.2.0')])]),

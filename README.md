@@ -1,7 +1,7 @@
 # microrans — simulation RANS / URANS 1D et 2D, avec mailleur et interface graphique
 
-[![tests](https://github.com/Kayoouu/Claude-test/actions/workflows/tests.yml/badge.svg)](https://github.com/Kayoouu/Claude-test/actions/workflows/tests.yml)
-[![executables](https://github.com/Kayoouu/Claude-test/actions/workflows/build.yml/badge.svg)](https://github.com/Kayoouu/Claude-test/actions/workflows/build.yml)
+[![tests](https://github.com/Kayoouu/Microrans/actions/workflows/tests.yml/badge.svg)](https://github.com/Kayoouu/Microrans/actions/workflows/tests.yml)
+[![executables](https://github.com/Kayoouu/Microrans/actions/workflows/build.yml/badge.svg)](https://github.com/Kayoouu/Microrans/actions/workflows/build.yml)
 
 Outil de simulation d'écoulements **incompressibles turbulents ou laminaires**, en Python :
 
