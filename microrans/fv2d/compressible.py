@@ -301,8 +301,14 @@ class CompressibleSettings:
     cfl: float = 0.8
     steady_scheme: str = "rk3"            # rk3 (SSP, pas local) | rk5 | implicit
     cfl_max: float = 1e3                  # implicite : CFL atteint progressivement
-    cfl_growth: float = 1.2               # implicite : facteur par itération
+    cfl_growth: float = 1.1               # implicite : facteur par itération
+    # implicite : CFL × 0.7 si le résidu croît de plus de ce facteur (inf : jamais)
+    cfl_adapt: float = 1.2
     linear_sweeps: int = 2                # implicite : balayages de Gauss-Seidel symétrique
+    implicit_jacobian: str = "roe"        # implicite : dissipation de Roe | rusanov
+    linear_solver: str = "gmres"          # implicite : gmres | sgs
+    linear_iter: int = 20                 # implicite, gmres : itérations max
+    linear_tol: float = 0.05              # implicite, gmres : tolérance relative
     first_order_iter: int = 0             # itérations d'ordre 1 au départ (démarrage robuste)
     viscous_factor: float = 2.0           # C_v du pas de temps visqueux
     max_iter: int = 5000
@@ -879,20 +885,31 @@ class CompressibleSolver2D:
             stepper = ImplicitStepper(self)
         forces_hist = []
         it = 0
+        prev = None
+        cfl_min = min(1.0, s.cfl)
         for it in range(1, max_iter + 1):
             gi = self.iterations_total + it
             order = 1 if gi <= s.first_order_iter else s.order
             R = self.residual(self.Q, order, gi)
+            rel = self._relative(self.residual_norms(R))
             if stepper is not None:
+                # CFL adaptatif : croît tant que les résidus baissent, réduit sinon
+                r = max(rel)
+                grow = prev is None or r <= s.cfl_adapt * prev
+                if not grow:
+                    cfl = max(0.7 * cfl, cfl_min)
                 ok = stepper.step(R, cfl, order)
-                cfl = min(cfl * s.cfl_growth, s.cfl_max) if ok else max(0.5 * cfl, 0.1)
+                if not ok:
+                    cfl = max(0.5 * cfl, cfl_min)
+                elif grow:
+                    cfl = min(cfl * s.cfl_growth, s.cfl_max)
+                prev = r
             else:
                 dt = self.local_dt(self.Q, cfl)
                 if s.steady_scheme == "rk5":
                     self._rk5(dt, order, gi, R0=R)
                 else:
                     self._ssp_rk3(dt, order, gi, R0=R, reuse=True)
-            rel = self._relative(self.residual_norms(R))
             rec = {"iteration": gi, "rho": rel[0], "rhoU": rel[1], "rhoV": rel[2],
                    "rhoE": rel[3]}
             if not all(np.isfinite(v) for v in rel) or not np.all(np.isfinite(self.Q)):
@@ -1095,11 +1112,13 @@ class CompressibleSolver2D:
         r, u, v, p = W
         c = np.sqrt(g * p / r)
         gU = self.grad_U()
-        q = 0.5 * fs.rho * max(fs.speed, 1e-300) ** 2
-        return {"rho": r.copy(), "U": np.column_stack([u, v]), "U_mag": np.hypot(u, v),
-                "p": p.copy(), "T": p / (r * self.gas.R), "Mach": np.hypot(u, v) / c,
-                "Cp": (p - fs.p) / q, "entropy": (p / fs.p) / (r / fs.rho) ** g - 1.0,
-                "vorticity": gU[:, 1, 0] - gU[:, 0, 1]}
+        out = {"rho": r.copy(), "U": np.column_stack([u, v]), "U_mag": np.hypot(u, v),
+               "p": p.copy(), "T": p / (r * self.gas.R), "Mach": np.hypot(u, v) / c}
+        if fs.speed > 0.0:                    # référence au repos : Cp non défini
+            out["Cp"] = (p - fs.p) / (0.5 * fs.rho * fs.speed ** 2)
+        out["entropy"] = (p / fs.p) / (r / fs.rho) ** g - 1.0
+        out["vorticity"] = gU[:, 1, 0] - gU[:, 0, 1]
+        return out
 
     def mean_fields(self) -> dict:
         return {}

@@ -60,7 +60,8 @@ from .compressible import (CompressibleSettings, CompressibleSolver2D, Gas, make
 _SETTINGS = {"flux", "order", "limiter", "venkat_k", "limiter_freeze", "entropy_fix", "cfl",
              "steady_scheme", "cfl_max", "cfl_growth", "first_order_iter",
              "viscous_factor", "max_iter", "tol", "monitor_tol", "monitor_window",
-             "log_every", "linear_sweeps", "implicit_jacobian"}
+             "log_every", "linear_sweeps", "implicit_jacobian", "linear_solver",
+             "linear_iter", "linear_tol", "cfl_adapt"}
 
 
 def is_compressible(cfg: dict) -> bool:
@@ -255,8 +256,9 @@ class CompressibleSampler:
         fs = s.fs
         out = {"rho": r, "Ux": u, "Uy": vv, "U_mag": np.hypot(u, vv), "p": p, "T": T,
                "Mach": np.hypot(u, vv) / np.sqrt(s.gas.gamma * np.maximum(p, 1e-300)
-                                                 / np.maximum(r, 1e-300)),
-               "Cp": (p - fs.p) / (0.5 * fs.rho * max(fs.speed, 1e-300) ** 2)}
+                                                 / np.maximum(r, 1e-300))}
+        if fs.speed > 0.0:
+            out["Cp"] = (p - fs.p) / (0.5 * fs.rho * fs.speed ** 2)
         out = {k: np.where(self.ok, a, np.nan) for k, a in out.items()}
         if fields is not None:
             out = {k: out[k] for k in fields if k in out}
@@ -301,7 +303,7 @@ def run_compressible_case(cfg: dict, base_dir=".", out_dir=None, verbose=True, p
     qinf = 0.5 * fs.rho * fs.speed ** 2
     if qinf <= 0.0:
         qinf = float("nan")                       # fluide au repos : pas de coefficients
-    kF = 1.0 / (qinf * Lref)
+    kF = 1.0 / (qinf * Lref) if qinf == qinf else float("nan")
     ed, el = wind_axes(cfg)
     center = oc.get("moment_center", (0.0, 0.0))
     walls = [p.name for p in solver.mesh.patches
@@ -323,7 +325,7 @@ def run_compressible_case(cfg: dict, base_dir=".", out_dir=None, verbose=True, p
                        "viscosity": gas.viscosity, "mu": gas.mu},
                "freestream": {k: float(v) for k, v in fs.describe().items()},
                "reynolds": Re, "reference_length": Lref,
-               "dynamic_pressure": qinf,
+               "dynamic_pressure": qinf if qinf == qinf else None,
                "angle_of_attack": float(ph.get("angle_of_attack", 0.0))}
     if solver.restart_info:
         summary["restart"] = solver.restart_info

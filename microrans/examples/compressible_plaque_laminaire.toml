@@ -1,0 +1,63 @@
+# Plaque plane laminaire à M = 0.2, Re_L = 1e5 (Navier-Stokes compressible, paroi adiabatique).
+# Référence : Blasius, C_f = 0.664/√Re_x (Schlichting & Gersten, Boundary-Layer Theory § 7.1) ;
+# à M = 0.2 l'effet de compressibilité sur C_f est < 1 %. Écarts mesurés : docs/compressible.md.
+# microrans run2d compressible_plaque_laminaire
+[mesh]
+type = "blocks"
+vertices = [[-0.2, 0.0], [0.0, 0.0], [1.0, 0.0], [1.0, 0.4], [0.0, 0.4], [-0.2, 0.4]]
+blocks = [
+  # grading = rapport dernière / première maille ; 1re maille pariétale ≈ 3.8e-4
+  { vertices = [0, 1, 4, 5], cells = [16, 48], grading = [0.1, 100.0] },
+  { vertices = [1, 2, 3, 4], cells = [64, 48], grading = [10.0, 100.0] },
+]
+
+[mesh.patches]
+inlet = { type = "patch", faces = [[5, 0]] }
+outlet = { type = "patch", faces = [[2, 3]] }
+top = { type = "patch", faces = [[3, 4], [4, 5]] }
+symmetry = { type = "symmetry", faces = [[0, 1]] }
+plate = { type = "wall", faces = [[1, 2]] }
+
+[physics]
+compressible = true
+reference_length = 1.0       # longueur de plaque (Re_L)
+
+[flow]
+mach = 0.2
+pressure = 101325.0
+temperature = 288.15
+viscosity = "constant"
+reynolds = 1e5               # μ = ρ∞ U∞ L / Re (similitude : « air » plus visqueux)
+prandtl = 0.72
+
+[boundary.inlet]
+type = "inlet"               # p0, T0 et direction de l'écoulement amont
+
+[boundary.outlet]
+type = "outlet"              # p = p∞
+p = 101325.0
+
+[boundary.top]
+type = "farfield"
+
+[boundary.symmetry]
+type = "symmetry"
+
+[boundary.plate]
+type = "wall"                # adhérence, adiabatique
+
+[solver]
+mode = "steady"
+flux = "roe"
+order = 2
+limiter = "venkatakrishnan"
+steady_scheme = "implicit"
+cfl = 5.0
+cfl_max = 1000.0
+max_iter = 2000
+tol = 1e-6
+log_every = 100
+
+[output]
+directory = "results/compressible_plaque_laminaire"
+forces = ["plate"]
