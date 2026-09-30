@@ -61,7 +61,7 @@ _SETTINGS = {"flux", "order", "limiter", "venkat_k", "limiter_freeze", "entropy_
              "steady_scheme", "cfl_max", "cfl_growth", "first_order_iter",
              "viscous_factor", "max_iter", "tol", "monitor_tol", "monitor_window",
              "log_every", "linear_sweeps", "implicit_jacobian", "linear_solver",
-             "linear_iter", "linear_tol", "cfl_adapt"}
+             "linear_iter", "linear_tol", "cfl_adapt", "cfl_cuts"}
 
 
 def is_compressible(cfg: dict) -> bool:

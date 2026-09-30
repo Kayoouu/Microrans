@@ -86,6 +86,12 @@ STEADY_SCHEMES = ("rk3", "rk5", "implicit")
 _SLIP, _NOSLIP, _FAR, _SUPIN, _INLET, _OUTLET, _EXTRAP = range(7)
 # van Leer, Tai & Powell (1989) : 5 étapes, discrétisation upwind d'ordre 2
 _RK5 = (0.0695, 0.1602, 0.2898, 0.5060, 1.0)
+# implicite : plafond de CFL réduit seulement si la solution OSCILLE pendant la stagnation
+# des résidus : ‖Q_n − Q_début‖ / Σ‖ΔQ_k‖ < _STALL_DRIFT (cycle limite de la correction
+# de défaut) ; une solution qui DÉRIVE (choc qui se déplace au démarrage) garde son CFL.
+# Mesuré (NACA 0012, M = 0.8, 192 × 64) : 0.38 à 0.92 aux stagnations du démarrage,
+# 0.03 à 0.11 dans le cycle limite à CFL 100.
+_STALL_DRIFT = 0.2
 
 
 # ============================================================================ gaz
@@ -306,6 +312,9 @@ class CompressibleSettings:
     cfl_growth: float = 1.1               # implicite : facteur par itération
     # implicite : CFL × 0.7 si le résidu croît de plus de ce facteur (inf : jamais)
     cfl_adapt: float = 1.2
+    # implicite : nombre maximal de divisions par 2 du plafond de CFL quand les résidus
+    # stagnent en oscillant (cycle limite) ; 0 : plafond fixe = cfl_max
+    cfl_cuts: int = 3
     linear_sweeps: int = 2                # implicite : balayages de Gauss-Seidel symétrique
     implicit_jacobian: str = "roe"        # implicite : dissipation de Roe | rusanov
     linear_solver: str = "gmres"          # implicite : gmres | sgs
@@ -949,6 +958,11 @@ class CompressibleSolver2D:
         cfl_min = min(1.0, s.cfl)
         cfl_cap = s.cfl_max
         best, since, cuts = np.inf, 0, 0
+        # échelles de Q (ρ, ρu, ρv, ρE) pour mesurer dérive et chemin parcouru
+        vref = self.fs.c + self.fs.speed
+        qscale = np.array([self.fs.rho, self.fs.rho * vref, self.fs.rho * vref,
+                           self.fs.p])[:, None]
+        q_start, path = None, 0.0
         for it in range(1, max_iter + 1):
             gi = self.iterations_total + it
             order = 1 if gi <= s.first_order_iter else s.order
@@ -963,18 +977,26 @@ class CompressibleSolver2D:
                 r = max(rel)
                 if r < 0.9 * best:
                     best, since = r, 0
+                    q_start, path = self.Q.copy(), 0.0
                 else:
                     since += 1
-                if since >= 25 and gi > s.first_order_iter + 25 and cuts < 3:
-                    # (3 fois au plus : une stagnation qui persiste vient d'ailleurs,
-                    # typiquement du limiteur — voir limiter_freeze)
-                    cfl_cap = max(0.5 * min(cfl, cfl_cap), cfl_min)
-                    cfl = min(cfl, cfl_cap)
-                    best, since, cuts = r, 0, cuts + 1
+                if since >= 25 and gi > s.first_order_iter + 25 and cuts < s.cfl_cuts:
+                    # stagnation : réduction seulement si la solution oscille (voir
+                    # _STALL_DRIFT) ; cfl_cuts fois au plus (une stagnation qui persiste
+                    # vient d'ailleurs, typiquement du limiteur — voir limiter_freeze)
+                    drift = np.sqrt(np.mean(((self.Q - q_start) / qscale) ** 2))
+                    if drift < _STALL_DRIFT * path:
+                        cfl_cap = max(0.5 * min(cfl, cfl_cap), cfl_min)
+                        cfl = min(cfl, cfl_cap)
+                        cuts += 1
+                    best, since = r, 0
+                    q_start, path = self.Q.copy(), 0.0
+                q_old = self.Q
                 grow = prev is None or r <= s.cfl_adapt * prev
                 if not grow:
                     cfl = max(0.7 * cfl, cfl_min)
                 ok = stepper.step(R, cfl, order)
+                path += float(np.sqrt(np.mean(((self.Q - q_old) / qscale) ** 2)))
                 if not ok:
                     cfl = max(0.5 * cfl, cfl_min)
                 elif grow:

@@ -39,11 +39,12 @@ vortex = [0.25, 0.0]         # correction de tourbillon ponctuel (quart de corde
 mode = "steady"
 flux = "roe"
 order = 2
-limiter = "venkatakrishnan"
-limiter_freeze = 200         # limiteur gelé ensuite (sinon cycle limite des résidus)
+limiter = "venkatakrishnan"   # NON gelé : un limiteur gelé avant que le choc soit en place
+                             # fausse la solution convergée (limiter_freeze = 200 : C_l
+                             # −3.4 % avec des résidus pourtant tombés à 1e-10)
 steady_scheme = "implicit"
 cfl = 5.0
-cfl_max = 50.0
+cfl_max = 100.0
 max_iter = 1000
 tol = 1e-6
 monitor_tol = 1e-5           # ou efforts stabilisés (relatif) sur 200 itérations
