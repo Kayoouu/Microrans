@@ -132,7 +132,7 @@ class Settings:
     # traitement pariétal : resolved (y⁺ ≲ 1, défaut) | wall_function (loi de Spalding,
     # y⁺ ≈ 1 à 300 ; SA, k-ω, SST — pas le k-ε Launder-Sharma bas-Reynolds)
     wall_treatment: str = "resolved"
-    # matériel : cpu (NumPy/SciPy) | gpu (CuPy, expérimental : voir microrans/backend.py)
+    # matériel : cpu (NumPy/SciPy) | cuda | rocm | intel (expérimental : microrans/backend.py)
     backend: str = "cpu"
     n_outer: int = 2
     n_corr: int = 2
@@ -595,8 +595,7 @@ class Solver2D:
             F[mask] = R @ np.diag(f) @ R.T
             owner[mask] = i
             info.append({"name": name, "cells": int(mask.sum()),
-                         "volume": float(np.sum(self.fvm.V[mask]) if not self.backend.is_gpu
-                                         else np.sum(m.cell_volumes[mask]))})
+                         "volume": float(np.sum(self.backend.to_host(self.fvm.V)[mask]))})
         A = self.backend.asarray
         return {"D": A(D), "F": A(F), "zone": A(owner), "info": info}
 
@@ -1204,7 +1203,8 @@ class Solver2D:
             rec = {"iteration": self.iterations_total + it, **self.residuals_now,
                    "continuity": cont}
             self.history.append(rec)
-            if not all(xp.isfinite(v) for v in rec.values()) or not xp.all(xp.isfinite(self.U)):
+            if not all(np.isfinite(float(v)) for v in rec.values()) or not bool(
+                    xp.all(xp.isfinite(self.U))):
                 raise FloatingPointError(f"Divergence à l'itération {it}.")
             if probes:
                 rec.update(probes(self))            # sondes (NaN possible hors domaine)

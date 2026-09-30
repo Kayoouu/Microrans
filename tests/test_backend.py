@@ -138,3 +138,45 @@ def test_porous_zone_on_gpu():
                                  "angle": 30.0}], settings=st)
     c, g = _pair(build, lambda s: s.run_steady(max_iter=40, tol=1e-12))
     assert np.max(np.abs(c.U - g.U)) < 1e-8 and np.max(np.abs(c.p - g.p)) < 1e-8
+
+
+def test_generic_csr_matches_scipy():
+    """Matrices creuses « génériques » (bincount, lectures indexées) utilisées avec dpnp :
+    vérifiées ici avec NumPy comme module de tableaux."""
+    import scipy.sparse as sp
+
+    from microrans.sparse_generic import GenericSparseModule
+    rng = np.random.default_rng(1)
+    A = sp.random(40, 40, density=0.2, random_state=2, format="csr") + sp.eye(40)
+    A.sort_indices()
+    G = GenericSparseModule(np).csr_matrix((A.data, A.indices, A.indptr), shape=A.shape)
+    x = rng.normal(size=40)
+    assert np.allclose(G @ x, A @ x) and np.allclose(G.diagonal(), A.diagonal())
+    assert np.allclose(G.toarray(), A.toarray())
+    assert abs(G.to_scipy(np.asarray) - A).max() == 0
+
+
+def test_intel_backend_matches_cpu_if_available():
+    """Backend intel (dpnp) : exécuté seulement si dpnp et un matériel oneAPI en double
+    précision sont présents (pas en intégration continue)."""
+    pytest.importorskip("dpnp")
+    try:
+        get_backend("intel:cpu")
+    except RuntimeError as exc:
+        pytest.skip(str(exc))
+
+    def build(st):
+        return Solver2D(channel_mesh(4.0, 1.0, 12, 6, periodic=False), 0.05,
+                        {"inlet": {"type": "inlet", "U": [1.0, 0.0]},
+                         "outlet": {"type": "outlet"}, "bottom": {"type": "wall"},
+                         "top": {"type": "wall"}}, settings=st)
+    res = {}
+    for be in ("cpu", "intel:cpu"):
+        s = build(Settings(backend=be, solver_p="amg", solver_U="bicgstab"))
+        if be == "cpu":
+            s.fvm.lin.amg.smoother = "chebyshev"
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            s.run_steady(max_iter=10, tol=1e-30)
+        res[be] = s.to_cpu()
+    assert np.max(np.abs(res["cpu"].U - res["intel:cpu"].U)) < 1e-10

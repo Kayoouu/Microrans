@@ -265,6 +265,26 @@ def resolve_example(name) -> Path:
     raise ValueError(f"Fichier de cas introuvable : {name} (exemples : microrans examples)")
 
 
+def cmd_devices(args) -> int:
+    from .backend import list_devices
+    for d in list_devices():
+        fp64 = "oui" if d["fp64"] else "NON (backend GPU impossible : pas de double précision)"
+        print(f"{d['backend']:<32s} {d['name']:<48s} double précision : {fp64}")
+    print("\nBackends Python absents = matériel non listé : CuPy (cuda / rocm), dpnp (intel), "
+          "PyOpenCL (liste OpenCL). Voir README § 5.3.")
+    return 0
+
+
+def cmd_bench(args) -> int:
+    from .bench import run_bench
+    try:
+        run_bench(args.backend, args.sizes, args.iters)
+    except RuntimeError as exc:
+        print(exc)
+        return 1
+    return 0
+
+
 def cmd_examples(args) -> int:
     d = examples_dir()
     print(f"Exemples fournis ({d}) :")
@@ -379,6 +399,18 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = sub.add_parser("verify", help="vérification contre des solutions exactes")
     p.set_defaults(func=cmd_verify)
+
+    p = sub.add_parser("devices", help="matériels de calcul visibles (CPU, cartes graphiques) "
+                                       "et double précision")
+    p.set_defaults(func=cmd_devices)
+
+    p = sub.add_parser("bench", help="mesure CPU contre un autre backend (cavités de taille "
+                                     "croissante)")
+    p.add_argument("--backend", default="intel", help="cuda | rocm | intel | intel:opencl:gpu…")
+    p.add_argument("--sizes", type=int, nargs="+", default=[64, 128, 256],
+                   help="côtés des cavités (N × N cellules)")
+    p.add_argument("--iters", type=int, default=20)
+    p.set_defaults(func=cmd_bench)
     return parser
 
 

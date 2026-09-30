@@ -22,9 +22,13 @@ def array_module(x):
     mod = getattr(type(x), "__xp_module__", None)
     if mod is not None:
         return mod
-    if type(x).__module__.startswith("cupy"):
+    mod = type(x).__module__
+    if mod.startswith("cupy"):
         import cupy
         return cupy
+    if mod.startswith("dpnp"):
+        import dpnp
+        return dpnp
     return np
 
 
@@ -34,6 +38,9 @@ def sparse_module(xp):
     mod = getattr(xp, "__sparse_module__", None)
     if mod is not None:
         return mod
+    if xp.__name__.startswith("dpnp"):
+        from .sparse_generic import GenericSparseModule
+        return GenericSparseModule(xp)
     import cupyx.scipy.sparse as csp
     return csp
 
@@ -464,6 +471,11 @@ def _direct(A, b, symmetric, xp):
         lu = sp.linalg.splu(A.tocsc(), permc_spec="MMD_AT_PLUS_A" if symmetric else "COLAMD")
         return lu.solve(b)
     solve = getattr(xp, "__spsolve__", None)
+    if solve is None and hasattr(A, "to_scipy"):
+        # matrices génériques (dpnp) : résolution directe sur CPU (filet de sécurité)
+        from .backend import to_host_array
+        x = sp.linalg.spsolve(A.to_scipy(to_host_array).tocsc(), to_host_array(b))
+        return xp.asarray(x)
     if solve is None:
         from cupyx.scipy.sparse.linalg import spsolve as solve
     return solve(A.tocsr(), b)

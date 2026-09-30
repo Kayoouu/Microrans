@@ -18,7 +18,8 @@ Outil de simulation d'écoulements **incompressibles turbulents ou laminaires**,
 - **modèles de turbulence** : Spalart-Allmaras, k-ε (Launder-Sharma), k-ω (Wilcox 2006),
   k-ω SST (Menter 2003) — le même code sert en 1D et en 2D ;
 - **interface graphique** et **ligne de commande** partageant le même
-  format de cas (TOML) ; calcul sur **CPU**, ou **GPU** NVIDIA via CuPy (expérimental).
+  format de cas (TOML) ; calcul sur **CPU**, ou carte graphique NVIDIA / AMD / Intel
+  (expérimental, à mesurer sur sa machine : `microrans devices`, `microrans bench`).
 
 Les méthodes sont reprises des grands codes (OpenFOAM, Fluent, SU2) et **chaque choix numérique
 est justifié par une mesure** reproductible dans ce dépôt (sections « Méthodes » et
@@ -157,7 +158,7 @@ mode = "transient"         # steady | transient
 time_scheme = "auto"       # auto | euler | backward | crankNicolson | rk1..rk4 | ab2
 dt = 0.01
 t_end = 10.0
-backend = "cpu"            # cpu | gpu
+backend = "cpu"            # cpu | cuda | rocm | intel
 fmg_levels = 0             # démarrage multigrille (stationnaire) : niveaux grossiers
 [sweep]                    # optionnel : microrans sweep <cas>
 parameter = "physics.angle_of_attack"
@@ -291,17 +292,31 @@ Pression, Laplacien sur O-grid (tolérance 1e-6) :
 | 80 000 | 383 ms | 311 ms | 216 ms |
 | 320 000 | 3.7 s | 1.9 s | 1.2 s |
 
-### 5.3 CPU ou GPU
+### 5.3 CPU ou carte graphique
 
-`backend = "gpu"` exécute les opérateurs volumes finis, les conditions aux limites, les modèles
-de turbulence et les solveurs linéaires avec **CuPy** au lieu de NumPy (même code : module de
-tableaux interchangeable). **Vérification honnête** : aucun GPU n'était disponible pour ce
-développement. Le chemin GPU est testé avec un « faux GPU » (`tests/fake_device.py`) qui, comme
-CuPy, refuse tout mélange implicite CPU/GPU ; sur ce faux GPU le solveur reproduit le CPU
-(stationnaire, 4 schémas en temps, 4 modèles de turbulence, maillages non orthogonaux, toutes
-les conditions aux limites). Il n'a **jamais tourné sur une vraie carte**. Gain attendu
-seulement au-delà de ~10⁵ cellules (en dessous, le coût de lancement des noyaux domine). Le
-maillage et la préparation restent sur CPU.
+Le même code s'exécute sur plusieurs matériels en changeant le module de tableaux (`xp`) :
+
+| `backend` | Matériel | Bibliothèque (version Python seulement) | Vérification honnête |
+|---|---|---|---|
+| `cpu` (défaut) | processeur | NumPy / SciPy | toute la validation de ce README |
+| `cuda` (alias `gpu`) | cartes NVIDIA | `pip install cupy-cuda12x` | « faux GPU » (`tests/fake_device.py`) : stationnaire, 4 schémas en temps, 4 modèles de turbulence, scalaires, non newtonien, zones poreuses ; **jamais sur une vraie carte** |
+| `rocm` | cartes AMD (Linux) | CuPy compilé pour ROCm | même code que `cuda` ; jamais exécuté |
+| `intel` | cartes et puces Intel (Arc, Iris Xe, UHD) | `pip install dpnp` (~2.5 Go avec oneMKL) | exécuté sur processeur via le runtime OpenCL d'Intel : résultats identiques au CPU à 1e-15 (même algorithme) ; **jamais sur une vraie carte Intel** ; laminaire seulement pour l'instant (modèles de turbulence : en cours) |
+
+Les exécutables téléchargeables sont **CPU seulement** (dpnp ou CuPy pèsent des Go).
+Condition indispensable : **double précision (FP64)** matérielle ; le backend la vérifie et
+refuse sinon. Gain attendu seulement pour de gros maillages (≳ 10⁵ cellules) : chaque
+itération enchaîne des milliers de petites opérations dont le coût de lancement domine en
+dessous. Mesure sur processeur via OpenCL (dpnp, runtime Intel) : 100 à 150 fois **plus
+lent** que NumPy (1 024 à 16 384 cellules) — ce n'est pas le matériel visé, mais cela montre
+que le surcoût par opération est le vrai facteur limitant. Une puce intégrée partage la
+mémoire (et son débit) avec le processeur : gain probablement modeste.
+
+**Mesurer sur sa machine** (le gain ne se devine pas) : `microrans devices` liste les
+matériels visibles et leur double précision ; `microrans bench --backend intel` (ou `cuda`,
+`rocm`) compare CPU et carte sur des cavités de 4 096 à 65 536 cellules (même algorithme des
+deux côtés, écart affiché). Sélection d'un matériel Intel précis : `backend =
+"intel:opencl:gpu"`, `"intel:level_zero:gpu"`, `"intel:cpu"`.
 
 ### 5.4 Autres choix
 
@@ -445,7 +460,8 @@ limites turbulentes, dont la convergence est dominée par les équations de turb
 1. **Taille des problèmes** : Python vectorisé ; ~10⁵ cellules restent raisonnables en
    stationnaire (minutes), l'instationnaire long est lent (cylindre Re = 100 : 2 à 16 min).
    Pas de parallélisme multi-cœur.
-2. **GPU non testé sur matériel réel** (§ 5.3).
+2. **Cartes graphiques non testées sur matériel réel** (§ 5.3) ; backend `intel` limité au
+   laminaire pour l'instant ; exécutables CPU seulement.
 3. **SIMPLE** converge lentement sur les maillages très fins et étirés (O(N²) itérations) ;
    l'option `pseudo_cfl` règle le cas des écoulements dominés par la diffusion (canal) mais
    pas en général (§ 5.4) : pas de solveur couplé pression-vitesse. Sur maillages non
@@ -516,7 +532,9 @@ couplé pression-vitesse (type « Coupled » de Fluent).
 ```
 microrans/
   cli.py                 ligne de commande (run2d, mesh, rans, urans, gui, schemes, verify...)
-  backend.py             choix CPU / GPU (module de tableaux)
+  backend.py             choix du matériel (cpu, cuda, rocm, intel), liste des matériels
+  sparse_generic.py      matrices creuses en opérations de tableaux (backend intel)
+  bench.py               mesure CPU contre carte graphique (microrans bench)
   linalg.py              AMG par agrégation, CG flexible, BiCGStab, choix du solveur
   tomlio.py              écriture TOML (aller-retour exact)
   safe_expr.py           formules des fichiers de cas évaluées sans exécution de code
@@ -537,7 +555,7 @@ microrans/
   gui/                   interface PySide6 (app.py, widgets.py)
   examples/              cas fournis (microrans examples)
 packaging/               PyInstaller (microrans.spec) : exécutables GUI + CLI
-tests/                   pytest (214 tests : vérification, validation, GUI hors écran, faux GPU)
+tests/                   pytest (216 tests : vérification, validation, GUI hors écran, faux GPU)
 .github/workflows/       tests (Python 3.10 / 3.12) ; exécutables Windows / Linux
 ```
 

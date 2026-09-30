@@ -19,6 +19,8 @@ dependencies = ["numpy>=1.22", "scipy>=1.8", "matplotlib>=3.5", "pyamg>=4.2",
 test = ["pytest>=7"]
 gui = ["PySide6>=6.5"]
 gpu = ["cupy-cuda12x>=13"]
+cuda = ["cupy-cuda12x>=13"]
+intel = ["dpnp>=0.16"]
 build = ["PySide6>=6.5", "pyinstaller>=6"]
 
 [project.scripts]

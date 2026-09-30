@@ -582,13 +582,17 @@ class MainWindow(QMainWindow):
         sol = [(s, s) for s in SOLVERS]
         f.addRow("Solveur pression", B.combo(("solver", "solver_p"), sol, "auto"))
         f.addRow("Solveur vitesse / turbulence", B.combo(("solver", "solver_U"), sol, "auto"))
-        f.addRow("Matériel de calcul", B.combo(("solver", "backend"),
-                                                [("cpu", "CPU (NumPy / SciPy)"),
-                                                 ("gpu", "GPU NVIDIA (CuPy, expérimental)")],
-                                                "cpu"))
-        f.addRow(_note("GPU : nécessite une carte NVIDIA, CUDA et CuPy (pip install "
-                       "cupy-cuda12x) ; utile seulement au-delà de ~10⁵ cellules. Chemin "
-                       "testé par émulation, pas sur une vraie carte : voir le README."))
+        f.addRow("Matériel de calcul", B.combo(("solver", "backend"), [
+            ("cpu", "CPU (NumPy / SciPy)"),
+            ("cuda", "Carte NVIDIA (CuPy, expérimental)"),
+            ("rocm", "Carte AMD, Linux (CuPy-ROCm, expérimental)"),
+            ("intel", "Carte / puce Intel Arc, Iris, UHD (dpnp oneAPI, expérimental)")],
+            "cpu"))
+        f.addRow(_note("Cartes graphiques : version Python + bibliothèque à installer (CuPy "
+                       "ou dpnp), double précision (FP64) indispensable. Gain seulement pour "
+                       "les gros maillages, et PAS garanti (puce intégrée : mémoire partagée "
+                       "avec le processeur). Mesurer sur votre machine : microrans devices, "
+                       "puis microrans bench --backend intel. Voir le README § 5.3."))
         lay.addWidget(box)
         box, f = _form("Sorties")
         f.addRow("Dossier de résultats", B.text(("output", "directory"), "results/cas"))
