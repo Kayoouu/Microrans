@@ -488,13 +488,24 @@ grossiers compris ; résultats identiques (efforts à 5 chiffres).
 Utile pour les écoulements laminaires ou à recirculation ; quasi inutile pour les couches
 limites turbulentes, dont la convergence est dominée par les équations de turbulence.
 
+**Balayages et polaires en parallèle** (`--jobs N`, `[sweep] jobs`, interface « Calculs en
+parallèle ») : un point par processus (4 cœurs, détails `docs/multicoeur.md`).
+
+| Balayage | 1 processus | 4 processus | Résultats |
+|---|---:|---:|---|
+| Cavité, 8 viscosités, 64 × 64, sans continuation | 30.1 s | 8.7 s (×3.46) | identiques au bit près |
+| Polaire NACA 0012 SA, 10 incidences, avec continuation (blocs contigus) | 227 s | 88 s (×2.58) | C_l à 0.1 %, C_d à 0.45 % |
+
+Un seul calcul n'utilise toujours qu'un cœur (non parallélisé). Script Python appelant
+`run_sweep(jobs=N)` : protéger le code par `if __name__ == "__main__":`.
+
 ---
 
 ## 8. Limites connues (à lire avant d'utiliser les résultats)
 
 1. **Taille des problèmes** : Python vectorisé ; ~10⁵ cellules restent raisonnables en
    stationnaire (minutes), l'instationnaire long est lent (cylindre Re = 100 : 2 à 16 min).
-   Pas de parallélisme multi-cœur.
+   Un calcul n'utilise qu'un cœur (seuls les balayages / polaires sont parallèles).
 2. **Cartes graphiques non testées sur matériel réel** (§ 5.3) ; backend `intel` limité au
    laminaire pour l'instant ; exécutables CPU seulement.
 3. **SIMPLE** converge lentement sur les maillages très fins et étirés (O(N²) itérations) ;
@@ -601,7 +612,7 @@ microrans/
   gui/                   interface PySide6 (app.py, widgets.py)
   examples/              cas fournis (microrans examples)
 packaging/               PyInstaller (microrans.spec) : exécutables GUI + CLI
-tests/                   pytest (234 tests : vérification, validation, GUI hors écran, faux GPU)
+tests/                   pytest (236 tests : vérification, validation, GUI hors écran, faux GPU)
 .github/workflows/       tests (Python 3.10 / 3.12) ; exécutables Windows / Linux
 ```
 

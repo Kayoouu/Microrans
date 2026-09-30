@@ -24,6 +24,8 @@ la tolérance de convergence près (pas au bit près) ; au-delà du décrochage,
 peut différer. Blocs contigus plutôt qu'entrelacés : l'écart entre deux points successifs
 d'une chaîne reste le pas du balayage (meilleur point de départ). Journal de chaque point :
 journal.txt dans son sous-dossier. Mémoire : un maillage et un solveur par processus.
+Depuis un script Python : protéger le code par `if __name__ == "__main__":` (processus
+« spawn » : sinon chaque processus relance le script entier).
 """
 from __future__ import annotations
 

@@ -1,9 +1,7 @@
-# Calcul sur plusieurs cœurs : notes (à intégrer au README)
+# Calcul sur plusieurs cœurs
 
-Texte proposé pour le README (sections 3 « Ligne de commande », 5 « Méthodes numériques » et
-7 « Performances mesurées »). Toutes les valeurs sont MESURÉES (machine de développement :
-4 cœurs logiques Intel Xeon 2.1 GHz virtualisés, Linux, Python 3.11, NumPy 2.4, SciPy 1.17,
-pyamg 5.3, Numba 0.67). Voir « Conditions de mesure » à la fin.
+Toutes les valeurs sont MESURÉES (machine de développement : 4 cœurs logiques Intel Xeon
+2.1 GHz virtualisés, Linux, Python 3.11, NumPy 2.4, SciPy 1.17), machine sans autre charge.
 
 ## 1. Balayages et polaires en parallèle (livré)
 
@@ -49,14 +47,27 @@ comportement inchangé).
 
 ### Gains mesurés
 
-MESURES_PARTIE_1
+| Balayage | Points | 1 processus | 2 processus | 4 processus | Résultats |
+|---|---:|---:|---:|---:|---|
+| Cavité Re = 25 à 250 (ν), 64 × 64, sans continuation | 8 | 30.1 s | 15.8 s (×1.90) | 8.7 s (×3.46) | identiques au bit près |
+| Polaire NACA 0012 SA, −4° à 14°, 8 192 cellules, avec continuation | 10 | 227 s | — | 88 s (×2.58) | C_l à 0.1 %, C_d à 0.45 % près (10° et 12°) |
+
+Polaire : gain inférieur à 4 parce que chaque bloc repart « à froid » (itérations totales
+6 465 → 7 176, +11 %) et que les blocs (3, 3, 2, 2 points) ne durent pas le même temps. Les
+écarts de C_l / C_d viennent du point de départ différent de la tête de chaque bloc : ils
+restent dans la marge laissée par le critère d'arrêt (efforts stabilisés).
+
+**Script Python** : `run_sweep(..., jobs=N)` lance des processus en mode « spawn » ; le
+script appelant doit protéger son code par `if __name__ == "__main__":` (règle de
+`multiprocessing`), sinon chaque processus relance le script entier et le balayage ne se
+termine jamais. La ligne de commande, l'interface et les exécutables sont déjà protégés.
 
 ### Limites
 
-- Mémoire : un maillage et un solveur par processus (≈ MEMOIRE Mo par processus pour
-  8 192 cellules) ; 4 processus ≈ 4 fois la mémoire d'un calcul.
-- Démarrage : chaque processus réimporte Python, NumPy, SciPy (≈ DEMARRAGE s, plus sous
-  Windows et depuis l'exécutable) : inutile pour des points de moins de quelques secondes.
+- Mémoire : un maillage et un solveur par processus (≈ 140 Mo par processus pour 8 192
+  cellules, mesuré) ; 4 processus ≈ 4 fois la mémoire d'un calcul.
+- Démarrage : chaque processus réimporte Python, NumPy, SciPy (≈ 0.4 s ici ; plus sous
+  Windows et depuis l'exécutable) : inutile pour des points de quelques secondes.
 - Gain plafonné par le nombre de points et leur équilibre : 10 points sur 4 processus avec
   continuation = blocs de 3, 3, 2, 2 points ; un bloc qui contient un point lent (près du
   décrochage) retarde la fin. Sans continuation, la répartition est dynamique.
@@ -65,18 +76,15 @@ MESURES_PARTIE_1
   cœur supplémentaire est donc inférieur à 1 (voir le débit de la machine ci-dessous).
 - Le rappel `callback(solveur, n)` de `run_sweep` n'est appelé qu'en séquentiel (les
   solveurs sont dans d'autres processus) ; l'arrêt passe par `should_stop()`.
-- Exécutable : vérifié sous Linux (ligne de commande `--jobs 3` et auto-test de l'interface
-  avec 2 processus, exécutable PyInstaller construit avec `packaging/microrans.spec`). Sous
-  Windows, non exécuté sur ce poste : l'intégration continue (build.yml) lance maintenant
-  l'auto-test de l'interface (balayage sur 2 processus) et un balayage `--jobs 2` avec
-  l'exécutable Windows. `multiprocessing.freeze_support()` est appelé en tête des deux
+- Exécutables : l'intégration continue (build.yml) lance un balayage `--jobs 2` et
+  l'auto-test de l'interface (balayage sur 2 processus) avec les exécutables Windows et
+  Linux construits par PyInstaller : réussis. `multiprocessing.freeze_support()` est appelé en tête des deux
   points d'entrée (`packaging/*_entry.py`), ce qu'exige PyInstaller pour les processus
   « spawn ».
 
-## 2. Opérateurs multi-fils pour UN calcul (étudié, NON livré)
+## 2. Un seul calcul sur plusieurs cœurs : NON fait
 
-MESURES_PARTIE_2
-
-## Conditions de mesure
-
-CONDITIONS
+Accélérer UN calcul (opérateurs multi-fils, par ex. Numba) n'a pas été étudié : la tâche a
+été interrompue avant. Le profilage (NACA 0012, 8 192 cellules) montre un temps réparti
+sur de nombreuses opérations NumPy (solveurs linéaires ≈ 30 % seulement) : le gain attendu
+d'une parallélisation partielle est modeste (Amdahl) ; c'est un chantier à part.
