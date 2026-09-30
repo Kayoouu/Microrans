@@ -496,8 +496,28 @@ parallèle ») : un point par processus (4 cœurs, détails `docs/multicoeur.md`
 | Cavité, 8 viscosités, 64 × 64, sans continuation | 30.1 s | 8.7 s (×3.46) | identiques au bit près |
 | Polaire NACA 0012 SA, 10 incidences, avec continuation (blocs contigus) | 227 s | 88 s (×2.58) | C_l à 0.1 %, C_d à 0.45 % |
 
-Un seul calcul n'utilise toujours qu'un cœur (non parallélisé). Script Python appelant
-`run_sweep(jobs=N)` : protéger le code par `if __name__ == "__main__":`.
+Script Python appelant `run_sweep(jobs=N)` : protéger le code par
+`if __name__ == "__main__":`.
+
+**Un seul calcul, noyaux Numba** (`[solver] numba = true`, `pip install ".[fast]"`,
+désactivé par défaut, absent des exécutables) : interpolations aux faces, sommes par
+cellule, gradients et assemblage fusionnés en boucles compilées. Mesuré de bout en bout
+(1 fil, même machine) :
+
+| Cas | Cellules | NumPy | Numba | Gain |
+|---|---:|---:|---:|---:|
+| Cavité | 16 384 | 38.4 ms/it | 33.9 ms/it | ×1.13 |
+| Cavité | 147 456 | 389 ms/it | 343 ms/it | ×1.13 |
+| NACA 0012 SA | 8 192 | 37.6 ms/it | 31.8 ms/it | ×1.18 |
+| Plaque plane SA | 7 168 | 25.3 ms/it | 22.9 ms/it | ×1.11 |
+| Cylindre Re = 100 (instationnaire) | 6 144 | 29.6 ms/it | 30.6 ms/it | ×0.97 |
+
+**Plusieurs fils (`threads = 2, 4`) : plus lent sur la machine de développement** (cavité
+16 384 cellules : ×0.76 et ×0.21) — machine virtuelle dont la synchronisation des fils est
+coûteuse ; chaque itération enchaîne des centaines de petites boucles parallèles. Sur un
+vrai processeur le résultat peut être meilleur : **le mesurer** avec
+`microrans bench --numba --sizes 128 256 --threads 1 2 4`. Résultats identiques à NumPy à
+l'arrondi près (~1e-13), et identiques quel que soit le nombre de fils.
 
 ---
 
@@ -505,7 +525,8 @@ Un seul calcul n'utilise toujours qu'un cœur (non parallélisé). Script Python
 
 1. **Taille des problèmes** : Python vectorisé ; ~10⁵ cellules restent raisonnables en
    stationnaire (minutes), l'instationnaire long est lent (cylindre Re = 100 : 2 à 16 min).
-   Un calcul n'utilise qu'un cœur (seuls les balayages / polaires sont parallèles).
+   Un calcul n'utilise qu'un cœur (seuls les balayages / polaires sont parallèles ; noyaux
+   Numba facultatifs : ~10 % de gain mesuré, multi-fil plus lent sur la machine de test).
 2. **Cartes graphiques non testées sur matériel réel** (§ 5.3) ; exécutables CPU seulement.
 3. **SIMPLE** converge lentement sur les maillages très fins et étirés (O(N²) itérations) ;
    l'option `pseudo_cfl` règle le cas des écoulements dominés par la diffusion (canal) mais
@@ -606,12 +627,13 @@ microrans/
     fmg.py               démarrage multigrille (maillages grossiers reconstruits)
     sampling.py          sondes, profils sur ligne, moyennes temporelles
     rheology.py          lois de viscosité non newtoniennes
+    kernels.py           noyaux Numba facultatifs (opérateurs fusionnés, multi-fil)
     animation.py         animations GIF des calculs instationnaires
     sweep.py             polaires et balayages de paramètres
   gui/                   interface PySide6 (app.py, widgets.py)
   examples/              cas fournis (microrans examples)
 packaging/               PyInstaller (microrans.spec) : exécutables GUI + CLI
-tests/                   pytest (236 tests : vérification, validation, GUI hors écran, faux GPU)
+tests/                   pytest (240 tests : vérification, validation, GUI hors écran, faux GPU)
 .github/workflows/       tests (Python 3.10 / 3.12) ; exécutables Windows / Linux
 ```
 

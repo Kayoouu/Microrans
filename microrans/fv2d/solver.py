@@ -139,6 +139,10 @@ class Settings:
     wall_treatment: str = "resolved"
     # matériel : cpu (NumPy/SciPy) | cuda | rocm | intel (expérimental : microrans/backend.py)
     backend: str = "cpu"
+    # CPU : noyaux Numba fusionnés (facultatifs, gain mesuré ~10 % : voir fv2d/kernels.py) ;
+    # threads = fils de calcul (0 = tous les cœurs), mesurés plus lents que 1 ici
+    numba: bool = False
+    threads: int = 1
     n_outer: int = 2
     n_corr: int = 2
     turbulence_every_outer: bool = False
@@ -360,7 +364,8 @@ class Solver2D:
             if max(radial) > 0.0:
                 raise ValueError("Axisymétrique : la force volumique et la gravité doivent être "
                                  "portées par l'axe x (composante radiale y nulle).")
-        self.fvm = FVM(mesh, self.settings.backend, self.axisymmetric)
+        self.fvm = FVM(mesh, self.settings.backend, self.axisymmetric,
+                       numba=self.settings.numba, threads=self.settings.threads)
         fvm = self.fvm
         self.backend, self.xp = fvm.backend, fvm.xp
         xp = self.xp
@@ -929,7 +934,7 @@ class Solver2D:
     def _offdiag_mult(self, up, lo, x):
         xp = self.xp
         fvm = self.fvm
-        return (xp.bincount(fvm.P, up * x[fvm.N], fvm.nc) + xp.bincount(fvm.N, lo * x[fvm.P], fvm.nc))
+        return (fvm._sum(fvm.P, up * x[fvm.N]) + fvm._sum(fvm.N, lo * x[fvm.P]))
 
     # ------------------------------------------------------------------ quantité de mouvement
     def _has_force(self):
@@ -1303,8 +1308,8 @@ class Solver2D:
             phiHbyA_b = phiHbyA_b + xp.where(self.kindP == 1, rAU[fvm.Pb] * fb, 0.0)
         rAtU = rAU
         if s.algorithm.upper() == "SIMPLEC" and self.steady:
-            H1 = -0.5 * (xp.bincount(fvm.P, eqs[0][1], fvm.nc) + xp.bincount(fvm.N, eqs[0][2], fvm.nc)
-                         + xp.bincount(fvm.P, eqs[1][1], fvm.nc) + xp.bincount(fvm.N, eqs[1][2], fvm.nc))
+            H1 = -0.5 * (fvm._sum(fvm.P, eqs[0][1]) + fvm._sum(fvm.N, eqs[0][2])
+                         + fvm._sum(fvm.P, eqs[1][1]) + fvm._sum(fvm.N, eqs[1][2]))
             rAtU = V / xp.maximum(aP - H1, 1e-3 * aP)
             # (rAtU − rAU) ∂p/∂n |S| avec le MÊME gradient normal (partie non orthogonale
             # comprise) que l'équation de pression, faces internes et frontières.
@@ -1457,16 +1462,16 @@ class Solver2D:
         nu_w = self.nu if self.rheology is None else self.nu_wall
         nu_b = xp.where(self.kindU != 1, xp.where(self.is_wall, nu_w, nu_eff[fvm.Pb])
                         * fvm.magSb / fvm.dperp, 0.0)
-        diff = (xp.bincount(fvm.P, nu_f, fvm.nc) + xp.bincount(fvm.N, nu_f, fvm.nc)
-                + xp.bincount(fvm.Pb, nu_b, fvm.nc)) / fvm.V
+        diff = (fvm._sum(fvm.P, nu_f) + fvm._sum(fvm.N, nu_f)
+                + fvm._sum(fvm.Pb, nu_b)) / fvm.V
         if self.porous is not None:
             # résistance poreuse : valeur propre réelle négative, comme la diffusion (Dn
             # compte les deux pour la stabilité des schémas explicites)
             K = self.porous_coefficients()
             diff = diff + xp.maximum(K[:, 0, 0], K[:, 1, 1])
         aF = xp.abs(self.F_i)
-        conv = 0.5 * (xp.bincount(fvm.P, aF, fvm.nc) + xp.bincount(fvm.N, aF, fvm.nc)
-                      + xp.bincount(fvm.Pb, xp.abs(self.F_b), fvm.nc)) / fvm.V
+        conv = 0.5 * (fvm._sum(fvm.P, aF) + fvm._sum(fvm.N, aF)
+                      + fvm._sum(fvm.Pb, xp.abs(self.F_b))) / fvm.V
         return float(conv.max() * dt), float(diff.max() * dt), conv, diff
 
     def _stable_dt(self, info, dt_old):
@@ -1740,7 +1745,7 @@ class Solver2D:
             # correction non orthogonale explicite avec la dernière pression connue
             gp = fvm.grad(self.p, self.boundary_p(self.p))
             nf = fvm.nonorth_flux(xp.ones(fvm.ni), gp, self.p, self.settings.nonorth_limit)
-            rhs = rhs + xp.bincount(fvm.P, nf, fvm.nc) - xp.bincount(fvm.N, nf, fvm.nc)
+            rhs = rhs + fvm._sum(fvm.P, nf) - fvm._sum(fvm.N, nf)
         p = solve(rhs, self.p)
         _, _, g_, d_ = self.pressure_bc()
         self.F_i = Fi - tau * (fvm.g * (p[fvm.N] - p[fvm.P]) + nf)
@@ -1818,7 +1823,8 @@ class Solver2D:
         self.model.d = h(self.model.d)
         self.model.wall_nodes = h(self.model.wall_nodes)
         self.settings.backend = "cpu"
-        self.fvm = FVM(self.mesh, "cpu", self.axisymmetric)
+        self.fvm = FVM(self.mesh, "cpu", self.axisymmetric, numba=self.settings.numba,
+                       threads=self.settings.threads)
         self.backend, self.xp = self.fvm.backend, self.fvm.xp
         self._poisson_cache = None
         return self

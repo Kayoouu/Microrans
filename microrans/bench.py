@@ -46,3 +46,36 @@ def run_bench(backend: str, sizes=(64, 128, 256), iters: int = 20, verbose=True)
                   f"{backend} {row['backend_ms_per_it']:8.1f} ms/it   gain ×{row['speedup']:.2f}"
                   f"   écart {diff:.1e}")
     return rows
+
+
+def run_numba_bench(sizes=(128, 256), threads=(1, 2, 4), iters: int = 20, verbose=True):
+    """NumPy contre noyaux Numba ([solver] numba = true) avec 1, 2, 4… fils, sur des
+    cavités : temps par itération SIMPLE (compilation exclue) et écart des résultats."""
+    from .fv2d import Settings, Solver2D
+    from .fv2d import kernels
+    from .mesh2d import rectangle_mesh
+    if not kernels.AVAILABLE:
+        raise RuntimeError("Numba n'est pas installé (pip install numba).")
+    warnings.simplefilter("ignore")
+    rows = []
+    for n in sizes:
+        m = rectangle_mesh(0, 1, 0, 1, n, n, names={"left": "w", "right": "w", "bottom": "w",
+                                                       "top": "lid"})
+        res = {}
+        for label, st in [("NumPy", Settings())] + [
+                (f"Numba {t} fil(s)", Settings(numba=True, threads=t)) for t in threads]:
+            s = Solver2D(m, 0.01, {"lid": {"type": "wall", "U": [1.0, 0.0]},
+                                   "w": {"type": "wall"}}, settings=st)
+            s.run_steady(max_iter=2, tol=1e-30)             # compilation hors mesure
+            t0 = time.perf_counter()
+            s.run_steady(max_iter=iters, tol=1e-30)
+            res[label] = (1e3 * (time.perf_counter() - t0) / iters, s)
+        ref_t, ref_s = res["NumPy"]
+        for label, (ms, s) in res.items():
+            row = {"cells": n * n, "mode": label, "ms_per_it": ms, "speedup": ref_t / ms,
+                   "max_diff_U": float(np.max(np.abs(s.U - ref_s.U)))}
+            rows.append(row)
+            if verbose:
+                print(f"{n * n:>8d} cellules  {label:<16s} {ms:8.1f} ms/it   gain ×{ref_t / ms:.2f}"
+                      f"   écart {row['max_diff_U']:.1e}")
+    return rows

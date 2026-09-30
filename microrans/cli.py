@@ -278,9 +278,12 @@ def cmd_devices(args) -> int:
 
 
 def cmd_bench(args) -> int:
-    from .bench import run_bench
+    from .bench import run_bench, run_numba_bench
     try:
-        run_bench(args.backend, args.sizes, args.iters)
+        if args.numba:
+            run_numba_bench(args.sizes, args.threads, args.iters)
+        else:
+            run_bench(args.backend, args.sizes, args.iters)
     except RuntimeError as exc:
         print(exc)
         return 1
@@ -416,6 +419,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--sizes", type=int, nargs="+", default=[64, 128, 256],
                    help="côtés des cavités (N × N cellules)")
     p.add_argument("--iters", type=int, default=20)
+    p.add_argument("--numba", action="store_true",
+                   help="compare NumPy et les noyaux Numba (1 fil, puis --threads)")
+    p.add_argument("--threads", type=int, nargs="+", default=[1, 2, 4])
     p.set_defaults(func=cmd_bench)
     return parser
 

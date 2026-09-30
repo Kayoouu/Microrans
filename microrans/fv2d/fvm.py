@@ -22,7 +22,8 @@ from ..mesh2d.mesh import Mesh2D
 
 
 class FVM:
-    def __init__(self, mesh: Mesh2D, backend=None, axisymmetric: bool = False):
+    def __init__(self, mesh: Mesh2D, backend=None, axisymmetric: bool = False, numba=False,
+                 threads=1):
         from ..backend import get_backend
         m = mesh
         self.mesh = m
@@ -80,6 +81,25 @@ class FVM:
         self._csr_pos = A(csr_pos.ravel())
         self._csr_indices = A((uk % self.nc).astype(np.int32))
         self._csr_indptr = A(indptr.astype(np.int32))
+        # noyaux multi-cœurs (Numba, facultatif, CPU seulement) : structures « cellule →
+        # faces » calculées une fois (voir kernels.py)
+        from . import kernels
+        self.fast = be.name == "cpu" and kernels.wanted(numba)
+        if self.fast:
+            self.threads = kernels.set_threads(threads)
+            self._k = kernels
+            nb = self.nb
+            cells = np.concatenate([P, N, m.owner[ni:]])
+            fac = np.concatenate([np.arange(ni), np.arange(ni), ni + np.arange(nb)])
+            sgn = np.concatenate([np.ones(ni), -np.ones(ni), np.ones(nb)])
+            ptr, order = kernels.segments(cells, self.nc)
+            self._k_all = (ptr, fac[order].astype(np.int64), sgn[order])
+            self._k_P = kernels.segments(P, self.nc)
+            self._k_N = kernels.segments(N, self.nc)
+            self._k_B = kernels.segments(m.owner[ni:], self.nc)
+            self._k_M = kernels.segments(csr_pos.ravel(), self._csr_nnz)
+            self.Si, self.Sb = np.ascontiguousarray(self.Si), np.ascontiguousarray(self.Sb)
+            self.w = np.ascontiguousarray(self.w, dtype=float)
 
     def zeros(self, *shape):
         return self.xp.zeros(shape if len(shape) > 1 else shape[0])
@@ -90,11 +110,26 @@ class FVM:
     # ------------------------------------------------------------- opérateurs explicites
     def interp(self, phi):
         """Interpolation linéaire aux faces internes (scalaire ou tableau (nc, k))."""
+        if self.fast and phi.dtype == np.float64:
+            if phi.ndim == 1:
+                out = np.empty(self.ni)
+                self._k.interp1(self.w, np.ascontiguousarray(phi), self.P, self.N, out)
+                return out
+            p2 = np.ascontiguousarray(phi.reshape(self.nc, -1))
+            out = np.empty((self.ni, p2.shape[1]))
+            self._k.interp2(self.w, p2, self.P, self.N, out)
+            return out.reshape((self.ni,) + phi.shape[1:])
         w = self.w.reshape((-1,) + (1,) * (phi.ndim - 1))
         return w * phi[self.P] + (1.0 - w) * phi[self.N]
 
     def sum_faces(self, fi, fb):
         """Σ des flux sortants par cellule (face interne : + owner, − neighbour)."""
+        if self.fast:
+            out = np.empty(self.nc)
+            ptr, fac, sgn = self._k_all
+            self._k.facesum(ptr, fac, sgn, np.ascontiguousarray(fi, dtype=float),
+                            np.ascontiguousarray(fb, dtype=float), self.ni, out)
+            return out
         bc = self.xp.bincount
         out = bc(self.P, weights=fi, minlength=self.nc) - bc(self.N, weights=fi,
                                                              minlength=self.nc)
@@ -104,6 +139,15 @@ class FVM:
 
     def grad(self, phi, phi_b):
         """Gradient de Green-Gauss (interpolation linéaire, valeurs frontières imposées)."""
+        if self.fast and phi.dtype == np.float64:
+            g = np.empty((self.nc, 2))
+            ptr, fac, sgn = self._k_all
+            self._k.green_gauss(ptr, fac, sgn, self.w, self.P, self.N,
+                                np.ascontiguousarray(phi), np.ascontiguousarray(phi_b, dtype=float),
+                                self.Si, self.Sb, self.V, self.ni, g)
+            if self.axisymmetric:
+                g = g - phi[:, None] * self._side
+            return g
         pf = self.interp(phi)
         gx = self.sum_faces(pf * self.Si[:, 0], phi_b * self.Sb[:, 0])
         gy = self.sum_faces(pf * self.Si[:, 1], phi_b * self.Sb[:, 1])
@@ -157,6 +201,13 @@ class FVM:
 
     # ------------------------------------------------------------- assemblage
     def _sum(self, idx, w):
+        if self.fast:
+            seg = (self._k_P if idx is self.P else self._k_N if idx is self.N
+                   else self._k_B if idx is self.Pb else None)
+            if seg is not None:
+                out = np.empty(self.nc)
+                self._k.segsum(seg[0], seg[1], np.ascontiguousarray(w, dtype=float), out)
+                return out
         return self.xp.bincount(idx, weights=w, minlength=self.nc)
 
     def _sum_b(self, w):
@@ -206,6 +257,12 @@ class FVM:
         return diag, upper, lower, rhs
 
     def matrix(self, diag, upper, lower):
+        if self.fast:
+            data = np.empty(self._csr_nnz)
+            vals = np.concatenate([diag, upper, lower]).astype(float, copy=False)
+            self._k.segsum(self._k_M[0], self._k_M[1], vals, data)
+            return self.backend.sparse.csr_matrix((data, self._csr_indices, self._csr_indptr),
+                                                  shape=(self.nc, self.nc))
         data = self.xp.bincount(self._csr_pos, weights=self.xp.concatenate([diag, upper, lower]),
                                 minlength=self._csr_nnz)
         return self.backend.sparse.csr_matrix((data, self._csr_indices, self._csr_indptr),

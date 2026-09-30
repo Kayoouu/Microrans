@@ -82,9 +82,21 @@ termine jamais. La ligne de commande, l'interface et les exécutables sont déj�
   points d'entrée (`packaging/*_entry.py`), ce qu'exige PyInstaller pour les processus
   « spawn ».
 
-## 2. Un seul calcul sur plusieurs cœurs : NON fait
+## 2. Un seul calcul : noyaux Numba (livré, désactivé par défaut)
 
-Accélérer UN calcul (opérateurs multi-fils, par ex. Numba) n'a pas été étudié : la tâche a
-été interrompue avant. Le profilage (NACA 0012, 8 192 cellules) montre un temps réparti
-sur de nombreuses opérations NumPy (solveurs linéaires ≈ 30 % seulement) : le gain attendu
-d'une parallélisation partielle est modeste (Amdahl) ; c'est un chantier à part.
+`[solver] numba = true` (Numba installé : `pip install ".[fast]"`) remplace les opérations
+NumPy les plus coûteuses (interpolation aux faces, sommes faces → cellules `np.bincount`,
+gradient de Green-Gauss, assemblage de la matrice) par des boucles compilées fusionnées,
+centrées sur les cellules (pas d'écriture concurrente : résultats identiques quel que soit
+le nombre de fils). Code : `microrans/fv2d/kernels.py`.
+
+Mesures de bout en bout (1 fil) : ×0.97 à ×1.18 selon le cas (tableau du README § 7).
+Deux et quatre fils : **plus lents** sur la machine de développement (cavité 16 384
+cellules : 34.7 → 61.9 → 226.5 ms/it ; attente active des fils OpenMP encore pire :
+612 ms/it). Explication : des centaines de petites boucles parallèles par itération ; sur
+cette machine virtuelle le coût de synchronisation des fils l'emporte. Gain jugé trop
+faible pour être actif par défaut (seuil fixé : ×1.3) ; option conservée pour être
+mesurée sur un vrai processeur : `microrans bench --numba --threads 1 2 4`.
+
+Premier lancement : compilation des noyaux (quelques secondes, mise en cache ensuite).
+Numba n'est pas inclus dans les exécutables (taille, cache de compilation).
