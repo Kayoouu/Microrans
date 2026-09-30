@@ -1,0 +1,51 @@
+# Filtre (milieu poreux) dans une conduite plane, laminaire Re = 100 : ~4 s.
+# Loi de Darcy-Forchheimer : perte de charge par mètre ν d U + ½ f U², soit 15 sur 1 m de
+# filtre à U_b = 1 (estimation 1D). microrans : puissance dissipée dans le filtre 15.10
+# (« porous » de summary.json) ; Δp entre les sondes x = 2.5 et 4.5 : 15.72 (filtre +
+# frottement pariétal + réorganisation du profil parabolique → plat → parabolique).
+# microrans run2d filtre_poreux_conduite
+[mesh]
+type = "rectangle"
+x0 = 0.0
+x1 = 8.0
+y0 = 0.0
+y1 = 1.0
+nx = 160
+ny = 24
+names = { left = "inlet", right = "outlet", bottom = "wall", top = "wall" }
+
+[physics]
+nu = 0.01
+reference_velocity = 1.0
+reference_length = 1.0
+
+[[porous]]
+name = "filtre"
+region = "rectangle"
+x0 = 3.0
+x1 = 4.0
+y0 = 0.0
+y1 = 1.0
+darcy = 1000.0               # 1/m² (perméabilité 1e-3 m²)
+forchheimer = 10.0           # 1/m
+
+[boundary.inlet]
+type = "inlet"
+flow_rate = 1.0              # U_b = 1
+profile = "parabolic"
+
+[boundary.outlet]
+type = "outlet"
+
+[boundary.wall]
+type = "wall"
+
+[solver]
+mode = "steady"
+max_iter = 3000
+tol = 1e-7
+
+[output]
+directory = "results/filtre_poreux_conduite"
+probes = [[2.5, 0.5], [4.5, 0.5]]
+lines = [{ name = "axe", start = [0.0, 0.5], end = [8.0, 0.5], n = 200 }]

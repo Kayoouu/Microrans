@@ -28,6 +28,11 @@ frontière dans summary.json (« scalars »). Fluide non newtonien : [physics.vi
 model = power_law | carreau | cross | herschel_bulkley | bingham | casson (voir
 rheology.py) ; ν de [physics] facultatif (défaut : ν(γ̇_ref), γ̇_ref = U_ref / L_ref).
 
+Zones poreuses : [[porous]] name, region = "rectangle" (x0, x1, y0, y1) | "circle" (center,
+radius) | "expression" (condition en x, y), darcy = d ou [d1, d2] (1/m², ou permeability
+K = 1/d en m²), forchheimer = f ou [f1, f2] (1/m), angle (° : axes principaux de la zone).
+Perte de charge par unité de longueur : ν d U + ½ f U² (vitesse superficielle).
+
 Reprise : [initial] restart = "…/checkpoint.npz" (reprise exacte sur le même maillage,
 interpolation sinon) ; [output] checkpoint = true (défaut) écrit checkpoint.npz à la fin
 du calcul, à l'arrêt demandé et toutes les `checkpoint_minutes` (défaut 5) minutes.
@@ -150,7 +155,7 @@ def build_solver(cfg: dict, base_dir=".", verbose=False, mesh=None):
                       settings=_settings_from(cfg.get("solver", {})),
                       reference_velocity=ph.get("reference_velocity"),
                       energy=_energy_from(cfg), axisymmetric=axi, viscosity=visc,
-                      scalars=cfg.get("scalars"))
+                      scalars=cfg.get("scalars"), porous=cfg.get("porous"))
     solver.restart_info = None
     if init.get("restart"):
         path = Path(init["restart"])
@@ -318,6 +323,8 @@ def run_case(cfg: dict, base_dir=".", out_dir=None, verbose=True, plot=True, cal
         summary["viscosity"] = {"model": solver.rheology.describe(),
                                 "nu_min": float(nl.min()), "nu_max": float(nl.max()),
                                 "cells_at_nu_max": int(np.sum(nl >= 0.999 * solver.rheology.nu_max))}
+    if solver.porous is not None:
+        summary["porous"] = solver.porous_report()
     if solver.scalars:
         # bilan : flux sortants par frontière (convection + diffusion) et source totale
         summary["scalars"] = {k: solver.scalar_fluxes(k) for k in solver.scalars}

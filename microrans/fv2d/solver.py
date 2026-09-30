@@ -28,6 +28,11 @@ Scalaires passifs (scalars = {nom: {diffusivity | schmidt, Sc_t, source, initial
 ∂c/∂t + ∇·(Uc) = ∇·((D + ν_t/Sc_t)∇c) + S ; conditions par patch : [boundary.<p>.scalars]
 nom = valeur imposée (défaut 0 en entrée, gradient nul ailleurs), [boundary.<p>.scalar_flux]
 nom = flux entrant. Fluides non newtoniens : viscosity = {model, …} (voir rheology.py).
+
+Zones poreuses (porous = [{name, region, darcy | permeability, forchheimer, angle}, …]) :
+perte de charge de Darcy-Forchheimer S = −(ν D + ½|U| F)·U (vitesse superficielle, comme
+explicitPorositySource / DarcyForchheimer d'OpenFOAM et les milieux poreux de Fluent) ; D, F
+tenseurs diagonaux dans les axes de la zone (angle) ; partie diagonale implicite.
 """
 from __future__ import annotations
 
@@ -277,7 +282,8 @@ class Solver2D:
                  initial_U=(0.0, 0.0), turbulence_inflow: dict | None = None,
                  settings: Settings | None = None, reference_velocity: float | None = None,
                  energy: dict | None = None, axisymmetric: bool = False,
-                 viscosity: dict | None = None, scalars: dict | None = None):
+                 viscosity: dict | None = None, scalars: dict | None = None,
+                 porous: list | None = None):
         self.mesh = mesh
         self.axisymmetric = bool(axisymmetric)
         # thermique (optionnelle) : Pr, Pr_t, beta (Boussinesq), T_ref, gravity, T0, source
@@ -360,6 +366,7 @@ class Solver2D:
                         for k, sp in self.scalar_specs.items()}
         self.scalar_source = {k: xp.asarray(_eval_expr(sp["source"], C[:, 0], C[:, 1]))
                               for k, sp in self.scalar_specs.items()}
+        self.porous = self._porous_setup(porous) if porous else None
         if viscosity and str(viscosity.get("model", "newtonian")).lower() != "newtonian":
             from .rheology import Rheology
             if self.model.variables:
@@ -529,6 +536,94 @@ class Solver2D:
                          "scheme": scheme}
         return out
 
+    def _porous_setup(self, zones: list) -> dict:
+        """Tenseurs de résistance D (1/m²) et F (1/m) par cellule ; zones : rectangle
+        (x0, x1, y0, y1), circle (center, radius) ou expression (condition en x, y)."""
+        from ..safe_expr import evaluate
+        m = self.mesh
+        C = m.cell_centers
+        nc = m.n_cells
+        D, F = np.zeros((nc, 2, 2)), np.zeros((nc, 2, 2))
+        owner = -np.ones(nc, dtype=int)
+        info = []
+
+        def pair(z, key, inverse=False):
+            v = z.get(key)
+            if v is None:
+                return None
+            v = np.broadcast_to(np.asarray(v, dtype=float), (2,)).copy()
+            if inverse:
+                if np.any(v <= 0):
+                    raise ValueError(f"Zone poreuse : {key} doit être > 0.")
+                v = 1.0 / v
+            return v
+        for i, z in enumerate(zones):
+            name = z.get("name", f"poreux{i + 1}")
+            region = z.get("region", "rectangle")
+            x, y = C[:, 0], C[:, 1]
+            if region == "rectangle":
+                mask = (x >= z["x0"]) & (x <= z["x1"]) & (y >= z["y0"]) & (y <= z["y1"])
+            elif region == "circle":
+                cx, cy = z["center"]
+                mask = np.hypot(x - cx, y - cy) <= z["radius"]
+            elif region == "expression":
+                mask = np.broadcast_to(np.asarray(evaluate(z["expression"], {"x": x, "y": y}))
+                                       != 0, x.shape)
+            else:
+                raise ValueError(f"Zone poreuse '{name}' : region = rectangle | circle | "
+                                 f"expression (reçu {region}).")
+            if not mask.any():
+                raise ValueError(f"Zone poreuse '{name}' : aucune cellule dans la zone.")
+            if np.any(owner[mask] >= 0):
+                raise ValueError(f"Zone poreuse '{name}' : recouvre une autre zone.")
+            d = pair(z, "darcy")
+            if d is None:
+                d = pair(z, "permeability", inverse=True)
+            f = pair(z, "forchheimer")
+            if f is None:
+                f = pair(z, "inertial")
+            if d is None and f is None:
+                raise ValueError(f"Zone poreuse '{name}' : donner darcy (1/m²) ou permeability "
+                                 f"(m²), et/ou forchheimer (1/m).")
+            d = np.zeros(2) if d is None else d
+            f = np.zeros(2) if f is None else f
+            if np.any(d < 0) or np.any(f < 0):
+                raise ValueError(f"Zone poreuse '{name}' : coefficients négatifs.")
+            a = np.radians(float(z.get("angle", 0.0)))
+            R = np.array([[np.cos(a), -np.sin(a)], [np.sin(a), np.cos(a)]])
+            D[mask] = R @ np.diag(d) @ R.T
+            F[mask] = R @ np.diag(f) @ R.T
+            owner[mask] = i
+            info.append({"name": name, "cells": int(mask.sum()),
+                         "volume": float(np.sum(self.fvm.V[mask]) if not self.backend.is_gpu
+                                         else np.sum(m.cell_volumes[mask]))})
+        A = self.backend.asarray
+        return {"D": A(D), "F": A(F), "zone": A(owner), "info": info}
+
+    def porous_coefficients(self, U=None):
+        """K = ν D + ½|U| F par cellule (nc, 2, 2), |U| figé (linéarisation de Picard)."""
+        xp = self.xp
+        U = self.U if U is None else U
+        nu = self.nu_lam if isinstance(self.nu_lam, float) else self.nu_lam[:, None, None]
+        mag = xp.sqrt(xp.sum(U * U, axis=1))
+        return nu * self.porous["D"] + 0.5 * mag[:, None, None] * self.porous["F"]
+
+    def porous_report(self) -> list:
+        """Par zone : cellules, volume, vitesse moyenne et puissance dissipée ∫ U·K·U dV
+        (axisymétrique : sur 360°)."""
+        xp = self.xp
+        K = self.porous_coefficients()
+        diss = xp.einsum("ci,cij,cj->c", self.U, K, self.U) * self.fvm.V
+        k = 2.0 * np.pi if self.axisymmetric else 1.0
+        out = []
+        for i, zi in enumerate(self.porous["info"]):
+            sel = self.porous["zone"] == i
+            vol = xp.sum(xp.where(sel, self.fvm.V, 0.0))
+            um = xp.sum(xp.where(sel[:, None], self.U * self.fvm.V[:, None], 0.0), axis=0) / vol
+            out.append({**zi, "U_mean": [float(v) for v in self.backend.to_host(um)],
+                        "dissipation": k * float(xp.sum(xp.where(sel, diss, 0.0)))})
+        return out
+
     def _flow_rate_velocity(self, patch, spec, sl):
         """Vitesse normale entrante donnant le débit `flow_rate` (profil uniforme ou
         parabolique ; en axisymétrique, profil de Poiseuille 2(1 − r²/R²) si la frontière
@@ -617,7 +712,10 @@ class Solver2D:
         return a, b, g, d
 
     def _boundary_force(self):
-        """Force volumique aux faces frontières (flottabilité avec la température de paroi)."""
+        """Force volumique aux faces frontières (flottabilité avec la température de paroi ;
+        résistance poreuse −K·U_b : sans elle, la pression à gradient normal nul le long
+        d'une paroi de symétrie traversant une zone anisotrope tournée crée une vitesse
+        normale parasite dans les cellules pariétales)."""
         xp = self.xp
         f = xp.zeros((self.fvm.nb, 2)) + self.body_force_at(self._t_eval)[None, :]
         e = self.energy
@@ -625,6 +723,9 @@ class Solver2D:
             g = xp.asarray(np.asarray(e["gravity"], dtype=float))
             Tb = self.boundary_T(self.T)
             f = f - float(e["beta"]) * (Tb - float(e["T_ref"]))[:, None] * g[None, :]
+        if self.porous is not None:
+            Kb = self.porous_coefficients()[self.fvm.Pb]
+            f = f - xp.einsum("bij,bj->bi", Kb, self.boundary_U(self.U))
         return f
 
     def _boundary_force_normal(self):
@@ -683,7 +784,7 @@ class Solver2D:
     # ------------------------------------------------------------------ quantité de mouvement
     def _has_force(self):
         e = self.energy
-        if e is not None and e["beta"]:
+        if (e is not None and e["beta"]) or self.porous is not None:
             return True
         return callable(self.body_force) or bool(np.any(np.asarray(self.body_force) != 0))
 
@@ -924,6 +1025,7 @@ class Solver2D:
         gradU = self.grad_U(U)
         gUf = fvm.interp(gradU)
         V = fvm.V
+        Kp = self.porous_coefficients() if self.porous is not None else None
         eqs = []
         for c in range(2):
             bc = self.vector_bc(c, U)
@@ -942,6 +1044,11 @@ class Solver2D:
                 # −τ_θθ/r = −2 ν_eff u_r/r² (les autres termes de ∇·τ sont donnés exactement
                 # par la divergence pondérée par r des deux termes ci-dessus)
                 diag = diag + 2.0 * nu_eff * V / fvm.radius ** 2
+            if Kp is not None:
+                # milieu poreux : terme diagonal implicite, couplage entre composantes
+                # (zone tournée, anisotrope) explicite
+                diag = diag + Kp[:, c, c] * V
+                rhs = rhs - Kp[:, c, 1 - c] * U[:, 1 - c] * V
             if theta != 1.0:
                 diag, up, lo, rhs = theta * diag, theta * up, theta * lo, theta * rhs
             if explicit is not None:
@@ -1142,6 +1249,11 @@ class Solver2D:
                         * fvm.magSb / fvm.dperp, 0.0)
         diff = (xp.bincount(fvm.P, nu_f, fvm.nc) + xp.bincount(fvm.N, nu_f, fvm.nc)
                 + xp.bincount(fvm.Pb, nu_b, fvm.nc)) / fvm.V
+        if self.porous is not None:
+            # résistance poreuse : valeur propre réelle négative, comme la diffusion (Dn
+            # compte les deux pour la stabilité des schémas explicites)
+            K = self.porous_coefficients()
+            diff = diff + xp.maximum(K[:, 0, 0], K[:, 1, 1])
         aF = xp.abs(self.F_i)
         conv = 0.5 * (xp.bincount(fvm.P, aF, fvm.nc) + xp.bincount(fvm.N, aF, fvm.nc)
                       + xp.bincount(fvm.Pb, xp.abs(self.F_b), fvm.nc)) / fvm.V
@@ -1169,14 +1281,15 @@ class Solver2D:
           pas le pas ;
         - sinon Crank-Nicolson en laminaire (au même Δt, amplitude de portance du cylindre
           0.339 contre 0.389 en BDF2 ; valeur convergée ≈ 0.31-0.32) ;
-        - BDF2 (L-stable) avec un modèle de turbulence (termes sources raides)."""
+        - BDF2 (L-stable) avec un modèle de turbulence ou des zones poreuses (termes
+          sources raides)."""
         xp = self.xp
         info = TIME_SCHEMES["rk3"]
         _, _, conv, diff = self.courant(1.0)
         dt_conv = info["co_max"] / max(conv.max(), 1e-300)
         dt_diff = info["dn_max"] / max(diff.max(), 1e-300)
         explicit_ok = xp.max(conv * dt / info["co_max"] + diff * dt / info["dn_max"]) <= 1.0
-        if self.model.variables:
+        if self.model.variables or self.porous is not None:
             return "backward"
         if dt_diff < 0.5 * dt_conv or not explicit_ok:
             return "crankNicolson"
@@ -1402,8 +1515,9 @@ class Solver2D:
         xp = self.xp
         fvm = self.fvm
         L, rhs_bc, solve = self._poisson()
-        if self.has_p0:
-            # pression totale : valeurs imposées variables, seul le second membre change
+        if self.has_p0 or self._has_force():
+            # pression totale, gradient imposé f·n variable (force dépendant du temps, de T
+            # ou de U) : seul le second membre change
             self._update_total_pressure()
             _, _, _, d_ = self.pressure_bc()
             rhs_bc = fvm._sum_b(fvm.magSb * d_)          # comme fvm.assemble (Γ = 1)
@@ -1481,6 +1595,8 @@ class Solver2D:
         self.scalars = {k: h(v) for k, v in self.scalars.items()}
         self.scalar_source = {k: h(v) for k, v in self.scalar_source.items()}
         self.scalar_bcs = {k: tuple(h(a) for a in v) for k, v in self.scalar_bcs.items()}
+        if self.porous is not None:
+            self.porous = {**self.porous, **{k: h(self.porous[k]) for k in ("D", "F", "zone")}}
         if not isinstance(self.nu_lam, float):
             self.nu_lam = h(self.nu_lam)
         if self.energy is not None:

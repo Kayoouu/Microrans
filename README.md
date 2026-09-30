@@ -10,6 +10,7 @@ Outil de simulation d'écoulements **incompressibles turbulents ou laminaires**,
   instationnaire (PIMPLE implicite ou Runge-Kutta explicite) ; thermique (convection forcée et
   naturelle, Boussinesq) ; scalaires transportés (concentration, polluant, âge du fluide) ;
   fluides non newtoniens (loi puissance, Carreau, Cross, Bingham, Herschel-Bulkley, Casson) ;
+  zones poreuses (filtres, échangeurs : Darcy-Forchheimer, anisotropes) ;
   polaires et balayages de paramètres ; reprise de calcul ; mailleur intégré et
   import/export Gmsh / SU2 / VTK / OpenFOAM ;
 - **1D** : canal plan turbulent intégré jusqu'à la paroi (RANS et URANS pulsé), très rapide,
@@ -135,6 +136,14 @@ beta = 3.4e-3
 [scalars.c]                # optionnel : scalaire transporté (autant que voulu)
 diffusivity = 1e-3         # ou schmidt = Sc ; Sc_t = 0.7 ; source = 1 : âge du fluide
 initial = 0.0              # scheme = "linearUpwindLimited" (défaut, borné) | linearUpwind
+[[porous]]                 # optionnel : zone poreuse (autant que voulu)
+region = "rectangle"       # rectangle (x0 x1 y0 y1) | circle (center, radius) | expression
+x0 = 3.0
+x1 = 4.0
+y0 = 0.0
+y1 = 1.0
+darcy = 1000.0             # 1/m² (ou permeability = 1e-3 m²) ; [d1, d2] + angle : anisotrope
+forchheimer = 10.0         # 1/m
 [boundary.inlet]
 type = "inlet"             # wall | inlet | outlet | symmetry | farfield | axis | pressure_inlet
 U = [1.0, 0.0]             # ou flow_rate = Q (débit ; profile = "uniform" | "parabolic")
@@ -190,6 +199,7 @@ API Python : `from microrans.fv2d import Solver2D, Settings`, `from microrans.me
 | Thermique | température, Boussinesq, flux / température imposés, Nusselt ; force aux faces + `fixedFluxPressure` | buoyantBoussinesq d'OpenFOAM |
 | Scalaires passifs | transport convection-diffusion (D + ν_t/Sc_t), sources, limiteur de Barth-Jespersen (`linearUpwindLimited`), bilans par frontière, âge du fluide | `scalarTransport` / `cellLimited` d'OpenFOAM, UDS de Fluent |
 | Non newtonien | ν(γ̇) : loi puissance, Carreau(-Yasuda), Cross, Herschel-Bulkley / Bingham (bi-viscosité), Casson ; ν pariétal au cisaillement de paroi ; sous-relaxation de Picard | `generalisedNewtonian` d'OpenFOAM, « Non-Newtonian » de Fluent |
+| Milieux poreux | Darcy-Forchheimer (vitesse superficielle), tenseurs anisotropes tournés, terme diagonal implicite, résistance incluse dans le gradient de pression imposé aux parois (`fixedFluxPressure`) | `explicitPorositySource` d'OpenFOAM, « Porous zone » de Fluent |
 | Conditions limites | paroi (mobile), entrée (vitesse ou débit, profil uniforme ou parabolique), pression totale, sortie, symétrie, champ lointain, périodicité, axe | SU2 / OpenFOAM (`flowRateInletVelocity`, `totalPressure`) |
 | Axisymétrique | secteur d'un radian (volumes et surfaces pondérés par r), gradient avec faces latérales, contrainte circonférentielle −2ν_eff u_r/r², déformation (u_r/r)², moyenne des diagonales dans H/A | `wedge` d'OpenFOAM, « Axisymmetric » de Fluent |
 | Arrêt | résidus normalisés (OpenFOAM) ou stabilisation des efforts (moniteurs Fluent) | — |
@@ -363,6 +373,9 @@ maillage et la préparation restent sur CPU.
 | Tuyau axisymétrique, loi puissance n = 0.5 | ordre | 2.0 | exact |
 | Sang (Carreau) en artère de 4 mm (exemple) | u_axe / U_b | 1.895 (écart profil 0.5 % U_b) | 1.898 (profil établi intégré) |
 | Mélange de deux courants, âge du fluide (exemple) | âge moyen en sortie | 9.99 | volume / débit = 10 |
+| Canal entièrement poreux (Brinkman, d = 25) | ordre ; erreur max (64 cellules) | 1.8 ; 2.8e-3 | exact |
+| Bouchon poreux anisotrope (d = 100/400, f = 2/8) tourné de 30° | ∂p/∂x, ∂p/∂y au cœur ; vitesse | exacts à 1e-5 ; u = U, v < 1e-6 | −K·U (exact) |
+| Filtre dans une conduite (exemple, Re = 100) | puissance dissipée | 15.10 | 15 (estimation 1D, profil plat) |
 
 ### 2D, thermique (convection naturelle, de Vahl Davis 1983, Pr = 0.71)
 
@@ -482,13 +495,18 @@ limites turbulentes, dont la convergence est dominée par les équations de turb
    masse volumique variable). Le limiteur réduit les dépassements de [min, max] d'un facteur
    ~500 mais ne les supprime pas exactement en PIMPLE (correction différée : ~2e-4 sur le
    créneau test) ; `upwind` est strictement borné mais diffusif.
+15. **Zones poreuses** : frontière de zone abrupte → oscillation de la vitesse reconstruite
+   dans les 1-2 cellules voisines (±2.6 % dans le test d = 100, ν = 0.01 ; Rhie-Chow au
+   saut de résistance, même artefact dans OpenFOAM) ; débits conservés exactement et perte
+   de charge exacte. Milieu poreux sans effet thermique (pas de conduction solide, pas de
+   porosité dans le terme instationnaire : vitesse superficielle).
 
 ## 9. Feuille de route
 
 Maillage en C et validation NASA TMR (profils) ; étude de convergence en maillage (GCI) ;
 parallélisme multi-cœur (Numba) ou CuPy validé sur carte ; transition γ-Re_θ ; rugosité,
 corrections de courbure, loi de paroi thermique et k-ε haut-Reynolds ; rotation propre
-(swirl) en axisymétrique ; zones poreuses ; viscoélasticité ; compressible (Roe/HLLC, RK SSP) ; en option, plus tard : solveur
+(swirl) en axisymétrique ; viscoélasticité ; compressible (Roe/HLLC, RK SSP) ; en option, plus tard : solveur
 couplé pression-vitesse (type « Coupled » de Fluent).
 
 ---
@@ -519,7 +537,7 @@ microrans/
   gui/                   interface PySide6 (app.py, widgets.py)
   examples/              cas fournis (microrans examples)
 packaging/               PyInstaller (microrans.spec) : exécutables GUI + CLI
-tests/                   pytest (207 tests : vérification, validation, GUI hors écran, faux GPU)
+tests/                   pytest (214 tests : vérification, validation, GUI hors écran, faux GPU)
 .github/workflows/       tests (Python 3.10 / 3.12) ; exécutables Windows / Linux
 ```
 

@@ -480,6 +480,27 @@ class MainWindow(QMainWindow):
                        "défaut 0 en entrée, flux nul ailleurs. Source S = 1 : âge moyen du "
                        "fluide (temps de séjour). Bilan par frontière dans summary.json."))
         lay.addWidget(box)
+        box, f = _form("Zones poreuses (filtres, échangeurs, lits de particules…)")
+        self.porous_table = QTableWidget(0, 5)
+        self.porous_table.setHorizontalHeaderLabels(["Nom", "Zone", "Darcy d (1/m²)",
+                                                     "Forchheimer f (1/m)", "Angle (°)"])
+        self.porous_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        self.porous_table.setMinimumHeight(110)
+        self.porous_table.itemChanged.connect(lambda *_: self._porous_changed())
+        f.addRow(self.porous_table)
+        row = QHBoxLayout()
+        for text, fn in (("Ajouter", self._porous_add), ("Supprimer", self._porous_remove)):
+            b = QPushButton(text)
+            b.clicked.connect(fn)
+            row.addWidget(b)
+        row.addStretch(1)
+        f.addRow(row)
+        f.addRow(_note("Zone : « rect x0 x1 y0 y1 », « cercle cx cy r » ou une condition en "
+                       "x, y (ex. x > 2). Perte de charge par mètre : ν d U + ½ f U² (d = 1 / "
+                       "perméabilité). Anisotrope : « d1, d2 » et « f1, f2 » selon les axes de "
+                       "la zone tournés de l'angle. Vitesse reconstruite imprécise (±quelques %) "
+                       "dans les 1-2 cellules voisines de la frontière de zone (voir README)."))
+        lay.addWidget(box)
         box, f = _form("Conditions initiales et forces")
         f.addRow("Vitesse initiale (Ux, Uy)", B.vec(("initial", "U"), (0.0, 0.0)))
         f.addRow("Perturbation du sillage", B.sci(("initial", "perturbation"), None, True, "0"))
@@ -730,6 +751,7 @@ class MainWindow(QMainWindow):
             wdg.setEnabled("energy" in cfg)
         self._visc_changed()
         self._fill_scalar_table()
+        self._fill_porous_table()
         self._fill_bc_table()
         self._syncing = False
         self._refresh_toml()
@@ -1124,6 +1146,95 @@ class MainWindow(QMainWindow):
                     sp[key] = val
             new[name] = sp
         self.cfg["scalars"] = new
+        self._toml_timer.start()
+
+    @staticmethod
+    def _zone_text(z):
+        r = z.get("region", "rectangle")
+        if r == "rectangle":
+            return "rect " + " ".join(f"{z[k]:g}" for k in ("x0", "x1", "y0", "y1"))
+        if r == "circle":
+            return f"cercle {z['center'][0]:g} {z['center'][1]:g} {z['radius']:g}"
+        return str(z.get("expression", ""))
+
+    @staticmethod
+    def _zone_parse(text):
+        parts = text.replace(",", " ").split()
+        if parts and parts[0].lower() in ("rect", "rectangle") and len(parts) == 5:
+            return dict(zip(("region", "x0", "x1", "y0", "y1"),
+                            ["rectangle"] + [float(v) for v in parts[1:]]))
+        if parts and parts[0].lower() in ("cercle", "circle") and len(parts) == 4:
+            return {"region": "circle", "center": [float(parts[1]), float(parts[2])],
+                    "radius": float(parts[3])}
+        return {"region": "expression", "expression": text.strip()}
+
+    @staticmethod
+    def _pair_text(v):
+        return ", ".join(f"{c:g}" for c in v) if isinstance(v, (list, tuple)) else (
+            "" if v is None else f"{v:g}")
+
+    def _fill_porous_table(self):
+        self._porous_sync = True
+        zones = self.cfg.get("porous", []) or []
+        self.porous_table.setRowCount(0)
+        self.porous_table.setRowCount(len(zones))
+        for r, z in enumerate(zones):
+            d = z.get("darcy")
+            if d is None and z.get("permeability") is not None:
+                k = z["permeability"]
+                d = [1 / v for v in k] if isinstance(k, (list, tuple)) else 1 / k
+            vals = (z.get("name", f"poreux{r + 1}"), self._zone_text(z), self._pair_text(d),
+                    self._pair_text(z.get("forchheimer", z.get("inertial"))),
+                    self._pair_text(z.get("angle")))
+            for c, val in enumerate(vals):
+                self.porous_table.setItem(r, c, QTableWidgetItem(val))
+        self._porous_sync = False
+
+    def _porous_add(self):
+        zones = self.cfg.setdefault("porous", [])
+        zones.append({"name": f"poreux{len(zones) + 1}", "region": "rectangle", "x0": 0.0,
+                      "x1": 1.0, "y0": 0.0, "y1": 1.0, "darcy": 100.0})
+        self._fill_porous_table()
+        self._toml_timer.start()
+
+    def _porous_remove(self):
+        r = self.porous_table.currentRow()
+        zones = self.cfg.get("porous", [])
+        if 0 <= r < len(zones):
+            zones.pop(r)
+            if not zones:
+                self.cfg.pop("porous", None)
+            self._fill_porous_table()
+            self._toml_timer.start()
+
+    def _porous_changed(self):
+        if getattr(self, "_porous_sync", False):
+            return
+
+        def cell(r, c):
+            it = self.porous_table.item(r, c)
+            return it.text().strip() if it else ""
+
+        def nums(txt):
+            v = [float(t) for t in txt.replace(";", ",").split(",") if t.strip()]
+            return None if not v else (v[0] if len(v) == 1 else v[:2])
+        zones = []
+        for r in range(self.porous_table.rowCount()):
+            try:
+                z = {"name": cell(r, 0) or f"poreux{r + 1}", **self._zone_parse(cell(r, 1))}
+                for key, c in (("darcy", 2), ("forchheimer", 3), ("angle", 4)):
+                    v = nums(cell(r, c))
+                    if v is not None:
+                        z[key] = v
+            except ValueError:
+                self.statusBar().showMessage(f"Zone poreuse ligne {r + 1} : nombre invalide",
+                                             4000)
+                return
+            zones.append(z)
+        if zones:
+            self.cfg["porous"] = zones
+        else:
+            self.cfg.pop("porous", None)
         self._toml_timer.start()
 
     def _mode_changed(self):

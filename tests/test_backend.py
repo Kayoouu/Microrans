@@ -125,3 +125,16 @@ def test_scalars_and_non_newtonian_on_gpu():
     assert np.max(np.abs(c.U - g.U)) < 1e-8
     assert np.max(np.abs(c.scalars["c"] - g.scalars["c"])) < 1e-8
     assert np.allclose(c.nu_lam, g.nu_lam, rtol=1e-8, atol=0)
+
+
+def test_porous_zone_on_gpu():
+    def build(st):
+        m = channel_mesh(4.0, 1.0, 20, 6, periodic=False)
+        return Solver2D(m, 0.05, {"inlet": {"type": "inlet", "U": [0.5, 0.0]},
+                                  "outlet": {"type": "outlet"}, "bottom": {"type": "symmetry"},
+                                  "top": {"type": "symmetry"}},
+                        porous=[{"region": "rectangle", "x0": 1.5, "x1": 2.5, "y0": -1,
+                                 "y1": 2, "darcy": [50.0, 200.0], "forchheimer": 3.0,
+                                 "angle": 30.0}], settings=st)
+    c, g = _pair(build, lambda s: s.run_steady(max_iter=40, tol=1e-12))
+    assert np.max(np.abs(c.U - g.U)) < 1e-8 and np.max(np.abs(c.p - g.p)) < 1e-8

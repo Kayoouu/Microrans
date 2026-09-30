@@ -53,3 +53,21 @@ def test_viscosity_and_scalars_roundtrip(win):
     win.bc_table.item(0, 8).setText("c=0.5; c1=2")
     b = win.cfg["boundary"]["inlet"]
     assert b["scalars"] == {"c": 0.5, "c1": 2.0} and b["profile"] == "parabolic"
+
+
+def test_porous_table_roundtrip(win):
+    cfg = {"mesh": {"type": "rectangle", "x0": 0, "x1": 2, "y0": 0, "y1": 1, "nx": 8, "ny": 4},
+           "physics": {"nu": 0.01},
+           "porous": [{"name": "filtre", "region": "circle", "center": [1.0, 0.5],
+                       "radius": 0.2, "permeability": 0.01, "forchheimer": [2.0, 4.0],
+                       "angle": 30.0}],
+           "boundary": {}}
+    win.load_cfg(cfg)
+    assert win.porous_table.item(0, 1).text() == "cercle 1 0.5 0.2"
+    assert win.porous_table.item(0, 2).text() == "100"
+    win.porous_table.item(0, 1).setText("rect 0 1 0 0.5")
+    z = win.cfg["porous"][0]
+    assert z == {"name": "filtre", "region": "rectangle", "x0": 0.0, "x1": 1.0, "y0": 0.0,
+                 "y1": 0.5, "darcy": 100.0, "forchheimer": [2.0, 4.0], "angle": 30.0}
+    win.porous_table.item(0, 1).setText("x > 1.5")
+    assert win.cfg["porous"][0]["expression"] == "x > 1.5"
