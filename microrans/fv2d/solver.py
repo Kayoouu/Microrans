@@ -102,7 +102,7 @@ def canonical_time_scheme(name: str) -> str:
 @dataclass
 class Settings:
     """Paramètres numériques (valeurs par défaut raisonnables pour débuter)."""
-    algorithm: str = "SIMPLEC"            # SIMPLE | SIMPLEC (stationnaire)
+    algorithm: str = "SIMPLEC"            # SIMPLE | SIMPLEC | coupled (stationnaire)
     relax_U: float | None = None          # None = auto : 0.9 (maillage ~orthogonal) / 0.7
     relax_p: float = 1.0                  # SIMPLE : ~0.3 ; SIMPLEC : 1
     relax_turb: float = 0.8
@@ -1396,15 +1396,23 @@ class Solver2D:
                 a0T = {k: -a0 * v for k, v in self.state.items()}
             else:
                 eqs = self._momentum(relax=s.relax_U)
+            coupled = s.algorithm.upper() == "COUPLED"
             for c, (diag, up, lo, rhs) in enumerate(eqs):
                 A = self.fvm.matrix(diag, up, lo)
                 gp = self.fvm.grad(self.p, self.boundary_p(self.p))[:, c] * self.fvm.V
                 b = rhs - gp
                 self.residuals_now["Ux" if c == 0 else "Uy"] = normalized_residual(
                     A, self.U[:, c], b, self.u_scale)
-                self.U[:, c] = self.fvm.lin.solve(A, b, self.U[:, c], s.solver_U, rtol=0.1,
-                                                  tag="U")
-            self._pressure_correction(eqs, relax_p=relax_p, rtol=0.01)
+                if not coupled:
+                    self.U[:, c] = self.fvm.lin.solve(A, b, self.U[:, c], s.solver_U,
+                                                      rtol=0.1, tag="U")
+            if coupled:
+                # vitesse et pression résolues ensemble (voir coupled.py)
+                from .coupled import coupled_step
+                coupled_step(self, eqs, relax=1.0 if (s.pseudo_dt or s.pseudo_cfl)
+                             else s.relax_U)
+            else:
+                self._pressure_correction(eqs, relax_p=relax_p, rtol=0.01)
             if s.pseudo_dt or s.pseudo_cfl:
                 self._turbulence(a0=a0, hist=a0T, relax=s.relax_turb)
                 if self.energy is not None:
