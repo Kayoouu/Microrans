@@ -307,23 +307,40 @@ class Mesh2D:
         return self._wall_distance
 
     def distance_to_patches(self, names) -> np.ndarray:
+        return self._nearest_on_patches(names)[0]
+
+    def wall_normal(self) -> np.ndarray:
+        """Vecteur unitaire allant du point de paroi le plus proche vers chaque centre de
+        cellule (= ∇d, normale locale à la paroi ; sert au modèle de transition γ)."""
+        d, vec = self._nearest_on_patches(self.wall_patches)
+        return vec / np.maximum(d, 1e-300)[:, None]
+
+    def _nearest_on_patches(self, names):
+        """(distance, vecteur point le plus proche → centre) aux segments des patches."""
         segs = [self.face_nodes[self.patch(n).faces] for n in names]
         if not segs or sum(len(s) for s in segs) == 0:
-            return np.full(self.n_cells, 1e30)
+            vec = np.zeros((self.n_cells, 2))
+            vec[:, 1] = 1e30
+            return np.full(self.n_cells, 1e30), vec
         seg = np.vstack(segs)
         a, b = self.points[seg[:, 0]], self.points[seg[:, 1]]
         ab = b - a
         ab2 = np.maximum(np.sum(ab * ab, axis=1), 1e-300)
         out = np.empty(self.n_cells)
+        vec = np.empty((self.n_cells, 2))
         C = self.cell_centers
         chunk = max(1, 2_000_000 // max(len(seg), 1))
         for s in range(0, self.n_cells, chunk):
             q = C[s:s + chunk, None, :]
             ap = q - a[None]
             t = np.clip(np.sum(ap * ab[None], axis=2) / ab2[None], 0.0, 1.0)
-            d2 = np.sum((ap - t[..., None] * ab[None]) ** 2, axis=2)
-            out[s:s + chunk] = np.sqrt(d2.min(axis=1))
-        return out
+            r = ap - t[..., None] * ab[None]
+            d2 = np.sum(r ** 2, axis=2)
+            j = d2.argmin(axis=1)
+            rows = np.arange(len(j))
+            out[s:s + chunk] = np.sqrt(d2[rows, j])
+            vec[s:s + chunk] = r[rows, j]
+        return out, vec
 
     @property
     def first_cell_height(self) -> float:

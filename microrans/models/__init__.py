@@ -6,6 +6,7 @@ from .k_epsilon import LaunderSharmaKE
 from .k_omega import WilcoxKOmega2006
 from .k_omega_sst import MenterSST
 from .spalart_allmaras import SpalartAllmaras
+from .transition_gamma import MenterSSTGamma
 
 MODELS: dict[str, type[TurbulenceModel]] = {
     "laminar": Laminar,
@@ -13,6 +14,7 @@ MODELS: dict[str, type[TurbulenceModel]] = {
     "ke": LaunderSharmaKE,
     "kw": WilcoxKOmega2006,
     "sst": MenterSST,
+    "sst_gamma": MenterSSTGamma,
 }
 
 ALIASES = {
@@ -20,8 +22,10 @@ ALIASES = {
     "k-eps": "ke", "k-epsilon": "ke", "launder-sharma": "ke",
     "k-omega": "kw", "kw2006": "kw", "wilcox": "kw",
     "k-omega-sst": "sst", "menter": "sst",
+    "sst-gamma": "sst_gamma", "gamma": "sst_gamma", "transition": "sst_gamma",
 }
 
+# modèles pleinement turbulents (comparaisons DNS du canal 1D) ; sst_gamma (transition) à part
 TURBULENT_MODELS = ("sa", "ke", "kw", "sst")
 
 
@@ -39,4 +43,4 @@ def get_model(name: str, grid, nu: float, **options) -> TurbulenceModel:
 
 
 __all__ = ["MODELS", "TURBULENT_MODELS", "TurbulenceModel", "get_model", "canonical_name",
-           "Laminar", "SpalartAllmaras", "LaunderSharmaKE", "WilcoxKOmega2006", "MenterSST"]
+           "Laminar", "SpalartAllmaras", "LaunderSharmaKE", "WilcoxKOmega2006", "MenterSST", "MenterSSTGamma"]

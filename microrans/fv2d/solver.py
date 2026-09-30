@@ -240,10 +240,16 @@ class Step2D:
         bc = s.scalar_bc(name)
         gam_i = fvm.interp(gamma)
         gam_b = gamma[fvm.Pb]
-        grad = None if fvm.orthogonal else fvm.grad(phi, bc[0] * phi[fvm.Pb] + bc[1])
+        # gradient : correction non orthogonale et/ou convection linearUpwind(Limited)
+        # (auparavant ignoré sur maillage orthogonal : linearUpwind y retombait sur upwind)
+        scheme = s.settings.convection_turb
+        phib = bc[0] * phi[fvm.Pb] + bc[1]
+        grad = None if fvm.orthogonal and scheme == "upwind" else fvm.grad(phi, phib)
+        gconv = fvm.limit_grad(phi, grad, phib) if scheme == "linearUpwindLimited" else None
         diag, up, lo, rhs = fvm.assemble(s.F_i, s.F_b, gam_i, gam_b, bc, grad_phi=grad,
-                                         scheme=s.settings.convection_turb, bounded=s.steady,
-                                         phi=phi, nonorth_limit=s.settings.nonorth_limit)
+                                         scheme=scheme, bounded=s.steady, phi=phi,
+                                         nonorth_limit=s.settings.nonorth_limit,
+                                         grad_conv=gconv)
         V = fvm.V
         rhs += xp.asarray(source) * V
         diag += xp.asarray(sink) * V
@@ -339,6 +345,9 @@ class Solver2D:
             raise ValueError("Lois de paroi incompatibles avec le k-ε Launder-Sharma "
                              "(modèle bas-Reynolds, y⁺ ≈ 1 obligatoire) : utiliser SST, k-ω "
                              "ou SA, ou wall_treatment = 'resolved'.")
+        if self.wall_function and self.model_name == "sst_gamma":
+            raise ValueError("Lois de paroi incompatibles avec la transition γ (la couche "
+                             "limite laminaire doit être résolue, y⁺ ≈ 1).")
         self.nu_wall = xp.full(fvm.nb, self.nu)     # viscosité effective aux faces de paroi
         self.u_tau_wall = xp.zeros(fvm.nb)
         ti = {"intensity": 0.001, "viscosity_ratio": 0.1, **(turbulence_inflow or {})}
@@ -645,8 +654,8 @@ class Solver2D:
         d[fx] = val / dp[fx]
         a[self.kindT == 1] = 1.0
         w = self.kindT == 2
-        if self.wall_function and name == "k":
-            a[w] = 1.0                        # kqRWallFunction : gradient nul
+        if (self.wall_function and name == "k") or name in self.model.wall_zero_gradient:
+            a[w] = 1.0                        # kqRWallFunction, intermittence γ : gradient nul
             w = xp.zeros_like(w)
         if xp.any(w):
             wv = self.model.wall_value(name, dp[w])

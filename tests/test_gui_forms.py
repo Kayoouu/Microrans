@@ -53,3 +53,14 @@ def test_viscosity_and_scalars_roundtrip(win):
     win.bc_table.item(0, 8).setText("c=0.5; c1=2")
     b = win.cfg["boundary"]["inlet"]
     assert b["scalars"] == {"c": 0.5, "c1": 2.0} and b["profile"] == "parabolic"
+
+
+def test_transition_example_roundtrip(win):
+    """Cas T3A : modèle sst_gamma et convection de la turbulence conservés par les formulaires."""
+    from microrans.cli import examples_dir
+    from microrans.mesh2d.builder import load_config
+    win.load_cfg(load_config(examples_dir() / "plaque_plane_transition_t3a.toml"))
+    assert win.model_combo.currentData() == "sst_gamma"
+    win._store_forms()
+    assert win.cfg["physics"]["model"] == "sst_gamma"
+    assert win.cfg["solver"]["convection_turb"] == "linearUpwindLimited"
