@@ -19,7 +19,7 @@ from PySide6.QtGui import QAction, QDesktopServices, QFont, QKeySequence
 from PySide6.QtWidgets import (QApplication, QCheckBox, QFileDialog, QFormLayout, QGroupBox, QHBoxLayout,
                                QHeaderView, QLabel, QListWidget, QListWidgetItem, QMainWindow,
                                QMessageBox, QPlainTextEdit, QProgressBar, QPushButton,
-                               QScrollArea, QSplitter, QStackedWidget, QTableWidget,
+                               QScrollArea, QSpinBox, QSplitter, QStackedWidget, QTableWidget,
                                QTableWidgetItem, QTabWidget, QVBoxLayout, QWidget)
 
 from .. import __version__
@@ -672,15 +672,24 @@ class MainWindow(QMainWindow):
         self.sweep_values.setToolTip("début:fin:pas (fin incluse) ou liste a, b, c")
         self.sweep_cont = QCheckBox("Continuation : chaque point part du précédent")
         self.sweep_cont.setChecked(True)
+        self.sweep_jobs = QSpinBox()
+        self.sweep_jobs.setRange(1, max(os.cpu_count() or 1, 2))
+        self.sweep_jobs.setValue(1)
+        self.sweep_jobs.setToolTip(
+            "Nombre de points calculés en même temps (un cœur du processeur chacun). "
+            f"Cet ordinateur : {os.cpu_count() or 1} cœurs logiques. Avec la continuation, "
+            "les valeurs sont découpées en autant de blocs contigus (chacun en continuation).")
         self.sweep_btn = QPushButton("Lancer le balayage")
         self.sweep_btn.clicked.connect(self.run_sweep_gui)
         f.addRow("Paramètre", self.sweep_param)
         f.addRow("Valeurs", self.sweep_values)
         f.addRow(self.sweep_cont)
+        f.addRow("Calculs en parallèle", self.sweep_jobs)
         f.addRow(self.sweep_btn)
         f.addRow(_note("Un calcul complet par valeur, sur le même maillage. Résultats : "
                        "balayage.csv, polaire.png et un sous-dossier par point. Points non "
-                       "convergés (ex. après le décrochage) : marqueurs creux."))
+                       "convergés (ex. après le décrochage) : marqueurs creux. Calculs en "
+                       "parallèle : un point par cœur (mémoire × nombre de calculs)."))
         lay.addWidget(box)
         self.run_info = _note("")
         lay.addWidget(self.run_info)
@@ -1548,14 +1557,16 @@ class MainWindow(QMainWindow):
                                     "instationnaire, mais chaque point est alors long. "
                                     "Il est conseillé de passer en stationnaire.")
         mesh, base, cont = self.mesh, self.base_dir(), self.sweep_cont.isChecked()
+        jobs = self.sweep_jobs.value()
         self.sweep_rows, self._sweep_key, self._sweep_n = [], key, len(values)
+        self._sweep_order = {v: i for i, v in enumerate(values)}
 
         def job(worker):
             from ..fv2d.sweep import run_sweep
             rows = run_sweep(cfg, key, values, base_dir=base, out_dir=cfg["output"]["directory"],
                              continuation=cont, verbose=True, plot=True,
-                             callback=lambda s, n: worker.stop_requested, mesh=mesh,
-                             on_point=lambda row: worker.report(row, force=True))
+                             should_stop=lambda: worker.stop_requested, mesh=mesh,
+                             on_point=lambda row: worker.report(row, force=True), jobs=jobs)
             return rows
         self.nav.setCurrentRow(6)
         self.tabs.setCurrentIndex(0)
@@ -1566,6 +1577,8 @@ class MainWindow(QMainWindow):
     def _sweep_progress(self, row):
         from ..fv2d.sweep import plot_sweep
         self.sweep_rows.append(row)
+        # calcul en parallèle : les points arrivent dans le désordre
+        self.sweep_rows.sort(key=lambda r: self._sweep_order.get(r[self._sweep_key], 0))
         n = len(self.sweep_rows)
         self.progress.setRange(0, self._sweep_n)
         self.progress.setValue(n)
@@ -1884,8 +1897,10 @@ def _selftest(win: MainWindow, app, shot: str | None) -> int:
     ok = (win.solver is not None and len(its) == 2 and its[0] > 10 and its[1] > its[0]
           and win.summary.get("restart", {}).get("mode") == "exact")
     # balayage (2 viscosités) : tableau et figure
+    # (2 processus : vérifie aussi le lancement de processus depuis l'exécutable)
     set_combo(win.sweep_param, "physics.nu")
     win.sweep_values.setText("0.01, 0.02")
+    win.sweep_jobs.setValue(2)
     win.run_sweep_gui()
     t0 = time.time()
     while win.thread is not None and time.time() - t0 < 300:

@@ -214,8 +214,10 @@ def cmd_sweep(args) -> int:
         values = f"{values[0]}:{values[1]}:{values[2]}"
     cont = sw.get("continuation", True) and not args.no_continuation
     out = args.out or cfg.get("output", {}).get("directory") or f"results/{Path(args.case).stem}"
+    jobs = args.jobs if args.jobs is not None else sw.get("jobs", 1)
     rows = run_sweep(cfg, key, values, base_dir=Path(args.case).parent, out_dir=out,
-                     continuation=cont, verbose=not args.quiet, plot=not args.no_plot)
+                     continuation=cont, verbose=not args.quiet, plot=not args.no_plot,
+                     jobs=jobs)
     cols = [key, "converged", "iterations"] + [k for k in rows[0] if k.split("_")[0] in
                                                ("Cl", "Cd", "Cm") and "_" in k
                                                and not k.startswith(("Cd_p", "Cd_v"))]
@@ -372,6 +374,10 @@ def build_parser() -> argparse.ArgumentParser:
         p.add_argument("--set", nargs="+", action="extend", metavar="SECTION.CLE=VALEUR")
         p.add_argument("--no-continuation", action="store_true",
                        help="chaque point part de l'état initial (plus lent, pas d'hystérésis)")
+        p.add_argument("-j", "--jobs", type=int, metavar="N",
+                       help="nombre de processus en parallèle (un point par cœur ; 0 = tous "
+                            "les cœurs ; défaut : [sweep] jobs du cas, sinon 1). Avec "
+                            "continuation : N blocs contigus de points, chacun en continuation")
         p.add_argument("--no-plot", action="store_true")
         p.add_argument("-q", "--quiet", action="store_true")
         p.set_defaults(func=cmd_sweep, param=None, values=None, range=None, alpha=None)

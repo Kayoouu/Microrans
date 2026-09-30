@@ -57,6 +57,9 @@ jobs:
           ./dist/microrans/microrans examples
           ./dist/microrans/microrans run2d cavite_re100 -q --no-plot --set solver.max_iter=50 -o smoke/cli || test $? -eq 1
           test -f smoke/cli/summary.json
+          # balayage sur 2 processus : lancement de processus (« spawn ») depuis l'exécutable
+          ./dist/microrans/microrans sweep cavite_re100 -q --no-plot --jobs 2 --param physics.nu --values 0.01 0.02 --set mesh.nx=16 mesh.ny=16 solver.max_iter=300 -o smoke/sweep
+          test -f smoke/sweep/balayage.csv
       - name: Auto-test de l'interface (Windows, affichage natif comme chez l'utilisateur)
         if: runner.os == 'Windows'
         shell: pwsh
