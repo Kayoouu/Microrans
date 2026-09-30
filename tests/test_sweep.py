@@ -92,7 +92,7 @@ tol = 1e-6
 """)
     out = tmp_path / "out"
     main(["sweep", str(case), "-o", str(out), "-q", "--param", "physics.reynolds",
-          "--values", "10", "100"])
+          "--values", "10", "100", "--jobs", "2"])
     with open(out / "balayage.csv", encoding="utf-8") as fh:
         rows = list(csv.DictReader(fh))
     assert [float(r["physics.reynolds"]) for r in rows] == [10.0, 100.0]
@@ -101,3 +101,46 @@ tol = 1e-6
     cd = [abs(float(r["Cd_lid"])) for r in rows]
     assert np.all(np.isfinite(cd)) and cd[0] > 5 * cd[1]
     assert (out / "balayage.png").exists()
+
+
+def _small_cavity():
+    return {"mesh": {"type": "rectangle", "x0": 0.0, "x1": 1.0, "y0": 0.0, "y1": 1.0,
+                     "nx": 12, "ny": 12,
+                     "names": {"left": "walls", "right": "walls", "bottom": "walls",
+                               "top": "lid"}},
+            "physics": {"nu": 0.01, "reference_velocity": 1.0},
+            "boundary": {"lid": {"type": "wall", "U": [1.0, 0.0]}, "walls": {"type": "wall"}},
+            "solver": {"max_iter": 2000, "tol": 1e-6},
+            "output": {"plots": False, "vtk": False}}
+
+
+def test_parallel_sweep_equals_serial(tmp_path):
+    """jobs = 2 (processus « spawn ») : sans continuation, résultats identiques au bit près
+    au calcul séquentiel ; avec continuation (2 blocs contigus), identiques au calcul
+    séquentiel de chaque bloc et égaux au balayage séquentiel à la tolérance près."""
+    cfg, vals = _small_cavity(), "0.01, 0.02, 0.04"
+    seen = []
+    ser = run_sweep(cfg, "physics.nu", vals, out_dir=tmp_path / "s", continuation=False,
+                    verbose=False, plot=False)
+    par = run_sweep(cfg, "physics.nu", vals, out_dir=tmp_path / "p", continuation=False,
+                    verbose=False, plot=False, jobs=2, on_point=seen.append)
+    assert par == ser                                  # dans l'ordre des valeurs
+    assert sorted(r["physics.nu"] for r in seen) == [0.01, 0.02, 0.04]
+    assert (tmp_path / "p" / "balayage.csv").exists()
+    cser = run_sweep(cfg, "physics.nu", vals, out_dir=tmp_path / "cs", verbose=False,
+                     plot=False)
+    cpar = run_sweep(cfg, "physics.nu", vals, out_dir=tmp_path / "cp", verbose=True,
+                     plot=False, jobs=2)
+    # blocs [0.01, 0.02] et [0.04] : ce dernier part de l'état initial
+    assert cpar[:2] == cser[:2] and cpar[2] == ser[2]
+    assert all(r["converged"] for r in cpar)
+    assert cpar[2]["Cd_lid"] == pytest.approx(cser[2]["Cd_lid"], rel=1e-4)
+    assert (tmp_path / "cp" / "nu_p0_04" / "journal.txt").is_file()   # journal par point
+
+
+def test_parallel_sweep_stop(tmp_path):
+    """Arrêt demandé : plus aucun point lancé, les points en cours s'arrêtent."""
+    rows = run_sweep(_small_cavity(), "physics.nu", "0.01, 0.02, 0.04, 0.08",
+                     out_dir=tmp_path, continuation=False, verbose=False, plot=False, jobs=2,
+                     should_stop=lambda: True)
+    assert len(rows) <= 2 and not any(r["converged"] for r in rows)
