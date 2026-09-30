@@ -180,3 +180,10 @@ def test_intel_backend_matches_cpu_if_available():
             s.run_steady(max_iter=10, tol=1e-30)
         res[be] = s.to_cpu()
     assert np.max(np.abs(res["cpu"].U - res["intel:cpu"].U)) < 1e-10
+
+
+def test_coupled_rejected_on_gpu():
+    m = cavity_mesh(8)
+    with pytest.raises(ValueError, match="CPU seulement"):
+        Solver2D(m, 0.01, {"lid": {"type": "wall", "U": [1, 0]}, "walls": {"type": "wall"}},
+                 settings=Settings(backend="fakegpu", algorithm="coupled"))

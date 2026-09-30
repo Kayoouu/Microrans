@@ -105,3 +105,13 @@ def test_transition_example_roundtrip(win):
     win._store_forms()
     assert win.cfg["physics"]["model"] == "sst_gamma"
     assert win.cfg["solver"]["convection_turb"] == "linearUpwindLimited"
+
+
+def test_coupled_algorithm_roundtrip(win):
+    from microrans.cli import examples_dir
+    from microrans.mesh2d.builder import load_config
+    cfg = load_config(examples_dir() / "cavite_re100.toml")
+    cfg["solver"]["algorithm"] = "coupled"
+    win.load_cfg(cfg)
+    win._store_forms()
+    assert win.cfg["solver"]["algorithm"] == "coupled"

@@ -568,9 +568,15 @@ class MainWindow(QMainWindow):
         self.mode_combo.currentIndexChanged.connect(self._mode_changed)
         f.addRow(self.mode_combo)
         lay.addWidget(box)
-        self.box_steady, f = _form("Stationnaire : SIMPLE / SIMPLEC")
-        f.addRow("Algorithme", B.combo(("solver", "algorithm"), [("SIMPLEC", "SIMPLEC (recommandé)"),
-                                                                   ("SIMPLE", "SIMPLE")], "SIMPLEC"))
+        self.box_steady, f = _form("Stationnaire : SIMPLE / SIMPLEC / couplé")
+        f.addRow("Algorithme", B.combo(("solver", "algorithm"), [
+            ("SIMPLEC", "SIMPLEC (recommandé)"), ("SIMPLE", "SIMPLE"),
+            ("coupled", "Couplé pression-vitesse (CPU)")], "SIMPLEC"))
+        f.addRow(_note("Couplé : vitesse et pression résolues ensemble. Mesuré : 2 à 27 fois "
+                       "plus rapide en laminaire (plus le maillage est fin, plus le gain est "
+                       "grand), 1,4 à 5 fois en turbulent ; plus lent en transition (SST-γ), "
+                       "sans gain en convection naturelle. Mémoire : ~1 Go pour 100 000 "
+                       "cellules."))
         f.addRow("Sous-relaxation U (vide = auto)", B.sci(("solver", "relax_U"), None, True, "auto"))
         f.addRow("Sous-relaxation turbulence", B.sci(("solver", "relax_turb"), 0.8))
         f.addRow("Itérations max", B.int(("solver", "max_iter"), 3000, 1))

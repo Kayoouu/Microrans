@@ -6,8 +6,8 @@
 Outil de simulation d'écoulements **incompressibles turbulents ou laminaires**, en Python :
 
 - **2D plan ou axisymétrique** (tuyaux, jets, corps de révolution) : volumes finis sur
-  maillages structurés, non structurés ou hybrides ; stationnaire (SIMPLE/SIMPLEC) et
-  instationnaire (PIMPLE implicite ou Runge-Kutta explicite) ; thermique (convection forcée et
+  maillages structurés, non structurés ou hybrides ; stationnaire (SIMPLE/SIMPLEC ou solveur
+  **couplé** pression-vitesse) et instationnaire (PIMPLE implicite ou Runge-Kutta explicite) ; thermique (convection forcée et
   naturelle, Boussinesq) ; scalaires transportés (concentration, polluant, âge du fluide) ;
   fluides non newtoniens (loi puissance, Carreau, Cross, Bingham, Herschel-Bulkley, Casson) ;
   zones poreuses (filtres, échangeurs : Darcy-Forchheimer, anisotropes) ; rotation propre
@@ -165,6 +165,7 @@ scalars = { c = 1.0 }      # valeur imposée (défaut 0 en entrée, flux nul ail
 restart = "results/grossier/checkpoint.npz"   # optionnel : repartir d'un calcul
 [solver]
 mode = "transient"         # steady | transient
+algorithm = "SIMPLEC"      # stationnaire : SIMPLEC | SIMPLE | coupled (couplé, § 5.5)
 time_scheme = "auto"       # auto | euler | backward | crankNicolson | rk1..rk4 | ab2
 dt = 0.01
 t_end = 10.0
@@ -203,7 +204,7 @@ API Python : `from microrans.fv2d import Solver2D, Settings`, `from microrans.me
 | Maillage | multi-blocs avec progression et arêtes courbes ; O-grid ; triangles (DistMesh) ; hybride couches limites + triangles ; qualité `checkMesh` | blockMesh, Gmsh, « inflation » Fluent |
 | Formats | Gmsh `.msh` (v2.2/v4.1), SU2, VTK, OpenFOAM `polyMesh` | — |
 | Discrétisation | volumes finis colocalisés, polygones quelconques, Green-Gauss, correction non orthogonale limitée, convection `upwind` / `linearUpwind` | OpenFOAM |
-| Couplage p-U | SIMPLE / SIMPLEC (stationnaire), PIMPLE (instationnaire), Rhie-Chow forme HbyA, `ddtCorr` cohérent (Tuković et al. 2018) | OpenFOAM |
+| Couplage p-U | SIMPLE / SIMPLEC ou **couplé** (u, v, p dans un seul système, flux de Rhie-Chow à diagonale non relaxée — Majumdar 1988) en stationnaire, PIMPLE (instationnaire), Rhie-Chow forme HbyA, `ddtCorr` cohérent (Tuković et al. 2018) | OpenFOAM ; « Coupled » de Fluent, pUCoupledFoam (foam-extend) |
 | Temps | Euler, BDF2 à pas variable, Crank-Nicolson, RK1–RK4 et AB2 à projection, pas adaptatif sur le Courant, choix automatique | OpenFOAM, SU2, codes DNS |
 | Solveurs linéaires | multigrille algébrique par agrégation (hiérarchie réutilisée), CG flexible, BiCGStab, LU creuse | GAMG d'OpenFOAM, PETSc |
 | Turbulence | SA, k-ε LS, k-ω 2006, SST 2003 (formes NASA TMR), sources linéarisées par Newton | NASA TMR |
@@ -343,14 +344,85 @@ deux côtés, écart affiché). Sélection d'un matériel Intel précis : `backe
   pour rien, testé avec l'AMG). Option `pseudo_cfl` (pas local fondé sur le seul Courant
   convectif, comme SU2) + `relax_turb = 1` : 111 itérations (0.8 s) à 384 cellules. **Mais**
   mesuré sur les cas externes (cavité, cylindre, plaques, NACA, convection naturelle) elle
-  converge plus lentement que SIMPLEC relaxé : elle reste une option, pas le défaut. Le vrai
-  remède général serait un solveur couplé pression-vitesse (non implémenté).
+  converge plus lentement que SIMPLEC relaxé : elle reste une option, pas le défaut. Le
+  solveur couplé (§ 5.5) fait mieux en laminaire, mais pas quand ce sont les équations de
+  turbulence qui limitent la convergence.
 - **Thermique / Boussinesq** : la force est évaluée **aux faces** dans le flux de Rhie-Chow et
   la condition de pression pariétale vaut ∂p/∂n = f·n (`fixedFluxPressure`) : une cavité
   stablement stratifiée reste au repos (|U| < 1e-6 ; 15 avec un gradient de pression nul, d'où
-  la correction).
+  la correction). Sous-relaxation de la température : `relax_T = 1` converge 3 à 5 fois plus
+  vite en convection naturelle (de Vahl Davis, SIMPLEC : Ra = 10³ 452 → 153 itérations,
+  10⁵ 264 → 85, 10⁶ 650 → 124, Nusselt identique) mais **diverge** sur une stratification
+  stable (Ra = 10⁵) : le défaut reste 0.9, l'exemple de convection naturelle utilise 1.
 - **Turbulence** : termes sources linéarisés par Newton (partie explicite ≥ 0, puits implicite),
   indispensable aux grands pas de temps.
+
+### 5.5 Solveur couplé pression-vitesse (`[solver] algorithm = "coupled"`)
+
+À chaque itération, u, v et p sont résolus **ensemble** dans un seul système creux
+(3 inconnues par cellule, rangées cellule par cellule) au lieu d'alterner prédiction de la
+vitesse et correction de pression. Mêmes équations discrètes que SIMPLE ; la ligne de
+continuité est le bilan des flux de Rhie-Chow calculés avec la diagonale **physique**
+(non relaxée, sans pseudo-temps, Majumdar 1988) : la solution convergée ne dépend ni de
+`relax_U` ni de `pseudo_cfl` (vérifié à 1e-6 près, `tests/test_coupled.py`). Turbulence,
+température et scalaires restent résolus séparément après chaque itération (comme le
+« Coupled » de Fluent). Résolution : LU creuse (SuperLU, ordre minimum-degré, pivots sur
+la diagonale) **réutilisée** comme préconditionneur de GMRES aux itérations suivantes tant
+qu'elle reste efficace (1 à 27 factorisations par calcul) ; ILU au-delà de 200 000
+cellules (non mesuré). CPU seulement. `relax_U` automatique : 1 (0.9 avec flottabilité).
+
+Mesures sur tous les exemples stationnaires (un cœur ; SIMPLEC avec ses réglages par
+défaut, couplé avec `relax_U = 1` ; temps de calcul hors maillage) :
+
+| Cas | Cellules | SIMPLEC | Couplé | Gain |
+|---|---:|---:|---:|---:|
+| Cavité Re = 100 | 4 096 | 351 it., 3.9 s | 14 it., 0.4 s | ×10 |
+| Cylindre Re = 20 | 6 144 | 182 it., 3.5 s | 19 it., 0.8 s | ×4.3 |
+| Sphère Re = 100 (axisymétrique) | 4 096 | 101 it., 1.4 s | 15 it., 0.4 s | ×3.2 |
+| Tuyau, convection forcée | 2 880 | 174 it., 2.7 s | 28 it., 0.6 s | ×4.7 |
+| Disque actuateur (éolienne) | 7 200 | 156 it., 3.8 s | 18 it., 0.8 s | ×5.0 |
+| Filtre poreux | 3 840 | 140 it., 2.1 s | 20 it., 0.5 s | ×4.1 |
+| Mélange de deux courants (scalaires) | 5 120 | 202 it., 7.0 s | 83 it., 2.8 s | ×2.5 |
+| Sang, Carreau (non newtonien) | 2 400 | 119 it., 1.0 s | 29 it., 0.4 s | ×2.3 |
+| Tuyau turbulent SST | 128 | 2 663 it., 9.7 s | 516 it., 1.9 s | ×5.2 |
+| NACA 0012, SA | 8 192 | 834 it., 37.4 s | 170 it., 11.7 s | ×3.2 |
+| Plaque plane SST, lois de paroi | 2 688 | 231 it., 3.6 s | 101 it., 2.4 s | ×1.5 |
+| Plaque plane SA | 7 168 | 291 it., 9.3 s | 109 it., 6.5 s | ×1.4 |
+| Plaque plane, transition SST-γ (T3A) | 13 760 | 448 it., 54.1 s | 503 it., 74.1 s | **×0.73** |
+| Convection naturelle Ra = 10⁵ (`relax_T = 1`, `relax_U` auto) | 2 304 | 85 it., 0.9 s | 54 it., 0.95 s | **×0.94** |
+
+Taille du maillage (laminaire) : le nombre d'itérations couplées ne dépend presque pas du
+maillage, celui de SIMPLEC augmente.
+
+| Cas | Cellules | SIMPLEC | Couplé | Gain | Mémoire (couplé, processus) |
+|---|---:|---:|---:|---:|---:|
+| Cavité Re = 100 | 16 384 | 1 135 it., 54.6 s | 13 it., 2.0 s | ×27 | 0.3 Go |
+| Cylindre Re = 20 | 17 920 | 441 it., 24.6 s | 20 it., 2.7 s | ×9 | 0.3 Go |
+| Cylindre Re = 20 | 40 960 | 844 it., 102 s | 21 it., 6.9 s | ×15 | 0.5 Go |
+| Cavité Re = 100 | 60 025 | — | 14 it., 13.4 s | — | 0.65 Go |
+| Cavité Re = 100 | 90 000 | — | 13 it., 16.7 s | — | 0.94 Go |
+| Cavité Re = 100 | 160 000 | — | 13 it., 38.7 s | — | 1.65 Go |
+
+Résultats identiques à l'erreur de discrétisation près : efforts, Nusselt et flux à
+0.05 % ou mieux, sauf le NACA (C_d +0.9 %, C_l −0.24 %). Cet écart vient de SIMPLEC, dont
+la dissipation de Rhie-Chow dépend de `relax_U` : NACA SIMPLEC C_d = 0.012548 à
+`relax_U = 0.7` (défaut de ce maillage), 0.012475 à 0.5 ; couplé 0.012660 à `relax_U = 1`
+comme à 0.8.
+
+**Ce qu'il faut en retenir :**
+- **Laminaire** : 2 à 27 fois plus rapide, et le gain **augmente avec le maillage**.
+- **Turbulent** : 1.4 à 5 fois plus rapide ; ce sont les équations de turbulence,
+  toujours résolues séparément, qui fixent le nombre d'itérations. **Plus lent** sur la
+  transition (T3A) : l'équation de γ domine et une itération couplée coûte ~20 % de plus.
+- **Convection naturelle** : pas de gain (température résolue à part). Avec
+  `relax_U = 1` et `relax_T = 1` le couplé ne converge pas (cycle) ; d'où `relax_U = 0.9`
+  automatique avec flottabilité. de Vahl Davis, `relax_T = 1` : Ra = 10³ 151 it. / 2.0 s
+  (SIMPLEC 153 / 1.6 s), 10⁶ (96²) 120 it. / 10.3 s (SIMPLEC 124 / 5.1 s).
+- **Mémoire** : factorisation LU, ~1 Go pour 100 000 cellules ; comparable à SIMPLEC
+  jusqu'à ~40 000 cellules, au-delà plus gourmand.
+- **Défaut** : SIMPLEC reste l'algorithme par défaut (validé depuis plus longtemps,
+  compatible cartes graphiques) ; le couplé est **conseillé pour le laminaire et le
+  turbulent sans transition**.
 
 ---
 
@@ -530,8 +602,12 @@ l'arrondi près (~1e-13), et identiques quel que soit le nombre de fils.
 2. **Cartes graphiques non testées sur matériel réel** (§ 5.3) ; exécutables CPU seulement.
 3. **SIMPLE** converge lentement sur les maillages très fins et étirés (O(N²) itérations) ;
    l'option `pseudo_cfl` règle le cas des écoulements dominés par la diffusion (canal) mais
-   pas en général (§ 5.4) : pas de solveur couplé pression-vitesse. Sur maillages non
-   orthogonaux, les résidus plafonnent souvent vers 1e-5 — utiliser `monitor_tol`.
+   pas en général (§ 5.4). Le **solveur couplé** (§ 5.5) règle le laminaire, mais pas la
+   convection naturelle ni la transition (température, turbulence et γ restent résolues à
+   part) ; CPU seulement, mémoire ~1 Go pour 100 000 cellules, ILU au-delà de 200 000
+   cellules non testée. SIMPLEC : les efforts convergés dépendent un peu de `relax_U`
+   (NACA : C_d −0.6 % entre 0.7 et 0.5), pas le couplé. Sur maillages non orthogonaux,
+   les résidus plafonnent souvent vers 1e-5 — utiliser `monitor_tol`.
 4. **Incompressible uniquement**, pas de LES/DES. **Transition (`sst_gamma`)** : validée
    seulement sur plaques planes sans gradient de pression ; début de transition bien placé
    (T3A +3 %, T3A- −6 %) mais transition **trop raide** (mi-transition T3A 16 % trop tôt,
@@ -599,8 +675,9 @@ Maillage en C et validation NASA TMR (profils) ; étude de convergence en mailla
 parallélisme multi-cœur (Numba) ou CuPy validé sur carte ; transition avec gradient de
 pression et décollement laminaire (T3C, profils à bas Reynolds), rugosité, crossflow ;
 corrections de courbure et de rotation, loi de paroi thermique et k-ε haut-Reynolds ;
-viscoélasticité ; compressible (Roe/HLLC, RK SSP) ; en
-option, plus tard : solveur couplé pression-vitesse (type « Coupled » de Fluent).
+viscoélasticité ; compressible (Roe/HLLC, RK SSP)  ; solveur
+couplé : énergie et turbulence dans le système couplé, préconditionneur multigrille par blocs
+pour les grands maillages.
 
 ---
 
@@ -622,6 +699,7 @@ microrans/
   fv2d/
     fvm.py               opérateurs volumes finis, assemblage CSR
     solver.py            SIMPLE(C), PIMPLE, projection RK/AB2, thermique, CL, efforts
+    coupled.py           solveur couplé pression-vitesse (LU réutilisée + GMRES)
     case.py post.py      fichiers de cas, sorties, figures
     restart.py           sauvegarde / reprise, interpolation sur un autre maillage
     fmg.py               démarrage multigrille (maillages grossiers reconstruits)
@@ -633,7 +711,7 @@ microrans/
   gui/                   interface PySide6 (app.py, widgets.py)
   examples/              cas fournis (microrans examples)
 packaging/               PyInstaller (microrans.spec) : exécutables GUI + CLI
-tests/                   pytest (240 tests : vérification, validation, GUI hors écran, faux GPU)
+tests/                   pytest (250 tests : vérification, validation, GUI hors écran, faux GPU)
 .github/workflows/       tests (Python 3.10 / 3.12) ; exécutables Windows / Linux
 ```
 

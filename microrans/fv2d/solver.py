@@ -103,7 +103,8 @@ def canonical_time_scheme(name: str) -> str:
 class Settings:
     """Paramètres numériques (valeurs par défaut raisonnables pour débuter)."""
     algorithm: str = "SIMPLEC"            # SIMPLE | SIMPLEC | coupled (stationnaire)
-    relax_U: float | None = None          # None = auto : 0.9 (maillage ~orthogonal) / 0.7
+    relax_U: float | None = None          # None = auto : 0.9 (maillage ~orthogonal) / 0.7 ;
+                                          # couplé : 1 (0.9 avec flottabilité)
     relax_p: float = 1.0                  # SIMPLE : ~0.3 ; SIMPLEC : 1
     relax_turb: float = 0.8
     # stationnaire pseudo-transitoire : pas de pseudo-temps global (remplace relax_U/relax_T ;
@@ -113,6 +114,9 @@ class Settings:
     convection_U: str = "linearUpwind"    # upwind | linearUpwind
     convection_turb: str = "upwind"
     convection_T: str = "linearUpwind"
+    # température. 1 converge 3 à 5 fois plus vite en convection naturelle (de Vahl Davis,
+    # SIMPLEC : Ra = 10³ 452 → 153 itérations, 10⁵ 264 → 85, 10⁶ 650 → 124, même Nu) mais
+    # diverge sur une stratification stable (Ra = 10⁵, test_energy) : 0.9 par défaut
     relax_T: float = 0.9
     # scalaires passifs : sans effet sur l'écoulement, donc sans sous-relaxation (la
     # relaxation implicite converge en O(N²) itérations quand la diffusion domine)
@@ -369,10 +373,22 @@ class Solver2D:
         fvm = self.fvm
         self.backend, self.xp = fvm.backend, fvm.xp
         xp = self.xp
+        if self.settings.algorithm.upper() == "COUPLED" and self.backend.is_gpu:
+            raise ValueError("[solver] algorithm = \"coupled\" : CPU seulement (backend = "
+                             "\"cpu\") ; sur carte graphique, utiliser SIMPLEC.")
         if self.settings.relax_U is None:
-            # SIMPLEC à 0.9 peut diverger sur maillage très non orthogonal (triangles, hybride)
-            nonorth = mesh.quality()["non_orthogonality_max_deg"]
-            self.settings.relax_U = 0.9 if nonorth < 30.0 else 0.7
+            if self.settings.algorithm.upper() == "COUPLED":
+                # couplé : la solution ne dépend pas de relax_U (voir coupled.py) ; 1
+                # converge le plus vite sur les cas d'exemple, sauf avec la flottabilité
+                # (température résolue à part) : cycle sans convergence à 1, 0.9 converge
+                # (convection naturelle Ra = 10⁵ : 54 itérations)
+                buoyant = self.energy is not None and bool(self.energy.get("beta"))
+                self.settings.relax_U = 0.9 if buoyant else 1.0
+            else:
+                # SIMPLEC à 0.9 peut diverger sur maillage très non orthogonal (triangles,
+                # hybride)
+                nonorth = mesh.quality()["non_orthogonality_max_deg"]
+                self.settings.relax_U = 0.9 if nonorth < 30.0 else 0.7
         kindU_h, U_fixed_h, kindP_h = self._setup_bc()
         uref = reference_velocity
         if uref is None:
@@ -1409,8 +1425,10 @@ class Solver2D:
             if coupled:
                 # vitesse et pression résolues ensemble (voir coupled.py)
                 from .coupled import coupled_step
-                coupled_step(self, eqs, relax=1.0 if (s.pseudo_dt or s.pseudo_cfl)
-                             else s.relax_U)
+                if s.pseudo_dt or s.pseudo_cfl:
+                    coupled_step(self, eqs, a0=a0)
+                else:
+                    coupled_step(self, eqs, relax=s.relax_U)
             else:
                 self._pressure_correction(eqs, relax_p=relax_p, rtol=0.01)
             if s.pseudo_dt or s.pseudo_cfl:

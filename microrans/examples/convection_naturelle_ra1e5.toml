@@ -42,6 +42,8 @@ type = "wall"              # sans T ni q : paroi adiabatique
 mode = "steady"
 max_iter = 4000
 tol = 1e-6
+relax_T = 1.0              # 3 fois plus rapide que le défaut 0.9 ici (85 itérations au lieu
+                           # de 264) ; garder 0.9 pour une stratification stable
 
 [output]
 directory = "results/convection_naturelle"
