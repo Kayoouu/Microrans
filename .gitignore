@@ -12,3 +12,4 @@ results/
 *.key
 *.npz
 microrans_resultats/
+.claude/
