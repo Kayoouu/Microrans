@@ -85,6 +85,7 @@ microrans run2d cylindre_re100_urans --set solver.time_scheme=rk3 --set solver.a
 microrans run2d cylindre_re100_urans --continue --set solver.t_end=200   # poursuivre un calcul
 microrans run2d mon_cas_fin.toml --restart results/mon_cas/checkpoint.npz # partir d'un autre calcul
 microrans polar naca0012_polaire --alpha -4 14 2      # polaire Cl(α), Cd(α), Cm(α)
+microrans polar naca0012_polaire --alpha -4 14 2 -j 4 # idem, 4 points à la fois (4 cœurs)
 microrans run2d sphere_re100_axisym                   # axisymétrique : sphère (2 s)
 microrans run2d tuyau_thermique                       # tuyau chauffé, Nusselt local
 microrans sweep cylindre_re20 --param physics.reynolds --values 10 20 40  # balayage
@@ -172,6 +173,7 @@ fmg_levels = 0             # démarrage multigrille (stationnaire) : niveaux gro
 [sweep]                    # optionnel : microrans sweep <cas>
 parameter = "physics.angle_of_attack"
 range = "-4:14:2"          # ou values = [0, 5, 10]
+jobs = 1                   # points calculés en parallèle (0 = tous les cœurs)
 [output]
 moment_center = [0.25, 0.0]   # Cm autour du quart de corde
 nusselt = "bulk"           # conduites : Nu local sur la température de mélange
