@@ -1038,6 +1038,7 @@ class CompressibleSolver2D:
                 break
         self.residual(self.Q, s.order, self.iterations_total + it, store=True)
         self.converged = converged
+        self.cfl_cuts_done = cuts                # réductions du plafond de CFL (implicite)
         self.iterations = it
         self.iterations_total += it
         self.wall_time = time.perf_counter() - t0

@@ -368,3 +368,19 @@ def test_farfield_vortex_correction_removes_domain_size_effect(tmp_path):
             cl[R, vortex] = s["airfoil"]["Cl"]
     assert cl[100.0, True] == pytest.approx(cl[10.0, True], rel=5e-3)
     assert cl[100.0, False] > 1.02 * cl[10.0, False]
+
+
+def test_implicit_cfl_cap_kept_during_transonic_startup():
+    """NACA 0012, M = 0.8, 192 × 64 : au démarrage les résidus stagnent pendant que le choc
+    se déplace. L'ancienne règle divisait alors le plafond de CFL par 2 (dès l'itération
+    ~60, jusqu'à 3 fois, sans retour : calcul non convergé en 3000 itérations) ; il n'est
+    réduit que si la solution oscille (cycle limite), pas quand elle dérive."""
+    from microrans.cli import examples_dir
+    from microrans.fv2d.compressible_case import build_compressible_solver
+    from microrans.mesh2d.builder import load_config
+    cfg = load_config(examples_dir() / "compressible_naca0012_transsonique.toml")
+    cfg["solver"].update(max_iter=120, tol=1e-12, monitor_tol=None)
+    s = build_compressible_solver(cfg, examples_dir())
+    s.run_steady()
+    assert s.cfl_cuts_done == 0
+    assert max(s.history[-1][k] for k in ("rho", "rhoU", "rhoV", "rhoE")) < 1e-2
