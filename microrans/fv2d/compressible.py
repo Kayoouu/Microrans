@@ -43,7 +43,9 @@ Choix numériques (et pourquoi)
       creuse par blocs, résolue par GMRES + ILU ; CFL croissant) — « implicit ».
 - Conditions aux limites (par état fantôme, puis le même solveur de Riemann à la face) :
     farfield           invariants de Riemann 1D normaux (Blazek § 8.4 / Jameson 1983) ;
-                       entrée / sortie, subsonique / supersonique selon la vitesse normale
+                       entrée / sortie, subsonique / supersonique selon la vitesse normale ;
+                       option vortex = [x, y] : correction de tourbillon ponctuel (profils
+                       portants, subsonique à l'infini ; voir _vortex_update)
     supersonic_inlet   état imposé (écoulement amont par défaut, ou mach / p / T / angle)
     inlet              entrée subsonique : pression totale p0, température totale T0,
                        direction ; invariant sortant u_n + 2c/(γ−1) extrapolé (Blazek § 8.5)
@@ -528,6 +530,7 @@ class CompressibleSolver2D:
                 raise ValueError(f"[boundary.{name}] : patch absent du maillage "
                                  f"({sorted(names)}).")
         C = m.face_centers[self.ni:]
+        vortex = []
         for patch in m.patches:
             sl = slice(patch.start - self.ni, patch.start - self.ni + patch.size)
             self.patch_slices[patch.name] = sl
@@ -545,6 +548,12 @@ class CompressibleSolver2D:
             if bkind in ("farfield", "supersonic_inlet"):
                 st = _state_from_spec(spec, fs)
                 self.bc_state[:, sl] = np.array([st.rho, st.u, st.v, st.p])[:, None]
+            if bkind == "farfield" and spec.get("vortex") is not None:
+                c = np.asarray(spec["vortex"], float).reshape(-1)
+                if c.size != 2:
+                    raise ValueError(f"[boundary.{patch.name}] vortex = [x, y] (point "
+                                     "d'application du tourbillon, ex. quart de corde).")
+                vortex.append((sl, c))
             if bkind == "inlet":
                 self.bc_p0[sl] = _value(spec.get("p0", spec.get("total_pressure", fs.p0)),
                                         x, y)
@@ -567,6 +576,17 @@ class CompressibleSolver2D:
                     self.bc_Uw[1, sl] = _value(spec["U"][1], x, y)
         if np.any(kind < 0):
             raise ValueError("Faces frontières sans condition aux limites.")
+        self._vortex = None
+        if vortex:
+            if fs.mach >= 1.0 or fs.speed <= 0.0:
+                raise ValueError("Correction de tourbillon (vortex) : écoulement amont "
+                                 "subsonique et non nul seulement.")
+            faces = np.concatenate([np.arange(nb)[sl] for sl, _ in vortex])
+            ctr = np.concatenate([np.tile(c, (len(np.arange(nb)[sl]), 1)) for sl, c in vortex])
+            d = C[faces] - ctr
+            self._vortex = {"faces": faces, "r": np.hypot(d[:, 0], d[:, 1]),
+                            "theta": np.arctan2(d[:, 1], d[:, 0]),
+                            "base": self.bc_state[:, faces].copy(), "gamma": 0.0}
         self.kind = kind
         self._bc = {c: np.nonzero(kind == c)[0] for c in range(7)}
         self._bc = {c: i for c, i in self._bc.items() if len(i)}
@@ -631,6 +651,43 @@ class CompressibleSolver2D:
                 G[2, s] = v + dq * ny[s]
                 G[3, s] = pb
         return G
+
+    def _vortex_update(self):
+        """Correction de tourbillon ponctuel du champ lointain (Thomas & Salas 1986, AIAA J.
+        24(7) ; Blazek, « Computational Fluid Dynamics », 3e éd., § 8.4) : l'état amont des
+        faces « farfield » reçoit la vitesse induite par la circulation Γ = L′/(ρ∞ U∞)
+        (Kutta-Joukowski, L′ = portance actuelle des parois), avec la correction de
+        Prandtl-Glauert :
+            u = u∞ + Γβ/(2πr) sin θ / (1 − M∞² sin²(θ − α)),
+            v = v∞ − Γβ/(2πr) cos θ / (1 − M∞² sin²(θ − α)),   β = √(1 − M∞²),
+        pression et masse volumique déduites à enthalpie totale et entropie amont. Sans
+        elle, la portance dépend de la taille du domaine (NACA 0012, M = 0.8 : +2 % entre
+        30 et 100 cordes) ; avec, elle devient ~indépendante de la distance."""
+        vx = self._vortex
+        fs, g = self.fs, self.gas.gamma
+        U = fs.speed
+        ed = np.array([fs.u, fs.v]) / U
+        el = np.array([-ed[1], ed[0]])
+        walls = [p for p, k in self.bc_types.items() if k in ("wall", "slip_wall")]
+        # efforts de l'itéré précédent (flux mémorisés par residual(store=True)) : pas de
+        # résidu supplémentaire
+        lift = float(sum(f["total"] @ el for f in self.forces(walls).values())) if walls \
+            else 0.0
+        gam = lift / (fs.rho * U)
+        vx["gamma"] = gam
+        M = fs.mach
+        beta = np.sqrt(1.0 - M * M)
+        alpha = np.arctan2(fs.v, fs.u)
+        th, r = vx["theta"], np.maximum(vx["r"], 1e-300)
+        k = gam * beta / (2.0 * np.pi * r) / (1.0 - (M * np.sin(th - alpha)) ** 2)
+        base = vx["base"]
+        u = base[1] + k * np.sin(th)
+        v = base[2] - k * np.cos(th)
+        c2i = g * base[3] / base[0]
+        c2 = np.maximum(c2i + 0.5 * (g - 1.0) * (base[1] ** 2 + base[2] ** 2 - u * u - v * v),
+                        1e-6 * c2i)
+        p = base[3] * (c2 / c2i) ** (g / (g - 1.0))
+        self.bc_state[:, vx["faces"]] = np.vstack([g * p / c2, u, v, p])
 
     def _farfield(self, W, Winf, nx, ny):
         """Invariants de Riemann normaux (Blazek § 8.4 ; Jameson & Baker 1983)."""
@@ -895,7 +952,9 @@ class CompressibleSolver2D:
         for it in range(1, max_iter + 1):
             gi = self.iterations_total + it
             order = 1 if gi <= s.first_order_iter else s.order
-            R = self.residual(self.Q, order, gi)
+            if self._vortex is not None and it > 1:
+                self._vortex_update()                  # Γ de l'itéré précédent
+            R = self.residual(self.Q, order, gi, store=self._vortex is not None)
             rel = self._relative(self.residual_norms(R))
             if stepper is not None:
                 # CFL adaptatif : croît tant que les résidus baissent, réduit s'ils

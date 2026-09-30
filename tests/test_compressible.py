@@ -339,3 +339,32 @@ def test_bad_boundary_type_and_missing_patch():
                                              ("left", "right", "bottom", "top")})
     with pytest.raises(ValueError, match="manquantes"):
         CompressibleSolver2D(mesh, gas, fs, {"left": {"type": "farfield"}})
+
+
+def test_farfield_vortex_correction_removes_domain_size_effect(tmp_path):
+    """NACA 0012, M = 0.5, α = 1.25°, maillage grossier : sans correction, C_l dépend de la
+    distance du champ lointain (mesuré : 0.1590 à 10 cordes, 0.1651 à 100) ; avec le
+    tourbillon ponctuel, à 0.2 % près (0.1655 / 0.1658)."""
+    import math
+
+    from microrans.cli import examples_dir
+    from microrans.fv2d.case import run_case
+    from microrans.mesh2d.builder import load_config
+    cl = {}
+    for R in (10.0, 100.0):
+        for vortex in (False, True):
+            cfg = load_config(examples_dir() / "compressible_naca0012_transsonique.toml")
+            nr = int(round(24 * math.log(R / 0.002) / math.log(30 / 0.002)))
+            cfg["mesh"].update(n_around=64, n_radial=nr, farfield_radius=R, first_height=6e-3)
+            cfg["flow"]["mach"] = 0.5
+            cfg["solver"].update(max_iter=600, tol=1e-7, monitor_tol=1e-5)
+            if vortex:
+                cfg["boundary"]["farfield"]["vortex"] = [0.25, 0.0]
+            else:
+                cfg["boundary"]["farfield"].pop("vortex", None)
+            cfg["output"] = {"vtk": False, "checkpoint": False, "forces": ["airfoil"]}
+            s = run_case(cfg, examples_dir(), out_dir=tmp_path, verbose=False, plot=False)
+            assert s["converged"]
+            cl[R, vortex] = s["airfoil"]["Cl"]
+    assert cl[100.0, True] == pytest.approx(cl[10.0, True], rel=5e-3)
+    assert cl[100.0, False] > 1.02 * cl[10.0, False]

@@ -32,6 +32,8 @@ type = "slip_wall"
 
 [boundary.farfield]
 type = "farfield"
+vortex = [0.25, 0.0]         # correction de tourbillon ponctuel (quart de corde) : C_l
+                             # indépendant de la taille du domaine
 
 [solver]
 mode = "steady"
