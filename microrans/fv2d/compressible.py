@@ -224,8 +224,10 @@ def roe_flux(WL, WR, nx, ny, g, eps: float = 0.1):
     l1, l2, l3 = np.abs(q - c), np.abs(q), np.abs(q + c)
     if eps > 0.0:
         d = eps * c
-        l1 = np.where(l1 < d, 0.5 * (l1 * l1 + d * d) / d, l1)
-        l3 = np.where(l3 < d, 0.5 * (l3 * l3 + d * d) / d, l3)
+        # (λ² + δ²)/(2δ) si |λ| < δ, écrit sans branchement : |λ| + max(δ − |λ|, 0)²/(2δ)
+        h1, h3 = np.maximum(d - l1, 0.0), np.maximum(d - l3, 0.0)
+        l1 = l1 + 0.5 * h1 * h1 / d
+        l3 = l3 + 0.5 * h3 * h3 / d
     a1 = l1 * (dp - r * c * dq) / (2.0 * c2)
     a2 = l2 * (dr - dp / c2)
     a3 = l3 * (dp + r * c * dq) / (2.0 * c2)
@@ -300,6 +302,7 @@ class CompressibleSettings:
     steady_scheme: str = "rk3"            # rk3 (SSP, pas local) | rk5 | implicit
     cfl_max: float = 1e3                  # implicite : CFL atteint progressivement
     cfl_growth: float = 1.2               # implicite : facteur par itération
+    linear_sweeps: int = 2                # implicite : balayages de Gauss-Seidel symétrique
     first_order_iter: int = 0             # itérations d'ordre 1 au départ (démarrage robuste)
     viscous_factor: float = 2.0           # C_v du pas de temps visqueux
     max_iter: int = 5000
@@ -344,6 +347,10 @@ class CompressibleSolver2D:
     mesh : Mesh2D ; gas : Gas ; freestream : State (écoulement de référence, sert aussi de
     valeur par défaut aux conditions aux limites) ; boundaries : {patch: {type, …}} ;
     initial : None (écoulement amont partout) ou fonction (x, y) -> (ρ, u, v, p).
+
+    Rangement interne « par variable » : Q (4, nc) = (ρ, ρu, ρv, ρE), W (4, nc) =
+    (ρ, u, v, p) ; chaque ligne est contiguë (opérations aux faces rapides). Les accesseurs
+    publics (U, p, T, mach, fields…) renvoient des tableaux par cellule (nc, …).
     """
 
     def __init__(self, mesh: Mesh2D, gas: Gas, freestream: State, boundaries: dict,
@@ -365,10 +372,11 @@ class CompressibleSolver2D:
         self.model_name = "euler" if not gas.viscous else "laminar"
         # échelles de référence de (ρ, u, v, p) (planchers du limiteur)
         vref = freestream.c + freestream.speed
-        self._wref = np.array([freestream.rho, vref, vref, freestream.p])
+        self._wref = np.array([freestream.rho, vref, vref, freestream.p])[:, None]
         self._geometry()
         self._setup_bc(boundaries)
         self._grad_ops()
+        self._stencil()
         self.history: list[dict] = []
         self.series: list[dict] = []
         self.series_restart: list[dict] = []
@@ -380,19 +388,19 @@ class CompressibleSolver2D:
         self.converged = False
         self.wall_time = 0.0
         self._res0 = None
-        self._frozen_lim = None
+        self._res0_count = 0
+        self._psi = None                   # limiteur mémorisé (gel / réutilisation)
+        self._psi_it = None
         self._last = {}
-        # état initial
         C = mesh.cell_centers
         if initial is None:
-            W = np.tile([freestream.rho, freestream.u, freestream.v, freestream.p],
-                        (self.nc, 1))
+            W = np.tile(np.array([freestream.rho, freestream.u, freestream.v,
+                                  freestream.p])[:, None], (1, self.nc))
         else:
-            r, u, v, p = initial(C[:, 0], C[:, 1])
-            W = np.column_stack([np.broadcast_to(np.asarray(a, float), (self.nc,))
-                                 for a in (r, u, v, p)])
-        if np.any(W[:, 0] <= 0) or np.any(W[:, 3] <= 0):
-            raise ValueError("État initial : ρ et p doivent être > 0 partout.")
+            vals = initial(C[:, 0], C[:, 1])
+            W = np.vstack([np.broadcast_to(np.asarray(a, float), (self.nc,)) for a in vals])
+        if np.any(W[0] <= 0) or np.any(W[3] <= 0) or not np.all(np.isfinite(W)):
+            raise ValueError("État initial : ρ et p doivent être finis et > 0 partout.")
         self.Q = self.conservative(W)
 
     # ------------------------------------------------------------------ géométrie
@@ -403,28 +411,38 @@ class CompressibleSolver2D:
         self.P, self.N, self.Pb = m.owner[:ni], m.neighbour, m.owner[ni:]
         self.V = m.cell_volumes
         self.magS = m.magSf[:ni]
-        self.n = m.nf[:ni]
+        self.nx, self.ny = m.nf[:ni, 0].copy(), m.nf[:ni, 1].copy()
         self.magSb = m.magSf[ni:]
+        self.nbx, self.nby = m.nf[ni:, 0].copy(), m.nf[ni:, 1].copy()
         self.nb_hat = m.nf[ni:]
-        self.rP = np.asarray(f.rP)
-        self.rN = np.asarray(f.rN)
-        self.rb = m.face_centers[ni:] - m.cell_centers[self.Pb]
+        rP, rN = np.asarray(f.rP), np.asarray(f.rN)
+        rb = m.face_centers[ni:] - m.cell_centers[self.Pb]
+        self.rPx, self.rPy = rP[:, 0].copy(), rP[:, 1].copy()
+        self.rNx, self.rNy = rN[:, 0].copy(), rN[:, 1].copy()
+        self.rbx, self.rby = rb[:, 0].copy(), rb[:, 1].copy()
         d = m.d_PN
         self.dist = np.linalg.norm(d, axis=1)
-        self.e = d / self.dist[:, None]
-        self.distb = np.linalg.norm(self.rb, axis=1)
-        self.eb = self.rb / self.distb[:, None]
+        self.ex, self.ey = d[:, 0] / self.dist, d[:, 1] / self.dist
+        self.distb = np.linalg.norm(rb, axis=1)
+        self.ebx, self.eby = rb[:, 0] / self.distb, rb[:, 1] / self.distb
         self.w = m.weights
         S2 = np.bincount(self.P, self.magS ** 2, self.nc) + np.bincount(
             self.N, self.magS ** 2, self.nc)
         if self.nb:
             S2 = S2 + np.bincount(self.Pb, self.magSb ** 2, self.nc)
         self.sumS2 = S2
-        self.h = np.sqrt(self.V)
+        # somme des flux sortants : R = F_i @ D_i + F_b @ D_b (matrices creuses)
+        ones = np.ones(ni)
+        self.Di = sp.csr_matrix((np.concatenate([ones, -ones]),
+                                 (np.concatenate([np.arange(ni), np.arange(ni)]),
+                                  np.concatenate([self.P, self.N]))), shape=(ni, self.nc))
+        self.Db = sp.csr_matrix((np.ones(self.nb), (np.arange(self.nb), self.Pb)),
+                                shape=(self.nb, self.nc))
 
     def _grad_ops(self):
         """Opérateur de Green-Gauss (identique à FVM.grad) en matrices creuses
-        Gx, Gy : (nc, nc + nb), appliquées à [valeurs de cellules ; valeurs frontières]."""
+        (nc + nb, nc), appliquées à droite de [valeurs de cellules, valeurs frontières]
+        rangées par variable (k, nc + nb)."""
         nc, ni, nb = self.nc, self.ni, self.nb
         P, N, Pb, w = self.P, self.N, self.Pb, self.w
         S = self.mesh.Sf
@@ -436,57 +454,73 @@ class CompressibleSolver2D:
             cols = np.concatenate([P, N, P, N, nc + np.arange(nb)])
             vals = np.concatenate([w * s / V[P], (1 - w) * s / V[P],
                                    -w * s / V[N], -(1 - w) * s / V[N], S[ni:, c] / V[Pb]])
-            ops.append(sp.csr_matrix((vals, (rows, cols)), shape=(nc, nc + nb)))
-        self.Gx, self.Gy = ops
+            ops.append(sp.csr_matrix((vals, (cols, rows)), shape=(nc + nb, nc)))
+        self.GxT, self.GyT = ops
 
-    def gradient(self, W, Wb):
-        """Gradients de Green-Gauss de plusieurs variables : W (nc, k), Wb (nb, k) ->
-        (gx, gy) chacun (nc, k)."""
-        ext = np.vstack([W, Wb])
-        return self.Gx @ ext, self.Gy @ ext
+    def gradient(self, X, Xb):
+        """Gradients de Green-Gauss de k variables : X (k, nc), Xb (k, nb) ->
+        (gx, gy) chacun (k, nc)."""
+        ext = np.hstack([X, Xb])
+        return np.asarray(ext @ self.GxT), np.asarray(ext @ self.GyT)
+
+    def _stencil(self):
+        """Pochoir du limiteur : pour chaque cellule, ses voisines par face (cellule ou
+        face frontière) ; « place » de chaque côté de face dans ce pochoir."""
+        nc, ni, nb = self.nc, self.ni, self.nb
+        cells = np.concatenate([self.P, self.N, self.Pb])
+        other = np.concatenate([self.N, self.P, nc + np.arange(nb)])
+        order = np.argsort(cells, kind="stable")
+        counts = np.bincount(cells, minlength=nc)
+        start = np.concatenate([[0], np.cumsum(counts)[:-1]])
+        slot = np.empty(len(cells), dtype=np.int64)
+        slot[order] = np.arange(len(cells)) - start[cells[order]]
+        m = int(counts.max())
+        idx = np.tile(np.arange(nc), (m, 1))
+        idx[slot, cells] = other
+        self._st_idx = idx
+        self._st_m = m
+        self._slots = (slot[:ni], slot[ni:2 * ni], slot[2 * ni:])
 
     # ------------------------------------------------------------------ conversions
     def conservative(self, W):
         g = self.gas.gamma
-        r, u, v, p = W[:, 0], W[:, 1], W[:, 2], W[:, 3]
-        return np.column_stack([r, r * u, r * v, p / (g - 1.0) + 0.5 * r * (u * u + v * v)])
+        r, u, v, p = W
+        return np.vstack([r, r * u, r * v, p / (g - 1.0) + 0.5 * r * (u * u + v * v)])
 
     def primitive(self, Q=None):
         Q = self.Q if Q is None else Q
         g = self.gas.gamma
-        r = Q[:, 0]
-        u, v = Q[:, 1] / r, Q[:, 2] / r
-        p = (g - 1.0) * (Q[:, 3] - 0.5 * r * (u * u + v * v))
-        return np.column_stack([r, u, v, p])
+        r = Q[0]
+        u, v = Q[1] / r, Q[2] / r
+        p = (g - 1.0) * (Q[3] - 0.5 * r * (u * u + v * v))
+        return np.vstack([r, u, v, p])
 
     # ------------------------------------------------------------------ conditions
     def _setup_bc(self, boundaries: dict):
         m, gas, fs = self.mesh, self.gas, self.fs
         nb = self.nb
-        self.kind = np.full(nb, -1, dtype=int)
-        self.bc_state = np.tile([fs.rho, fs.u, fs.v, fs.p], (nb, 1))     # état imposé
-        self.bc_p = np.full(nb, fs.p)                                    # p (sortie)
+        kind = np.full(nb, -1, dtype=int)
+        self.bc_state = np.tile(np.array([fs.rho, fs.u, fs.v, fs.p])[:, None], (1, nb))
+        self.bc_p = np.full(nb, fs.p)
         self.bc_p0 = np.full(nb, fs.p0)
         self.bc_T0 = np.full(nb, fs.T0)
-        sp_ = max(fs.speed, 1e-300)
-        self.bc_dir = np.tile([fs.u / sp_, fs.v / sp_] if fs.speed > 0 else [1.0, 0.0],
-                              (nb, 1))
-        self.bc_Tw = np.full(nb, np.nan)                                 # nan : adiabatique
-        self.bc_Uw = np.zeros((nb, 2))
+        spd = max(fs.speed, 1e-300)
+        d0 = [fs.u / spd, fs.v / spd] if fs.speed > 0 else [1.0, 0.0]
+        self.bc_dir = np.tile(np.array(d0)[:, None], (1, nb))
+        self.bc_Tw = np.full(nb, np.nan)                     # nan : paroi adiabatique
+        self.bc_Uw = np.zeros((2, nb))
         self.patch_slices = {}
         self.bc_types = {}
         periodic = {q for pair in m.periodic_pairs for q in pair[:2]}
-        missing = [p.name for p in m.patches if p.name not in boundaries
-                   and p.type != "empty"]
+        names = {p.name for p in m.patches}
+        missing = [p.name for p in m.patches if p.name not in boundaries and p.type != "empty"]
         if missing:
             raise ValueError(f"Conditions aux limites manquantes pour : {missing} "
                              f"(types : {', '.join(COMP_BC_TYPES)})")
         for name in boundaries:
-            if name in periodic:
-                continue
-            if name not in {p.name for p in m.patches}:
+            if name not in names and name not in periodic:
                 raise ValueError(f"[boundary.{name}] : patch absent du maillage "
-                                 f"({[p.name for p in m.patches]}).")
+                                 f"({sorted(names)}).")
         C = m.face_centers[self.ni:]
         for patch in m.patches:
             sl = slice(patch.start - self.ni, patch.start - self.ni + patch.size)
@@ -494,115 +528,110 @@ class CompressibleSolver2D:
             spec = dict(boundaries.get(patch.name, {"type": "slip_wall"}))
             if patch.type == "empty":
                 spec = {"type": "slip_wall"}
-            kind = canonical_bc(spec.get("type", "wall"))
-            if kind == "wall" and not gas.viscous:
-                kind = "slip_wall"                  # Euler : paroi = glissement
-            self.bc_types[patch.name] = kind
-            code = {"slip_wall": _SLIP, "symmetry": _SLIP, "wall": _NOSLIP,
-                    "farfield": _FAR, "supersonic_inlet": _SUPIN, "inlet": _INLET,
-                    "outlet": _OUTLET, "supersonic_outlet": _EXTRAP}[kind]
-            self.kind[sl] = code
+            bkind = canonical_bc(spec.get("type", "wall"))
+            if bkind == "wall" and not gas.viscous:
+                bkind = "slip_wall"                  # Euler : paroi = glissement
+            self.bc_types[patch.name] = bkind
+            kind[sl] = {"slip_wall": _SLIP, "symmetry": _SLIP, "wall": _NOSLIP,
+                        "farfield": _FAR, "supersonic_inlet": _SUPIN, "inlet": _INLET,
+                        "outlet": _OUTLET, "supersonic_outlet": _EXTRAP}[bkind]
             x, y = C[sl, 0], C[sl, 1]
-            if kind in ("farfield", "supersonic_inlet") and any(
-                    k in spec for k in ("mach", "pressure", "temperature", "density",
-                                        "velocity", "angle")):
-                st = make_state(gas, spec.get("mach", fs.mach),
-                                spec.get("pressure", None if "density" in spec and
-                                         "temperature" in spec else fs.p),
-                                spec.get("temperature", None if "density" in spec
-                                         else fs.T),
-                                spec.get("density"), spec.get("angle", _angle(fs)),
-                                spec.get("velocity"))
-                self.bc_state[sl] = [st.rho, st.u, st.v, st.p]
-            if kind == "inlet":
+            if bkind in ("farfield", "supersonic_inlet"):
+                st = _state_from_spec(spec, fs)
+                self.bc_state[:, sl] = np.array([st.rho, st.u, st.v, st.p])[:, None]
+            if bkind == "inlet":
                 self.bc_p0[sl] = _value(spec.get("p0", spec.get("total_pressure", fs.p0)),
                                         x, y)
-                self.bc_T0[sl] = _value(spec.get("T0", spec.get(
-                    "total_temperature", fs.T0)), x, y)
+                self.bc_T0[sl] = _value(spec.get("T0", spec.get("total_temperature",
+                                                                fs.T0)), x, y)
                 if "direction" in spec or "angle" in spec:
                     if "direction" in spec:
-                        d = np.asarray(spec["direction"], float)
+                        dd = np.asarray(spec["direction"], float)
                     else:
                         a = np.radians(float(spec["angle"]))
-                        d = np.array([np.cos(a), np.sin(a)])
-                    self.bc_dir[sl] = d / np.linalg.norm(d)
-            if kind == "outlet":
+                        dd = np.array([np.cos(a), np.sin(a)])
+                    self.bc_dir[:, sl] = (dd / np.linalg.norm(dd))[:, None]
+            if bkind == "outlet":
                 self.bc_p[sl] = _value(spec.get("p", spec.get("pressure", fs.p)), x, y)
-            if kind == "wall":
+            if bkind == "wall":
                 if "T" in spec or "temperature" in spec:
                     self.bc_Tw[sl] = _value(spec.get("T", spec.get("temperature")), x, y)
                 if "U" in spec:
-                    U = spec["U"]
-                    self.bc_Uw[sl, 0] = _value(U[0], x, y)
-                    self.bc_Uw[sl, 1] = _value(U[1], x, y)
-        if np.any(self.kind < 0):
+                    self.bc_Uw[0, sl] = _value(spec["U"][0], x, y)
+                    self.bc_Uw[1, sl] = _value(spec["U"][1], x, y)
+        if np.any(kind < 0):
             raise ValueError("Faces frontières sans condition aux limites.")
-        self.is_wall = np.isin(self.kind, (_SLIP, _NOSLIP))
-        self.is_noslip = self.kind == _NOSLIP
+        self.kind = kind
+        self._bc = {c: np.nonzero(kind == c)[0] for c in range(7)}
+        self._bc = {c: i for c, i in self._bc.items() if len(i)}
+        self.is_wall = np.isin(kind, (_SLIP, _NOSLIP))
+        self.is_noslip = kind == _NOSLIP
         self.is_iso = self.is_noslip & np.isfinite(self.bc_Tw)
+        self._noslip = np.nonzero(self.is_noslip)[0]
+        self._adiab = np.nonzero(self.is_noslip & ~self.is_iso)[0]
+        self._iso = np.nonzero(self.is_iso)[0]
+        self._slip = np.nonzero(kind == _SLIP)[0]
 
     def ghost(self, W):
-        """État fantôme (nb, 4) des faces frontières à partir de l'état intérieur W (nb, 4)
+        """État fantôme (4, nb) des faces frontières à partir de l'état intérieur W (4, nb)
         (reconstruit à la face ou valeur de cellule)."""
         g = self.gas.gamma
         gm1 = g - 1.0
-        k = self.kind
-        n = self.nb_hat
-        nx, ny = n[:, 0], n[:, 1]
-        r, u, v, p = W[:, 0], W[:, 1], W[:, 2], W[:, 3]
-        qn = u * nx + v * ny
-        c = np.sqrt(g * p / r)
+        nx, ny = self.nbx, self.nby
         G = W.copy()
-        # parois glissantes / symétrie : miroir
-        s = k == _SLIP
-        if s.any():
-            G[s, 1] = u[s] - 2.0 * qn[s] * nx[s]
-            G[s, 2] = v[s] - 2.0 * qn[s] * ny[s]
-        s = k == _NOSLIP
-        if s.any():
-            G[s, 1] = 2.0 * self.bc_Uw[s, 0] - u[s]
-            G[s, 2] = 2.0 * self.bc_Uw[s, 1] - v[s]
-        s = k == _SUPIN
-        if s.any():
-            G[s] = self.bc_state[s]
-        s = k == _FAR
-        if s.any():
-            G[s] = self._farfield(W[s], self.bc_state[s], nx[s], ny[s])
-        s = k == _INLET
-        if s.any():
-            Rp = qn[s] + 2.0 * c[s] / gm1
-            d = self.bc_dir[s]
-            cs = np.maximum(-(d[:, 0] * nx[s] + d[:, 1] * ny[s]), 0.05)
-            H0 = self.gas.cp * self.bc_T0[s]
-            a = 0.25 * gm1 * cs * cs + 0.5
-            b = 0.5 * gm1 * Rp * cs
-            cc = 0.25 * gm1 * Rp * Rp - H0
-            Vm = np.maximum((-b + np.sqrt(np.maximum(b * b - 4 * a * cc, 0.0))) / (2 * a), 0.0)
-            Tb = np.maximum(self.bc_T0[s] - 0.5 * Vm * Vm / self.gas.cp, 1e-3 * self.bc_T0[s])
-            pb = self.bc_p0[s] * (Tb / self.bc_T0[s]) ** (g / gm1)
-            G[s, 0] = pb / (self.gas.R * Tb)
-            G[s, 1] = Vm * d[:, 0]
-            G[s, 2] = Vm * d[:, 1]
-            G[s, 3] = pb
-        s = k == _OUTLET
-        if s.any():
-            sub = qn[s] < c[s]                     # sortie supersonique : extrapolation
-            pb = np.where(sub, self.bc_p[s], p[s])
-            rb = r[s] * (pb / p[s]) ** (1.0 / g)
-            cb = np.sqrt(g * pb / rb)
-            qb = qn[s] + 2.0 * (c[s] - cb) / gm1
-            G[s, 0] = rb
-            G[s, 1] = u[s] + (qb - qn[s]) * nx[s]
-            G[s, 2] = v[s] + (qb - qn[s]) * ny[s]
-            G[s, 3] = pb
+        for code, s in self._bc.items():
+            if code == _EXTRAP:
+                continue
+            r, u, v, p = W[:, s]
+            if code == _SLIP:                                  # miroir
+                qn = u * nx[s] + v * ny[s]
+                G[1, s] = u - 2.0 * qn * nx[s]
+                G[2, s] = v - 2.0 * qn * ny[s]
+            elif code == _NOSLIP:
+                G[1, s] = 2.0 * self.bc_Uw[0, s] - u
+                G[2, s] = 2.0 * self.bc_Uw[1, s] - v
+            elif code == _SUPIN:
+                G[:, s] = self.bc_state[:, s]
+            elif code == _FAR:
+                G[:, s] = self._farfield(W[:, s], self.bc_state[:, s], nx[s], ny[s])
+            elif code == _INLET:
+                qn = u * nx[s] + v * ny[s]
+                c = np.sqrt(g * p / r)
+                Rp = qn + 2.0 * c / gm1                    # invariant sortant
+                d = self.bc_dir[:, s]
+                cs = np.maximum(-(d[0] * nx[s] + d[1] * ny[s]), 0.05)
+                T0 = self.bc_T0[s]
+                H0 = self.gas.cp * T0
+                a = 0.25 * gm1 * cs * cs + 0.5
+                b = 0.5 * gm1 * Rp * cs
+                cc = 0.25 * gm1 * Rp * Rp - H0
+                Vm = np.maximum((-b + np.sqrt(np.maximum(b * b - 4 * a * cc, 0.0)))
+                                / (2 * a), 0.0)
+                Tb = np.maximum(T0 - 0.5 * Vm * Vm / self.gas.cp, 1e-3 * T0)
+                pb = self.bc_p0[s] * (Tb / T0) ** (g / gm1)
+                G[0, s] = pb / (self.gas.R * Tb)
+                G[1, s] = Vm * d[0]
+                G[2, s] = Vm * d[1]
+                G[3, s] = pb
+            elif code == _OUTLET:
+                qn = u * nx[s] + v * ny[s]
+                c = np.sqrt(g * p / r)
+                pb = np.where(qn < c, self.bc_p[s], p)     # supersonique : extrapolation
+                rb = r * (pb / p) ** (1.0 / g)
+                cb = np.sqrt(g * pb / rb)
+                dq = 2.0 * (c - cb) / gm1
+                G[0, s] = rb
+                G[1, s] = u + dq * nx[s]
+                G[2, s] = v + dq * ny[s]
+                G[3, s] = pb
         return G
 
     def _farfield(self, W, Winf, nx, ny):
         """Invariants de Riemann normaux (Blazek § 8.4 ; Jameson & Baker 1983)."""
         g = self.gas.gamma
         gm1 = g - 1.0
-        r, u, v, p = W.T
-        ri, ui, vi, pi = Winf.T
+        r, u, v, p = W
+        ri, ui, vi, pi = Winf
         c, ci = np.sqrt(g * p / r), np.sqrt(g * pi / ri)
         qn, qi = u * nx + v * ny, ui * nx + vi * ny
         Rp = qn + 2.0 * c / gm1                       # sortant (intérieur)
@@ -615,231 +644,223 @@ class CompressibleSolver2D:
         vt = np.where(out, v - qn * ny, vi - qi * ny)
         rb = (cb * cb / (g * s)) ** (1.0 / gm1)
         pb = rb * cb * cb / g
-        G = np.column_stack([rb, ut + qb * nx, vt + qb * ny, pb])
+        G = np.vstack([rb, ut + qb * nx, vt + qb * ny, pb])
         # supersonique : tout de l'amont (entrée) ou de l'intérieur (sortie)
         sup_in = qi <= -ci
         sup_out = qn >= c
-        G[sup_in] = Winf[sup_in]
-        G[sup_out] = W[sup_out]
+        G[:, sup_in] = Winf[:, sup_in]
+        G[:, sup_out] = W[:, sup_out]
         return G
 
     def boundary_values(self, W):
-        """Valeurs aux faces frontières (nb, 5) de (ρ, u, v, p, T) pour les gradients :
+        """Valeurs aux faces frontières (5, nb) de (ρ, u, v, p, T) pour les gradients :
         moyenne cellule / état fantôme ; parois adhérentes : vitesse de paroi, T_w."""
-        G = self.ghost(W[self.Pb])
-        Wb = 0.5 * (W[self.Pb] + G)
-        s = self.is_noslip
-        Wb[s, 1:3] = self.bc_Uw[s]
-        Wb[s, 0] = W[self.Pb[s], 0]
-        Wb[s, 3] = W[self.Pb[s], 3]
-        T = Wb[:, 3] / (Wb[:, 0] * self.gas.R)
-        iso = self.is_iso
-        T[iso] = self.bc_Tw[iso]
-        return np.column_stack([Wb, T])
+        Wc = W[:, self.Pb]
+        Wb = 0.5 * (Wc + self.ghost(Wc))
+        s = self._noslip
+        if len(s):
+            Wb[1:3, s] = self.bc_Uw[:, s]
+            Wb[0, s] = Wc[0, s]
+            Wb[3, s] = Wc[3, s]
+        T = Wb[3] / (Wb[0] * self.gas.R)
+        if len(self._iso):
+            T[self._iso] = self.bc_Tw[self._iso]
+        return np.vstack([Wb, T])
 
     # ------------------------------------------------------------------ limiteurs
-    def _limiter(self, W, Wb, gx, gy):
-        """Coefficient ψ (nc, k) du limiteur choisi."""
+    def _limiter(self, W, Wb, dP, dN, db):
+        """Coefficient ψ (4, nc) du limiteur ; dP, dN, db : variations cellule → face
+        non limitées (côtés owner, neighbour, frontière)."""
         lim = self.settings.limiter
         if lim == "none":
             return np.ones_like(W)
-        if getattr(self, "_stencil", None) is None:
-            # voisins de chaque cellule (même pochoir que fvm.limit_grad), rangés
-            # (m, nc) : les réductions sur le pochoir portent sur des tranches contiguës
-            # (la dernière colonne du pochoir de fvm est toujours la cellule elle-même : ôtée)
-            idx, R = self.fvm._limiter_stencil()
-            idx, R = np.asarray(idx)[:, :-1], np.asarray(R)[:, :-1]
-            self._stencil = (np.ascontiguousarray(idx.T),
-                             np.ascontiguousarray(R[:, :, 0].T)[:, :, None],
-                             np.ascontiguousarray(R[:, :, 1].T)[:, :, None])
-        idx, Rx, Ry = self._stencil
-        ext = np.vstack([W, Wb])[idx]                            # (m, nc, k)
-        dmax = np.maximum(ext.max(axis=0), W) - W
-        dmin = np.minimum(ext.min(axis=0), W) - W
-        d = gx[None] * Rx + gy[None] * Ry                        # variation cellule → face
-        if lim == "barth_jespersen":
-            pos, neg = d > 0.0, d < 0.0
-            r = np.where(pos, dmax[None] / np.where(pos, d, 1.0),
-                         np.where(neg, dmin[None] / np.where(neg, d, -1.0), 1.0))
-            return np.minimum(r.min(axis=0), 1.0)
-        # Venkatakrishnan, seuil de Wang : ε² = (K (max − min global))²
-        # (plancher : 1e-6 × échelle de référence, pour une variable uniforme)
-        rng = np.maximum(W.max(axis=0) - W.min(axis=0), 1e-6 * self._wref)
-        eps2 = (self.settings.venkat_k * rng) ** 2
-        D1 = np.where(d > 0.0, dmax[None], dmin[None])
-        D1sq = D1 * D1 + eps2
-        dD1 = d * D1
-        psi = (D1sq + 2.0 * dD1) / (D1sq + 2.0 * d * d + dD1)
-        return np.minimum(psi.min(axis=0), 1.0)
+        ext = np.hstack([W, Wb])[:, self._st_idx]              # (4, m, nc)
+        dmax = np.maximum(ext.max(axis=1), W) - W
+        dmin = np.minimum(ext.min(axis=1), W) - W
+        if lim == "venkatakrishnan":
+            # seuil de Wang : ε² = (K (max − min global))² ; plancher pour une variable
+            # uniforme : 1e-6 × échelle de référence
+            rng = np.maximum(W.max(axis=1, keepdims=True) - W.min(axis=1, keepdims=True),
+                             1e-6 * self._wref)
+            eps2 = (self.settings.venkat_k * rng) ** 2
+
+            def psi(d, cells):
+                lo = np.take(dmin, cells, axis=1)
+                D1 = lo + (d > 0.0) * (np.take(dmax, cells, axis=1) - lo)
+                D1sq = D1 * D1 + eps2
+                dD1 = d * D1
+                return (D1sq + 2.0 * dD1) / (D1sq + 2.0 * d * d + dD1)
+        else:                                                   # Barth-Jespersen
+            def psi(d, cells):
+                pos, neg = d > 0.0, d < 0.0
+                return np.where(pos, dmax[:, cells] / np.where(pos, d, 1.0),
+                                np.where(neg, dmin[:, cells] / np.where(neg, d, -1.0), 1.0))
+        out = np.ones((4, self._st_m, self.nc))
+        sP, sN, sB = self._slots
+        out[:, sP, self.P] = psi(dP, self.P)
+        out[:, sN, self.N] = psi(dN, self.N)
+        if self.nb:
+            out[:, sB, self.Pb] = psi(db, self.Pb)
+        return np.minimum(out.min(axis=1), 1.0)
 
     # ------------------------------------------------------------------ résidu
-    def residual(self, Q, order=None, it=None, store=False):
-        """Résidu R(Q) (nc, 4) = Σ_f (F_c − F_v)·S_f (sortant) ; dQ/dt = −R/V."""
+    def residual(self, Q, order=None, it=None, store=False, reuse_limiter=False):
+        """Résidu R(Q) (4, nc) = Σ_f (F_c − F_v)·S_f (sortant) ; dQ/dt = −R/V.
+
+        it : itération courante (gel du limiteur) ; reuse_limiter : réutilise le limiteur
+        de la 1re étape du pas (stationnaire : étapes suivantes du Runge-Kutta)."""
         s = self.settings
         g = self.gas.gamma
         order = s.order if order is None else order
         P, N, Pb = self.P, self.N, self.Pb
         W = self.primitive(Q)
-        if np.any(W[:, 0] <= 0.0) or np.any(W[:, 3] <= 0.0) or not np.all(np.isfinite(W)):
-            bad = int(np.sum((W[:, 0] <= 0) | (W[:, 3] <= 0) | ~np.isfinite(W).all(axis=1)))
+        if not (np.all(W[0] > 0.0) and np.all(W[3] > 0.0) and np.all(np.isfinite(W))):
+            bad = int(np.sum((W[0] <= 0) | (W[3] <= 0) | ~np.isfinite(W).all(axis=0)))
             raise FloatingPointError(f"État non physique (ρ ≤ 0 ou p ≤ 0) dans {bad} "
                                      "cellule(s) : réduire le CFL, démarrer à l'ordre 1 "
                                      "(first_order_iter) ou changer de flux (hllc).")
         viscous = self.gas.viscous
-        Wb5 = self.boundary_values(W)
-        need_grad = order == 2 or viscous
-        if need_grad:
-            T = W[:, 3] / (W[:, 0] * self.gas.R)
-            W5 = np.column_stack([W, T])
-            gx, gy = self.gradient(W5, Wb5)
+        Xb = self.boundary_values(W)
+        if order == 2 or viscous:
+            X = np.vstack([W, W[3] / (W[0] * self.gas.R)])
+            gx, gy = self.gradient(X, Xb)
         if order == 2:
-            gx4, gy4 = gx[:, :4], gy[:, :4]
-            if s.limiter_freeze and it is not None and it > s.limiter_freeze \
-                    and self._frozen_lim is not None:
-                psi = self._frozen_lim
+            gx4, gy4 = gx[:4], gy[:4]
+            dP = _take(gx4, P) * self.rPx + _take(gy4, P) * self.rPy
+            dN = _take(gx4, N) * self.rNx + _take(gy4, N) * self.rNy
+            db = _take(gx4, Pb) * self.rbx + _take(gy4, Pb) * self.rby
+            frozen = s.limiter_freeze and it is not None and it > s.limiter_freeze
+            if (frozen or reuse_limiter) and self._psi is not None:
+                psi = self._psi
             else:
-                psi = self._limiter(W, Wb5[:, :4], gx4, gy4)
-                if s.limiter_freeze and it is not None:
-                    self._frozen_lim = psi
-            lx, ly = gx4 * psi, gy4 * psi
-            WL = W[P] + lx[P] * self.rP[:, :1] + ly[P] * self.rP[:, 1:]
-            WR = W[N] + lx[N] * self.rN[:, :1] + ly[N] * self.rN[:, 1:]
-            Wf = W[Pb] + lx[Pb] * self.rb[:, :1] + ly[Pb] * self.rb[:, 1:]
-            bad = (WL[:, 0] <= 0) | (WL[:, 3] <= 0) | (WR[:, 0] <= 0) | (WR[:, 3] <= 0)
+                psi = self._limiter(W, Xb[:4], dP, dN, db)
+                self._psi = psi
+            WL = _take(W, P) + _take(psi, P) * dP
+            WR = _take(W, N) + _take(psi, N) * dN
+            Wf = _take(W, Pb) + _take(psi, Pb) * db
+            bad = (WL[0] <= 0) | (WL[3] <= 0) | (WR[0] <= 0) | (WR[3] <= 0)
             if bad.any():
-                WL[bad], WR[bad] = W[P[bad]], W[N[bad]]
-            badb = (Wf[:, 0] <= 0) | (Wf[:, 3] <= 0)
+                WL[:, bad], WR[:, bad] = W[:, P[bad]], W[:, N[bad]]
+            badb = (Wf[0] <= 0) | (Wf[3] <= 0)
             if badb.any():
-                Wf[badb] = W[Pb[badb]]
+                Wf[:, badb] = W[:, Pb[badb]]
         else:
-            WL, WR, Wf = W[P], W[N], W[Pb]
+            WL, WR, Wf = _take(W, P), _take(W, N), _take(W, Pb)
         flux = _FLUX_FUNCS[s.flux]
-        n = self.n
-        Fi = np.column_stack(flux(tuple(WL.T), tuple(WR.T), n[:, 0], n[:, 1], g,
-                                  s.entropy_fix))
-        G = self.ghost(Wf)
-        nb = self.nb_hat
-        Fb = np.column_stack(flux(tuple(Wf.T), tuple(G.T), nb[:, 0], nb[:, 1], g,
-                                  s.entropy_fix))
+        Fi = np.vstack(flux(WL, WR, self.nx, self.ny, g, s.entropy_fix))
+        Fb = np.vstack(flux(Wf, self.ghost(Wf), self.nbx, self.nby, g, s.entropy_fix))
         if viscous:
-            Fvi, Fvb = self._viscous_flux(W5, Wb5, gx, gy)
-            Fi = Fi - Fvi
-            Fb = Fb - Fvb
-        Fi = Fi * self.magS[:, None]
-        Fb = Fb * self.magSb[:, None]
-        R = np.empty((self.nc, 4))
-        for k in range(4):
-            R[:, k] = (np.bincount(P, Fi[:, k], self.nc) - np.bincount(N, Fi[:, k], self.nc)
-                       + np.bincount(Pb, Fb[:, k], self.nc))
+            Fvi, Fvb = self._viscous_flux(X, Xb, gx, gy)
+            Fi -= Fvi
+            Fb -= Fvb
+        Fi *= self.magS
+        Fb *= self.magSb
+        R = np.asarray(Fi @ self.Di + Fb @ self.Db)
         if store:
             self._last = {"Fb": Fb, "W": W}
             if viscous:
                 self._last["Fvb"] = Fvb
         return R
 
-    def _viscous_flux(self, W5, Wb5, gx, gy):
-        """Flux visqueux (par unité de surface) aux faces internes et frontières."""
-        gas = self.gas
+    def _viscous_flux(self, X, Xb, gx, gy):
+        """Flux visqueux (4, ·) par unité de surface aux faces internes et frontières.
+        X : (ρ, u, v, p, T) aux cellules ; seules u, v, T (lignes 1, 2, 4) servent."""
         P, N, Pb = self.P, self.N, self.Pb
-        w = self.w[:, None]
-        # variables u, v, T (colonnes 1, 2, 4)
-        cols = [1, 2, 4]
-        phi = W5[:, cols]
-        gax = w * gx[P][:, cols] + (1 - w) * gx[N][:, cols]
-        gay = w * gy[P][:, cols] + (1 - w) * gy[N][:, cols]
-        ex, ey = self.e[:, :1], self.e[:, 1:]
-        corr = (phi[N] - phi[P]) / self.dist[:, None] - (gax * ex + gay * ey)
+        w = self.w
+        sel = [1, 2, 4]
+        phi, gxs, gys = X[sel], gx[sel], gy[sel]
+        gax = w * _take(gxs, P) + (1 - w) * _take(gxs, N)
+        gay = w * _take(gys, P) + (1 - w) * _take(gys, N)
+        ex, ey = self.ex, self.ey
+        phP, phN = _take(phi, P), _take(phi, N)
+        corr = (phN - phP) / self.dist - (gax * ex + gay * ey)
         gfx, gfy = gax + corr * ex, gay + corr * ey
-        uf = w * phi[P] + (1 - w) * phi[N]
-        Fi = self._stress_flux(uf, gfx, gfy, self.n)
+        uf = w * phP + (1 - w) * phN
+        Fi = self._stress_flux(uf, gfx, gfy, self.nx, self.ny)
         # frontières : parois adhérentes (correction selon d_b) ; autres : gradient de cellule
-        phib = Wb5[:, cols]
-        gbx, gby = gx[Pb][:, cols], gy[Pb][:, cols]
-        s = self.is_noslip
-        if s.any():
-            ebx, eby = self.eb[s, :1], self.eb[s, 1:]
-            cb = (phib[s] - phi[Pb[s]]) / self.distb[s, None] - (gbx[s] * ebx + gby[s] * eby)
-            gbx[s] = gbx[s] + cb * ebx
-            gby[s] = gby[s] + cb * eby
-            # adiabatique : flux de chaleur nul
-            ad = ~np.isfinite(self.bc_Tw[s])
-            if ad.any():
-                gxT, gyT = gbx[s, 2], gby[s, 2]
-                nn = self.nb_hat[s]
-                qn = gxT * nn[:, 0] + gyT * nn[:, 1]
-                gxT = np.where(ad, gxT - qn * nn[:, 0], gxT)
-                gyT = np.where(ad, gyT - qn * nn[:, 1], gyT)
-                gbx[s, 2], gby[s, 2] = gxT, gyT
-        Fb = self._stress_flux(phib, gbx, gby, self.nb_hat)
-        slip = self.kind == _SLIP
-        Fb[slip] = 0.0
+        phib = Xb[sel]
+        gbx, gby = _take(gxs, Pb), _take(gys, Pb)
+        s = self._noslip
+        if len(s):
+            ebx, eby = self.ebx[s], self.eby[s]
+            cb = (phib[:, s] - phi[:, Pb[s]]) / self.distb[s] - (gbx[:, s] * ebx
+                                                                  + gby[:, s] * eby)
+            gbx[:, s] += cb * ebx
+            gby[:, s] += cb * eby
+        a = self._adiab                                 # adiabatique : ∂T/∂n = 0
+        if len(a):
+            qn = gbx[2, a] * self.nbx[a] + gby[2, a] * self.nby[a]
+            gbx[2, a] -= qn * self.nbx[a]
+            gby[2, a] -= qn * self.nby[a]
+        Fb = self._stress_flux(phib, gbx, gby, self.nbx, self.nby)
+        if len(self._slip):
+            Fb[:, self._slip] = 0.0
         return Fi, Fb
 
-    def _stress_flux(self, uvT, gx, gy, n):
+    def _stress_flux(self, uvT, gx, gy, nx, ny):
         gas = self.gas
-        u, v, T = uvT[:, 0], uvT[:, 1], uvT[:, 2]
-        ux, vx, Tx = gx[:, 0], gx[:, 1], gx[:, 2]
-        uy, vy, Ty = gy[:, 0], gy[:, 1], gy[:, 2]
+        u, v, T = uvT
+        ux, vx, Tx = gx
+        uy, vy, Ty = gy
         mu = gas.mu_of(np.maximum(T, 1e-3))
         kcond = mu * gas.cp / gas.Pr
         div = ux + vy
         txx = mu * (2.0 * ux - 2.0 / 3.0 * div)
         tyy = mu * (2.0 * vy - 2.0 / 3.0 * div)
         txy = mu * (uy + vx)
-        nx, ny = n[:, 0], n[:, 1]
         fx = txx * nx + txy * ny
         fy = txy * nx + tyy * ny
         fe = u * fx + v * fy + kcond * (Tx * nx + Ty * ny)
-        return np.column_stack([np.zeros_like(fx), fx, fy, fe])
+        return np.vstack([np.zeros_like(fx), fx, fy, fe])
 
     # ------------------------------------------------------------------ pas de temps
-    def local_dt(self, Q, cfl):
-        """Δt_i = CFL V_i / (Λc_i + C_v Λv_i) (rayons spectraux, Blazek § 6.1.4)."""
+    def spectral_radius(self, Q):
+        """Λ_i = Λc_i + C_v Λv_i (Blazek § 6.1.4) : Δt_i = CFL V_i / Λ_i."""
         g = self.gas.gamma
         W = self.primitive(Q)
-        c = np.sqrt(g * W[:, 3] / W[:, 0])
+        c = np.sqrt(g * W[3] / W[0])
         P, N, Pb = self.P, self.N, self.Pb
-        n = self.n
-        un = 0.5 * np.abs((W[P, 1] + W[N, 1]) * n[:, 0] + (W[P, 2] + W[N, 2]) * n[:, 1])
+        un = 0.5 * np.abs((W[1, P] + W[1, N]) * self.nx + (W[2, P] + W[2, N]) * self.ny)
         lam = (un + 0.5 * (c[P] + c[N])) * self.magS
         L = np.bincount(P, lam, self.nc) + np.bincount(N, lam, self.nc)
         if self.nb:
-            nb = self.nb_hat
-            lb = (np.abs(W[Pb, 1] * nb[:, 0] + W[Pb, 2] * nb[:, 1]) + c[Pb]) * self.magSb
+            lb = (np.abs(W[1, Pb] * self.nbx + W[2, Pb] * self.nby) + c[Pb]) * self.magSb
             L = L + np.bincount(Pb, lb, self.nc)
         if self.gas.viscous:
-            T = W[:, 3] / (W[:, 0] * self.gas.R)
-            mu = self.gas.mu_of(T)
-            Lv = max(4.0 / 3.0, g / self.gas.Pr) * mu / W[:, 0] * self.sumS2 / self.V
+            mu = self.gas.mu_of(W[3] / (W[0] * self.gas.R))
+            Lv = max(4.0 / 3.0, g / self.gas.Pr) * mu / W[0] * self.sumS2 / self.V
             L = L + self.settings.viscous_factor * Lv
-        return cfl * self.V / L
+        return L
+
+    def local_dt(self, Q, cfl):
+        return cfl * self.V / self.spectral_radius(Q)
 
     # ------------------------------------------------------------------ intégration
-    def _ssp_rk3(self, dt, order, it=None):
+    def _ssp_rk3(self, dt, order, it=None, R0=None, reuse=False):
+        """Runge-Kutta SSP d'ordre 3 (Shu & Osher 1988) ; dt global ou local (nc,) ;
+        R0 : résidu déjà calculé de l'état courant ; reuse : limiteur de la 1re étape."""
         Q0 = self.Q
-        f = (dt / self.V)[:, None] if np.ndim(dt) else dt / self.V[:, None]
-        Q1 = Q0 - f * self.residual(Q0, order, it)
-        Q2 = 0.75 * Q0 + 0.25 * (Q1 - f * self.residual(Q1, order, it))
-        R2 = self.residual(Q2, order, it)
-        self.Q = Q0 / 3.0 + 2.0 / 3.0 * (Q2 - f * R2)
-        return None
+        f = dt / self.V
+        if R0 is None:
+            R0 = self.residual(Q0, order, it)
+        Q1 = Q0 - f * R0
+        Q2 = 0.75 * Q0 + 0.25 * (Q1 - f * self.residual(Q1, order, it, reuse_limiter=reuse))
+        self.Q = Q0 / 3.0 + 2.0 / 3.0 * (Q2 - f * self.residual(Q2, order, it,
+                                                                  reuse_limiter=reuse))
 
-    def _rk5(self, dt, order, it=None):
+    def _rk5(self, dt, order, it=None, R0=None):
         Q0 = self.Q
-        f = (dt / self.V)[:, None]
+        f = dt / self.V
         Q = Q0
-        R0 = None
-        for a in _RK5:
-            R = self.residual(Q, order, it)
-            if R0 is None:
-                R0 = R
+        for k, a in enumerate(_RK5):
+            R = R0 if (k == 0 and R0 is not None) else self.residual(
+                Q, order, it, reuse_limiter=k > 0)
             Q = Q0 - a * f * R
         self.Q = Q
-        return R0
 
     def residual_norms(self, R) -> np.ndarray:
         """Normes RMS des résidus par unité de volume (4 équations)."""
-        return np.sqrt(np.mean((R / self.V[:, None]) ** 2, axis=0))
+        return np.sqrt(np.mean((R / self.V) ** 2, axis=1))
 
     def run_steady(self, max_iter=None, tol=None, verbose=False, log_every=None,
                    callback=None, monitor=None):
@@ -852,43 +873,42 @@ class CompressibleSolver2D:
         t0 = time.perf_counter()
         converged = False
         cfl = s.cfl
+        stepper = None
         if s.steady_scheme == "implicit":
             from .compressible_implicit import ImplicitStepper
             stepper = ImplicitStepper(self)
-            cfl = min(s.cfl, s.cfl_max)
         forces_hist = []
         it = 0
         for it in range(1, max_iter + 1):
             gi = self.iterations_total + it
             order = 1 if gi <= s.first_order_iter else s.order
-            if s.steady_scheme == "implicit":
-                R = stepper.step(cfl, order, gi)
-                cfl = min(cfl * s.cfl_growth, s.cfl_max)
+            R = self.residual(self.Q, order, gi)
+            if stepper is not None:
+                ok = stepper.step(R, cfl, order)
+                cfl = min(cfl * s.cfl_growth, s.cfl_max) if ok else max(0.5 * cfl, 0.1)
             else:
                 dt = self.local_dt(self.Q, cfl)
                 if s.steady_scheme == "rk5":
-                    R = self._rk5(dt, order, gi)
+                    self._rk5(dt, order, gi, R0=R)
                 else:
-                    R = self.residual(self.Q, order, gi)
-                    self._ssp_rk3_from(R, dt, order, gi)
-            norms = self.residual_norms(R)
-            rel = self._relative(norms, gi)
+                    self._ssp_rk3(dt, order, gi, R0=R, reuse=True)
+            rel = self._relative(self.residual_norms(R))
             rec = {"iteration": gi, "rho": rel[0], "rhoU": rel[1], "rhoV": rel[2],
                    "rhoE": rel[3]}
-            if not all(np.isfinite(v) for v in rec.values()) or \
-                    not np.all(np.isfinite(self.Q)):
+            if not all(np.isfinite(v) for v in rel) or not np.all(np.isfinite(self.Q)):
                 raise FloatingPointError(f"Divergence à l'itération {gi}.")
             self.history.append(rec)
             if monitor is not None and (it % 10 == 0 or it == 1):
-                mrec = {"iteration": gi, **monitor(self)}
-                self.monitor.append(mrec)
+                self.monitor.append({"iteration": gi, **monitor(self)})
             if verbose and (it % log_every == 0 or it == 1):
                 print("  it %6d  " % gi + "  ".join(f"{k}={v:.2e}" for k, v in rec.items()
                                                      if k != "iteration")
-                      + (f"  CFL={cfl:.3g}" if s.steady_scheme == "implicit" else ""))
+                      + (f"  CFL={cfl:.3g}" if stepper is not None else ""))
             if s.monitor_tol and it % 10 == 0:
-                forces_hist.append(np.concatenate([f["total"] for f in
-                                                   self.forces().values()] or [np.zeros(1)]))
+                self._last = {}
+                fr = self.forces()
+                forces_hist.append(np.concatenate([f["total"] for f in fr.values()])
+                                   if fr else np.zeros(1))
                 w = max(s.monitor_window // 10, 1)
                 if len(forces_hist) > w and gi > s.first_order_iter + s.monitor_window:
                     ref = max(float(np.max(np.abs(forces_hist[-1]))), 1e-300)
@@ -912,20 +932,11 @@ class CompressibleSolver2D:
                   f"({self.wall_time:.1f} s)")
         return bool(converged)
 
-    def _ssp_rk3_from(self, R0, dt, order, it):
-        """SSP-RK3 dont le 1er résidu (déjà calculé, sert au suivi) est R0."""
-        Q0 = self.Q
-        f = (dt / self.V)[:, None]
-        Q1 = Q0 - f * R0
-        Q2 = 0.75 * Q0 + 0.25 * (Q1 - f * self.residual(Q1, order, it))
-        self.Q = Q0 / 3.0 + 2.0 / 3.0 * (Q2 - f * self.residual(Q2, order, it))
-
-    def _relative(self, norms, gi):
+    def _relative(self, norms):
         """Résidus normalisés par le maximum observé sur les 10 premières itérations ;
         quantité de mouvement : échelle commune aux deux composantes."""
         if self._res0 is None:
             self._res0 = np.zeros(4)
-            self._res0_count = 0
         if self._res0_count < 10:
             self._res0 = np.maximum(self._res0, norms)
             self._res0[1:3] = max(self._res0[1], self._res0[2])
@@ -943,7 +954,7 @@ class CompressibleSolver2D:
         series = self.series = []
         while self.time < t_end * (1.0 - 1e-12) and n < max_steps:
             n += 1
-            step = dt if dt else float(np.min(self.local_dt(self.Q, cfl)))
+            step = float(dt) if dt else float(np.min(self.local_dt(self.Q, cfl)))
             step = min(step, t_end - self.time)
             order = 1 if self.iterations_total + n <= s.first_order_iter else s.order
             self._ssp_rk3(step, order)
@@ -970,121 +981,124 @@ class CompressibleSolver2D:
     # ------------------------------------------------------------------ post-traitement
     @property
     def W(self):
-        return self.primitive()
+        """Variables primitives par cellule (nc, 4) : ρ, u, v, p."""
+        return self.primitive().T.copy()
 
     @property
     def U(self):
-        W = self.primitive()
-        return W[:, 1:3].copy()
+        return self.primitive()[1:3].T.copy()
 
     @property
     def p(self):
-        return self.primitive()[:, 3]
+        return self.primitive()[3].copy()
 
     @property
     def rho(self):
-        return self.Q[:, 0]
+        return self.Q[0].copy()
 
     @property
     def T(self):
         W = self.primitive()
-        return W[:, 3] / (W[:, 0] * self.gas.R)
+        return W[3] / (W[0] * self.gas.R)
 
     @property
     def mach(self):
         W = self.primitive()
-        return np.hypot(W[:, 1], W[:, 2]) / np.sqrt(self.gas.gamma * W[:, 3] / W[:, 0])
+        return np.hypot(W[1], W[2]) / np.sqrt(self.gas.gamma * W[3] / W[0])
+
+    def _ensure_last(self):
+        if not self._last:
+            self.residual(self.Q, self.settings.order, None, store=True)
 
     def boundary_p(self, p=None):
-        """Pression aux faces frontières (nb,) : valeur de paroi issue du flux de Riemann
-        sur les parois, moyenne cellule / fantôme ailleurs."""
-        W = self.primitive()
-        Wb = self.boundary_values(W)
-        pb = Wb[:, 3].copy()
-        last = self._last.get("Fb")
-        if last is not None and self.is_wall.any():
-            nb = self.nb_hat
-            Fc = last.copy()
+        """Pression aux faces frontières (nb,) : sur les parois, pression du flux de
+        Riemann (quantité de mouvement normale transmise) ; ailleurs moyenne cellule /
+        état fantôme."""
+        self._ensure_last()
+        pb = self.boundary_values(self.primitive())[3].copy()
+        w = self.is_wall
+        if w.any():
+            Fc = self._last["Fb"].copy()
             if "Fvb" in self._last:
-                Fc = Fc + self._last["Fvb"] * self.magSb[:, None]
-            pw = (Fc[:, 1] * nb[:, 0] + Fc[:, 2] * nb[:, 1]) / self.magSb
-            pb[self.is_wall] = pw[self.is_wall]
+                Fc += self._last["Fvb"] * self.magSb
+            pw = (Fc[1] * self.nbx + Fc[2] * self.nby) / self.magSb
+            pb[w] = pw[w]
         return pb
 
     def grad_U(self, U=None):
         W = self.primitive()
-        Wb = self.boundary_values(W)
-        gx, gy = self.gradient(W[:, 1:3], Wb[:, 1:3])
+        Xb = self.boundary_values(W)
+        gx, gy = self.gradient(W[1:3], Xb[1:3])
         out = np.empty((self.nc, 2, 2))
-        out[:, :, 0], out[:, :, 1] = gx, gy
+        out[:, :, 0], out[:, :, 1] = gx.T, gy.T
         return out
+
+    def _viscous_traction(self, sl):
+        """−τ·S sur les faces `sl` (effort visqueux exercé sur la paroi), (n, 2)."""
+        if "Fvb" not in self._last:
+            return np.zeros((len(self.magSb[sl]), 2))
+        return -(self._last["Fvb"][1:3, sl] * self.magSb[sl]).T
 
     def forces(self, patches=None):
         """Efforts sur des patches (N/m d'envergure) : pression (p − p∞) et frottement."""
         names = patches or [p.name for p in self.mesh.patches
                             if self.bc_types.get(p.name) in ("wall", "slip_wall")]
-        if not self._last:
-            self.residual(self.Q, self.settings.order, None, store=True)
+        self._ensure_last()
         pb = self.boundary_p()
         Sb = self.mesh.Sf[self.ni:]
         out = {}
         for name in names:
             sl = self.patch_slices[name]
             Fp = np.sum((pb[sl] - self.fs.p)[:, None] * Sb[sl], axis=0)
-            if "Fvb" in self._last:
-                Fv = -np.sum(self._last["Fvb"][sl, 1:3] * self.magSb[sl, None], axis=0)
-            else:
-                Fv = np.zeros(2)
+            Fv = np.sum(self._viscous_traction(sl), axis=0)
             out[name] = {"pressure": Fp, "viscous": Fv, "total": Fp + Fv}
         return out
 
     def moment(self, patch, center=(0.0, 0.0)):
         sl = self.patch_slices[patch]
         pb = self.boundary_p()[sl]
-        Sb = self.mesh.Sf[self.ni:][sl]
-        dF = (pb - self.fs.p)[:, None] * Sb
-        if "Fvb" in self._last:
-            dF = dF - self._last["Fvb"][sl, 1:3] * self.magSb[sl, None]
+        dF = (pb - self.fs.p)[:, None] * self.mesh.Sf[self.ni:][sl]
+        dF = dF + self._viscous_traction(sl)
         r = self.mesh.face_centers[self.ni:][sl] - np.asarray(center, float)
         return float(np.sum(r[:, 0] * dF[:, 1] - r[:, 1] * dF[:, 0]))
 
     def wall_shear(self, patch):
         """(centres de faces, τ_w signé selon la tangente t = (−n_y, n_x), y⁺)."""
+        self._ensure_last()
         sl = self.patch_slices[patch]
-        n = self.nb_hat[sl]
         xf = self.mesh.face_centers[self.ni:][sl]
-        if "Fvb" not in self._last:
-            return xf, np.zeros(len(n)), np.zeros(len(n))
+        n = self.nb_hat[sl]
         t = np.column_stack([-n[:, 1], n[:, 0]])
-        tau = -np.sum(self._last["Fvb"][sl, 1:3] * t, axis=1)
+        tau = np.sum(self._viscous_traction(sl) * t, axis=1) / self.magSb[sl]
         W = self.primitive()
         c = self.Pb[sl]
-        rho = W[c, 0]
-        T = W[c, 3] / (rho * self.gas.R)
-        nu = self.gas.mu_of(T) / rho
+        rho = W[0, c]
+        nu = self.gas.mu_of(W[3, c] / (rho * self.gas.R)) / rho
+        if not self.gas.viscous:
+            return xf, tau, np.zeros(len(tau))
         yplus = self.distb[sl] * np.sqrt(np.abs(tau) / rho) / nu
         return xf, tau, yplus
 
     def wall_heat_flux(self, patch):
         """(T_paroi, flux de chaleur q entrant dans le fluide, W/m²)."""
+        self._ensure_last()
         sl = self.patch_slices[patch]
-        Tb = self.boundary_values(self.primitive())[sl, 4]
+        Tb = self.boundary_values(self.primitive())[4, sl]
         if "Fvb" not in self._last:
             return Tb, np.zeros(len(Tb))
-        return Tb, self._last["Fvb"][sl, 3].copy()
+        return Tb, self._last["Fvb"][3, sl].copy()
 
     def fields(self) -> dict:
         W = self.primitive()
         g = self.gas.gamma
         fs = self.fs
-        U = W[:, 1:3]
-        c = np.sqrt(g * W[:, 3] / W[:, 0])
+        r, u, v, p = W
+        c = np.sqrt(g * p / r)
         gU = self.grad_U()
         q = 0.5 * fs.rho * max(fs.speed, 1e-300) ** 2
-        return {"rho": W[:, 0], "U": U, "U_mag": np.hypot(U[:, 0], U[:, 1]), "p": W[:, 3],
-                "T": W[:, 3] / (W[:, 0] * self.gas.R), "Mach": np.hypot(U[:, 0], U[:, 1]) / c,
-                "Cp": (W[:, 3] - fs.p) / q,
-                "entropy": (W[:, 3] / fs.p) / (W[:, 0] / fs.rho) ** g - 1.0,
+        return {"rho": r.copy(), "U": np.column_stack([u, v]), "U_mag": np.hypot(u, v),
+                "p": p.copy(), "T": p / (r * self.gas.R), "Mach": np.hypot(u, v) / c,
+                "Cp": (p - fs.p) / q, "entropy": (p / fs.p) / (r / fs.rho) ** g - 1.0,
                 "vorticity": gU[:, 1, 0] - gU[:, 0, 1]}
 
     def mean_fields(self) -> dict:
@@ -1095,13 +1109,36 @@ class CompressibleSolver2D:
 
     def totals(self) -> dict:
         """Masse, quantité de mouvement et énergie totales (intégrales sur le domaine)."""
-        tot = np.sum(self.Q * self.V[:, None], axis=0)
+        tot = self.Q @ self.V
         return {"mass": float(tot[0]), "momentum_x": float(tot[1]),
                 "momentum_y": float(tot[2]), "energy": float(tot[3])}
 
 
+def _take(a, idx):
+    """a[:, idx] (np.take : 3 à 4 fois plus rapide que l'indexation avancée)."""
+    return np.take(a, idx, axis=1)
+
+
 def _angle(st: State) -> float:
     return float(np.degrees(np.arctan2(st.v, st.u))) if st.speed > 0 else 0.0
+
+
+def _state_from_spec(spec: dict, default: State) -> State:
+    """État imposé d'une condition (farfield, supersonic_inlet) : mach, pressure,
+    temperature, density, angle (°) ou velocity ; valeurs manquantes : `default`."""
+    keys = ("mach", "pressure", "temperature", "density", "velocity", "angle")
+    if not any(k in spec for k in keys):
+        return default
+    gas = default.gas
+    p, T, rho = spec.get("pressure"), spec.get("temperature"), spec.get("density")
+    if sum(v is not None for v in (p, T, rho)) < 2:
+        if p is None:
+            p = default.p
+        if sum(v is not None for v in (p, T, rho)) < 2:
+            T = default.T if T is None else T
+    return make_state(gas, spec.get("mach", default.mach), p, T,
+                      rho if (p is None or T is None) else None,
+                      spec.get("angle", _angle(default)), spec.get("velocity"))
 
 
 def _value(v, x, y):
