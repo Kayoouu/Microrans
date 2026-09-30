@@ -1,7 +1,8 @@
 # Profil NACA 0012 transsonique, M = 0.8, α = 1.25° (Euler, compressible, schéma implicite).
-# Références : AGARD-AR-211 (1985), Cl ≈ 0.35-0.36, Cd ≈ 0.022-0.023 (valeurs convergées
-# en maillage). Ce maillage (192 × 64 = 12 288 cellules) donne une portance plus FAIBLE :
-# voir l'étude de maillage de docs/compressible.md. Durée ~1-2 min.
+# Valeurs publiées (ordres de grandeur, non revérifiés) : Cl ≈ 0.35, Cd ≈ 0.022-0.023.
+# Ce code : Cl = 0.335, Cd = 0.0221 sur ce maillage (192 × 64 = 12 288 cellules), quasi
+# inchangés sur 384 × 128 : Cl ~4.5 % trop bas, écart NON expliqué (docs/compressible.md
+# § 3.5). Durée ~1 min.
 # microrans run2d compressible_naca0012_transsonique
 [mesh]
 type = "ogrid"

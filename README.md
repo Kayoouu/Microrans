@@ -3,7 +3,8 @@
 [![tests](https://github.com/Kayoouu/Microrans/actions/workflows/tests.yml/badge.svg)](https://github.com/Kayoouu/Microrans/actions/workflows/tests.yml)
 [![executables](https://github.com/Kayoouu/Microrans/actions/workflows/build.yml/badge.svg)](https://github.com/Kayoouu/Microrans/actions/workflows/build.yml)
 
-Outil de simulation d'écoulements **incompressibles turbulents ou laminaires**, en Python :
+Outil de simulation d'écoulements **incompressibles** (laminaires ou turbulents) et
+**compressibles** (Euler, Navier-Stokes laminaire), en Python :
 
 - **2D plan ou axisymétrique** (tuyaux, jets, corps de révolution) : volumes finis sur
   maillages structurés, non structurés ou hybrides ; stationnaire (SIMPLE/SIMPLEC ou solveur
@@ -14,6 +15,9 @@ Outil de simulation d'écoulements **incompressibles turbulents ou laminaires**,
   (swirl) en axisymétrique et disques actuateurs (hélices, éoliennes, ventilateurs) ;
   polaires et balayages de paramètres ; reprise de calcul ; mailleur intégré et
   import/export Gmsh / SU2 / VTK / OpenFOAM ;
+- **compressible, 2D plan** : solveur en densité (flux de Roe ou HLLC, ordre 2 limité,
+  stationnaire implicite ou Runge-Kutta) pour les chocs, le transsonique et le
+  supersonique ; **sans turbulence** (Euler ou laminaire) ;
 - **1D** : canal plan turbulent intégré jusqu'à la paroi (RANS et URANS pulsé), très rapide,
   idéal pour comparer les modèles ;
 - **modèles de turbulence** : Spalart-Allmaras, k-ε (Launder-Sharma), k-ω (Wilcox 2006),
@@ -29,8 +33,8 @@ est justifié par une mesure** reproductible dans ce dépôt (sections « Métho
 (section « Limites »).
 
 > **Ce que ce n'est pas :** un remplaçant d'OpenFOAM, SU2 ou Fluent. Python vectorisé
-> (NumPy/SciPy) : confortable jusqu'à ~10⁵ cellules en 2D ; incompressible, 2D plan ou
-> axisymétrique (pas de 3D), pas de transition ni de LES.
+> (NumPy/SciPy) : confortable jusqu'à ~10⁵ cellules en 2D ; 2D plan ou axisymétrique (pas
+> de 3D), pas de LES ; compressible sans turbulence (Euler ou laminaire, 2D plan).
 
 ---
 
@@ -221,6 +225,7 @@ API Python : `from microrans.fv2d import Solver2D, Settings`, `from microrans.me
 | Arrêt | résidus normalisés (OpenFOAM) ou stabilisation des efforts (moniteurs Fluent) | — |
 | Études | reprise exacte / interpolation sur un autre maillage ; démarrage multigrille ; polaire (incidence de l'écoulement, continuation) ; balayage de n'importe quel paramètre | `mapFields`, FMG de Fluent, polaires Fluent / SU2 |
 | Post-traitement | sondes (suivi à chaque itération), profils le long d'une ligne (cellule + gradient), moyennes et écarts-types temporels (reprise exacte), animations GIF à échelle de couleurs fixe | `probes`, `sample`, `fieldAverage` d'OpenFOAM |
+| Compressible | solveur en densité : Roe (correction d'entropie de Harten) ou HLLC, MUSCL + limiteur de Venkatakrishnan, implicite (jacobienne d'ordre 1, GMRES + Gauss-Seidel symétrique) ou Runge-Kutta SSP, champ lointain à invariants de Riemann + tourbillon ponctuel ; détails `docs/compressible.md` | SU2 ; Blazek, « Computational Fluid Dynamics » (2015) ; Toro (2009) |
 | Matériel | CPU (NumPy/SciPy) ou GPU (CuPy) par un module de tableaux interchangeable | — |
 
 ---
@@ -424,6 +429,24 @@ comme à 0.8.
   compatible cartes graphiques) ; le couplé est **conseillé pour le laminaire et le
   turbulent sans transition**.
 
+### 5.6 Écoulements compressibles (`[physics] compressible = true`)
+
+Solveur séparé, en densité (variables conservatives ρ, ρu, ρv, ρE ; grandeurs SI) : mêmes
+maillages, mêmes fichiers de cas et mêmes sorties que l'incompressible. Exemples :
+`compressible_tube_sod` (instationnaire), `compressible_rampe_mach2`,
+`compressible_plaque_laminaire`, `compressible_naca0012_transsonique`. Méthodes, validation
+complète et limites : **`docs/compressible.md`**.
+
+Deux réglages ont été corrigés après mesure (NACA 0012, M = 0.8, 12 288 cellules) :
+
+- **Limiteur gelé trop tôt = solution fausse** : `limiter_freeze = 200` gelait le limiteur
+  avant que le choc soit en place ; les résidus tombaient à 1e-10, mais vers C_l = 0.3238
+  au lieu de 0.3353 (−3.4 %). L'exemple ne gèle plus le limiteur.
+- **Pilotage du CFL implicite** : le plafond de CFL était divisé par 2 dès que les résidus
+  stagnaient, ce qui arrive normalement au démarrage (choc qui se déplace) ; CFL bloqué à
+  6.25, pas de convergence en 3 000 itérations. Il n'est plus réduit que si la solution
+  oscille (cycle limite) : C_l stable dès l'itération 250, résidus < 1e-6 à 510.
+
 ---
 
 ## 6. Vérification et validation (résultats obtenus avec ce code)
@@ -447,6 +470,17 @@ comme à 0.8.
 | Cylindre Re = 20, écoulement incliné de 30° | C_d (axes écoulement) | écart 0.01 % avec 0° | invariance exacte |
 | Canal, débit imposé (plan / axisymétrique 360°) | débit en sortie | exact à 1e-9 | conservation |
 | Canal entraîné par une pression totale Δp | p + ½U² en entrée ; débit | = p0 à 1e-12 ; −0.8 % | Poiseuille Δp h³/(12 ν L) |
+
+### 2D, compressible (détails et figures : `docs/compressible.md`)
+
+| Cas | Grandeur | microrans | Référence |
+|-----|----------|-----------|-----------|
+| Tube à choc de Sod, 400 mailles | positions choc / contact / milieu de détente | 0.8508 / 0.6861 / 0.3753 | 0.8504 / 0.6855 / 0.3747 (solution exacte) |
+| Rampe M = 2, θ = 10°, 21 600 cellules | angle de choc β ; p2/p1 | 39.30° ; 1.707 | 39.31° ; 1.7066 (choc oblique) |
+| Plaque plane laminaire M = 0.2, Re = 1e5 | C_f moyen sur 0.1 < x < 0.95 ; C_d | écart 0.8 % ; 0.004231 | Blasius ; 0.00420 |
+| Couette avec dissipation visqueuse | u ; T ; τ_w, q_w | 1e-8 ; 0.2 % de ΔT ; 3e-8 | solution exacte |
+| NACA 0012 Euler, M = 0.5, α = 1.25° | C_l (96×32 → 384×128) ; C_d parasite | 0.1715 → 0.1791 ; 0.0028 → 0.00017 | C_d = 0 (Euler subsonique) |
+| NACA 0012 Euler, M = 0.8, α = 1.25° | C_l ; C_d (384×128) | 0.3345 ; 0.0219 | ≈ 0.35 ; ≈ 0.022-0.023 : **C_l 4.5 % trop bas, non expliqué** |
 
 ### 2D axisymétrique
 
@@ -560,6 +594,10 @@ grossiers compris ; résultats identiques (efforts à 5 chiffres).
 Utile pour les écoulements laminaires ou à recirculation ; quasi inutile pour les couches
 limites turbulentes, dont la convergence est dominée par les équations de turbulence.
 
+**Compressible** (implicite) : ~8-9 µs par itération et par cellule ; NACA 0012
+transsonique convergé (résidus < 1e-8) en ~1 min 40 s pour 12 288 cellules, ~13 min pour
+49 152 cellules. Détails : `docs/compressible.md` § 4.
+
 **Balayages et polaires en parallèle** (`--jobs N`, `[sweep] jobs`, interface « Calculs en
 parallèle ») : un point par processus (4 cœurs, détails `docs/multicoeur.md`).
 
@@ -608,7 +646,10 @@ l'arrondi près (~1e-13), et identiques quel que soit le nombre de fils.
    cellules non testée. SIMPLEC : les efforts convergés dépendent un peu de `relax_U`
    (NACA : C_d −0.6 % entre 0.7 et 0.5), pas le couplé. Sur maillages non orthogonaux,
    les résidus plafonnent souvent vers 1e-5 — utiliser `monitor_tol`.
-4. **Incompressible uniquement**, pas de LES/DES. **Transition (`sst_gamma`)** : validée
+4. **Compressible sans turbulence** (Euler ou laminaire, 2D plan, CPU) ; C_l du NACA 0012
+   transsonique ~4.5 % sous les valeurs publiées, écart non expliqué (convergence, maillage,
+   flux, limiteur et champ lointain écartés : `docs/compressible.md` § 3.5). Pas de LES/DES.
+   **Transition (`sst_gamma`)** : validée
    seulement sur plaques planes sans gradient de pression ; début de transition bien placé
    (T3A +3 %, T3A- −6 %) mais transition **trop raide** (mi-transition T3A 16 % trop tôt,
    C_f max −8 %), C_f laminaire 10 à 26 % au-dessus de Blasius à Tu élevé (T3B : creux
@@ -675,7 +716,7 @@ Maillage en C et validation NASA TMR (profils) ; étude de convergence en mailla
 parallélisme multi-cœur (Numba) ou CuPy validé sur carte ; transition avec gradient de
 pression et décollement laminaire (T3C, profils à bas Reynolds), rugosité, crossflow ;
 corrections de courbure et de rotation, loi de paroi thermique et k-ε haut-Reynolds ;
-viscoélasticité ; compressible (Roe/HLLC, RK SSP)  ; solveur
+viscoélasticité ; compressible turbulent (RANS) et axisymétrique, écart transsonique ; solveur
 couplé : énergie et turbulence dans le système couplé, préconditionneur multigrille par blocs
 pour les grands maillages.
 
@@ -700,6 +741,11 @@ microrans/
     fvm.py               opérateurs volumes finis, assemblage CSR
     solver.py            SIMPLE(C), PIMPLE, projection RK/AB2, thermique, CL, efforts
     coupled.py           solveur couplé pression-vitesse (LU réutilisée + GMRES)
+    compressible.py      solveur compressible en densité (Roe / HLLC, MUSCL, CL, efforts)
+    compressible_implicit.py   pas implicite (jacobienne d'ordre 1, GMRES + SGS)
+    compressible_case.py fichiers de cas compressibles, sorties, reprise
+    compressible_validation.py cas de validation (Sod, rampe, plaque, Couette, NACA)
+    gasdynamics.py       solutions exactes (Riemann, chocs oblique et droit)
     case.py post.py      fichiers de cas, sorties, figures
     restart.py           sauvegarde / reprise, interpolation sur un autre maillage
     fmg.py               démarrage multigrille (maillages grossiers reconstruits)
@@ -711,7 +757,7 @@ microrans/
   gui/                   interface PySide6 (app.py, widgets.py)
   examples/              cas fournis (microrans examples)
 packaging/               PyInstaller (microrans.spec) : exécutables GUI + CLI
-tests/                   pytest (250 tests : vérification, validation, GUI hors écran, faux GPU)
+tests/                   pytest (268 tests : vérification, validation, GUI hors écran, faux GPU)
 .github/workflows/       tests (Python 3.10 / 3.12) ; exécutables Windows / Linux
 ```
 
