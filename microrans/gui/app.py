@@ -50,7 +50,8 @@ BODY_TYPES = [("circle", "Cercle"), ("rectangle", "Rectangle"), ("ellipse", "Ell
 FIELD_LABELS = {"T": "température T", "U_mag": "|U|", "Ux": "U_x", "Uy": "U_y", "p": "pression p", "vorticity":
                 "vorticité ω_z", "nut_over_nu": "ν_t / ν", "k": "k", "omega": "ω", "eps": "ε",
                 "nu_tilde": "ν̃", "wall_distance": "distance à la paroi",
-                "viscosity": "viscosité ν (non newtonien)", "shear_rate": "taux de cisaillement γ̇"}
+                "viscosity": "viscosité ν (non newtonien)", "shear_rate": "taux de cisaillement γ̇",
+                "U_theta": "vitesse de rotation u_θ"}
 VISCOSITY_MODELS = [("newtonian", "Newtonien (ν constante)"), ("power_law", "Loi puissance"),
                     ("carreau", "Carreau"), ("cross", "Cross"),
                     ("herschel_bulkley", "Herschel-Bulkley (seuil)"), ("bingham", "Bingham (seuil)"),
@@ -414,6 +415,8 @@ class MainWindow(QMainWindow):
         f.addRow("Incidence α (°)", B.sci(("physics", "angle_of_attack"), None, True, "0"))
         f.addRow(B.check(("physics", "axisymmetric"), False,
                          "Axisymétrique : x = axe de révolution, y = rayon (tuyau, jet, sphère…)"))
+        f.addRow(B.check(("physics", "swirl"), False,
+                         "Rotation propre u_θ (axisymétrique : jet tournant, cyclone, rotor)"))
         f.addRow(_note("Incidence : l'écoulement amont (entrées, champ lointain, vitesse "
                        "initiale) est tourné de α ; Cd et Cl sont donnés dans les axes de "
                        "l'écoulement."))
@@ -501,6 +504,26 @@ class MainWindow(QMainWindow):
                        "la zone tournés de l'angle. Vitesse reconstruite imprécise (±quelques %) "
                        "dans les 1-2 cellules voisines de la frontière de zone (voir README)."))
         lay.addWidget(box)
+        box, f = _form("Disques actuateurs (hélice, éolienne, ventilateur)")
+        self.disk_table = QTableWidget(0, 7)
+        self.disk_table.setHorizontalHeaderLabels(["Nom", "x0", "x1", "Rayon R", "Moyeu",
+                                                   "Poussée T ou CT=…", "Couple Q"])
+        self.disk_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        self.disk_table.setMinimumHeight(90)
+        self.disk_table.itemChanged.connect(lambda *_: self._disk_changed())
+        f.addRow(self.disk_table)
+        row = QHBoxLayout()
+        for text, fn in (("Ajouter", self._disk_add), ("Supprimer", self._disk_remove)):
+            b = QPushButton(text)
+            b.clicked.connect(fn)
+            row.addWidget(b)
+        row.addStretch(1)
+        f.addRow(row)
+        f.addRow(_note("Zone mince x0 ≤ x ≤ x1, rayon ≤ R (axe x ; en plan : |y| ≤ R). Poussée T "
+                       "(> 0 : pousse le fluide vers +x, hélice ; < 0 : éolienne) en N/(kg/m³), "
+                       "ou « CT=0.5 » (éolienne) / « CT=0.3 helice ». Couple Q : axisymétrique "
+                       "avec rotation propre. Vitesse au disque et puissance dans summary.json."))
+        lay.addWidget(box)
         box, f = _form("Conditions initiales et forces")
         f.addRow("Vitesse initiale (Ux, Uy)", B.vec(("initial", "U"), (0.0, 0.0)))
         f.addRow("Perturbation du sillage", B.sci(("initial", "perturbation"), None, True, "0"))
@@ -525,9 +548,9 @@ class MainWindow(QMainWindow):
                             "p = p0 ; Sortie : p imposée ; Champ lointain : U∞ en entrée, p∞ en "
                             "sortie selon le signe de U∞·n. Les composantes de U acceptent des "
                             "expressions en x, y (ex. 6*y*(1-y))."))
-        self.bc_table = QTableWidget(0, 9)
+        self.bc_table = QTableWidget(0, 10)
         self.bc_table.setHorizontalHeaderLabels(["Patch", "Type", "Ux", "Uy", "p", "T", "flux q",
-                                                 "débit Q", "scalaires"])
+                                                 "débit Q", "scalaires", "u_θ ou Ω=…"])
         self.bc_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         self.bc_table.itemChanged.connect(lambda *_: self._bc_changed())
         lay.addWidget(self.bc_table, 1)
@@ -756,6 +779,7 @@ class MainWindow(QMainWindow):
         self._visc_changed()
         self._fill_scalar_table()
         self._fill_porous_table()
+        self._fill_disk_table()
         self._fill_bc_table()
         self._syncing = False
         self._refresh_toml()
@@ -1241,6 +1265,77 @@ class MainWindow(QMainWindow):
             self.cfg.pop("porous", None)
         self._toml_timer.start()
 
+    def _fill_disk_table(self):
+        self._disk_sync = True
+        disks = self.cfg.get("actuator_disk", []) or []
+        self.disk_table.setRowCount(0)
+        self.disk_table.setRowCount(len(disks))
+        for r, d in enumerate(disks):
+            if "thrust_coefficient" in d:
+                t = f"CT={d['thrust_coefficient']:g}" + (
+                    " helice" if d.get("mode") == "propeller" else "")
+            else:
+                t = self._pair_text(d.get("thrust"))
+            vals = (d.get("name", f"disque{r + 1}"), self._pair_text(d.get("x0")),
+                    self._pair_text(d.get("x1")), self._pair_text(d.get("radius")),
+                    self._pair_text(d.get("hub_radius")), t, self._pair_text(d.get("torque")))
+            for c, val in enumerate(vals):
+                self.disk_table.setItem(r, c, QTableWidgetItem(val))
+        self._disk_sync = False
+
+    def _disk_add(self):
+        disks = self.cfg.setdefault("actuator_disk", [])
+        disks.append({"name": f"disque{len(disks) + 1}", "x0": -0.05, "x1": 0.05,
+                      "radius": 1.0, "thrust_coefficient": 0.5, "mode": "turbine"})
+        self._fill_disk_table()
+        self._toml_timer.start()
+
+    def _disk_remove(self):
+        r = self.disk_table.currentRow()
+        disks = self.cfg.get("actuator_disk", [])
+        if 0 <= r < len(disks):
+            disks.pop(r)
+            if not disks:
+                self.cfg.pop("actuator_disk", None)
+            self._fill_disk_table()
+            self._toml_timer.start()
+
+    def _disk_changed(self):
+        if getattr(self, "_disk_sync", False):
+            return
+        old = self.cfg.get("actuator_disk", []) or []
+
+        def cell(r, c):
+            it = self.disk_table.item(r, c)
+            return it.text().strip() if it else ""
+        disks = []
+        try:
+            for r in range(self.disk_table.rowCount()):
+                d = {k: v for k, v in (old[r] if r < len(old) else {}).items()
+                     if k in ("distribution", "center")}
+                d["name"] = cell(r, 0) or f"disque{r + 1}"
+                for key, c in (("x0", 1), ("x1", 2), ("radius", 3), ("hub_radius", 4),
+                               ("torque", 6)):
+                    if cell(r, c):
+                        d[key] = float(cell(r, c))
+                t = cell(r, 5)
+                if t.upper().startswith("CT="):
+                    parts = t[3:].split()
+                    d["thrust_coefficient"] = float(parts[0])
+                    d["mode"] = "propeller" if len(parts) > 1 and parts[1].lower().startswith(
+                        ("hel", "hél", "prop")) else "turbine"
+                elif t:
+                    d["thrust"] = float(t)
+                disks.append(d)
+        except ValueError:
+            self.statusBar().showMessage("Disque actuateur : nombre invalide", 4000)
+            return
+        if disks:
+            self.cfg["actuator_disk"] = disks
+        else:
+            self.cfg.pop("actuator_disk", None)
+        self._toml_timer.start()
+
     def _mode_changed(self):
         steady = self.mode_combo.currentData() == "steady"
         self.box_steady.setVisible(steady)
@@ -1314,6 +1409,9 @@ class MainWindow(QMainWindow):
             self.bc_table.setItem(r, 7, QTableWidgetItem(str(spec.get("flow_rate", ""))))
             self.bc_table.setItem(r, 8, QTableWidgetItem("; ".join(
                 f"{k}={v}" for k, v in (spec.get("scalars") or {}).items())))
+            rot = (f"Ω={spec['omega']}" if "omega" in spec
+                   else str(spec.get("U_theta", "")))
+            self.bc_table.setItem(r, 9, QTableWidgetItem(rot))
         self._bc_sync = False
 
     def _bc_changed(self):
@@ -1363,6 +1461,11 @@ class MainWindow(QMainWindow):
                     vals[k] = num(v)
             if vals:
                 spec["scalars"] = vals
+            rot = self.bc_table.item(r, 9).text().strip() if self.bc_table.item(r, 9) else ""
+            if rot.lower().startswith(("ω=", "omega=", "Ω=".lower())) or rot.startswith("Ω="):
+                spec["omega"] = float(rot.split("=", 1)[1])
+            elif rot:
+                spec["U_theta"] = num(rot)
             bnd[name] = spec
         self.cfg["boundary"] = bnd
         self._toml_timer.start()

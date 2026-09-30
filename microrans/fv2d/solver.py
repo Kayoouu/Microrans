@@ -33,6 +33,11 @@ Zones poreuses (porous = [{name, region, darcy | permeability, forchheimer, angl
 perte de charge de Darcy-Forchheimer S = −(ν D + ½|U| F)·U (vitesse superficielle, comme
 explicitPorositySource / DarcyForchheimer d'OpenFOAM et les milieux poreux de Fluent) ; D, F
 tenseurs diagonaux dans les axes de la zone (angle) ; partie diagonale implicite.
+
+Rotation propre (swirl = True, axisymétrique) : composante u_θ transportée,
+∂u_θ/∂t + ∇·(U u_θ) = ∇·(ν_eff ∇u_θ) − (ν_eff/r² + (∂ν_eff/∂r)/r + u_r/r) u_θ + f_θ, et force
+centrifuge u_θ²/r dans l'équation radiale. Disques actuateurs (actuator_disks) : force de
+poussée (et couple, avec swirl) répartie dans une zone mince (hélice, éolienne, ventilateur).
 """
 from __future__ import annotations
 
@@ -182,13 +187,34 @@ class FlowField2D:
         fvm = self.solver.fvm
         if fvm.axisymmetric:
             s2 = s2 + 2 * (self.U[:, 1] / fvm.radius) ** 2      # S_θθ = u_r / r
+        gw = self._swirl_grad()
+        if gw is not None:
+            # 2 S_xθ² + 2 S_rθ² (× 2) : S_xθ = ½ ∂u_θ/∂x, S_rθ = ½ (∂u_θ/∂r − u_θ/r)
+            W = self.solver.scalars["U_theta"]
+            s2 = s2 + gw[:, 0] ** 2 + (gw[:, 1] - W / fvm.radius) ** 2
         return self._wall_override(xp.sqrt(s2))
+
+    def _swirl_grad(self):
+        s = self.solver
+        if not getattr(s, "swirl", False):
+            return None
+        if getattr(self, "_gw", None) is None:
+            W = s.scalars["U_theta"]
+            self._gw = s.fvm.grad(W, s.boundary_scalar("U_theta"))
+        return self._gw
 
     @property
     def vorticity(self):
         xp = self.solver.xp
         g = self.gradU
-        return self._wall_override(xp.abs(g[:, 1, 0] - g[:, 0, 1]))
+        wz = g[:, 1, 0] - g[:, 0, 1]
+        gw = self._swirl_grad()
+        if gw is not None:
+            # |ω| complet : ω_x = ∂u_θ/∂r + u_θ/r, ω_r = −∂u_θ/∂x
+            W = self.solver.scalars["U_theta"]
+            return self._wall_override(xp.sqrt(wz ** 2 + (gw[:, 1] + W / self.solver.fvm.radius)
+                                               ** 2 + gw[:, 0] ** 2))
+        return self._wall_override(xp.abs(wz))
 
     @property
     def second_derivative_sq(self):
@@ -283,7 +309,7 @@ class Solver2D:
                  settings: Settings | None = None, reference_velocity: float | None = None,
                  energy: dict | None = None, axisymmetric: bool = False,
                  viscosity: dict | None = None, scalars: dict | None = None,
-                 porous: list | None = None):
+                 porous: list | None = None, swirl=False, actuator_disks: list | None = None):
         self.mesh = mesh
         self.axisymmetric = bool(axisymmetric)
         # thermique (optionnelle) : Pr, Pr_t, beta (Boussinesq), T_ref, gravity, T0, source
@@ -295,6 +321,16 @@ class Solver2D:
         self.rheology = None
         self.settings = settings or Settings()
         self.scalar_specs = self._scalar_specs(scalars or {})
+        # rotation propre : u_θ transportée comme un scalaire particulier (même stockage :
+        # reprise, historique, sondes, moyennes et animations sans code supplémentaire)
+        self.swirl = bool(swirl)
+        if self.swirl:
+            if not self.axisymmetric:
+                raise ValueError("swirl (rotation propre) : uniquement en axisymétrique.")
+            init = swirl.get("initial", 0.0) if isinstance(swirl, dict) else 0.0
+            self.scalar_specs["U_theta"] = {"swirl": True, "initial": init, "source": 0.0,
+                                            "diffusivity": 0.0, "Sc_t": 1.0,
+                                            "scheme": self.settings.convection_U}
         # force volumique : constante (fx, fy) ou fonction du temps t -> (fx, fy)
         self.body_force = body_force if callable(body_force) else np.asarray(body_force, float)
         self._t_eval = 0.0
@@ -367,6 +403,7 @@ class Solver2D:
         self.scalar_source = {k: xp.asarray(_eval_expr(sp["source"], C[:, 0], C[:, 1]))
                               for k, sp in self.scalar_specs.items()}
         self.porous = self._porous_setup(porous) if porous else None
+        self.disks = self._disk_setup(actuator_disks) if actuator_disks else None
         if viscosity and str(viscosity.get("model", "newtonian")).lower() != "newtonian":
             from .rheology import Rheology
             if self.model.variables:
@@ -479,6 +516,9 @@ class Solver2D:
         self.scalar_bcs = {}
         for name, sp in self.scalar_specs.items():
             kind, fixed, grad = np.ones(nb, dtype=int), np.zeros(nb), np.zeros(nb)
+            if sp.get("swirl"):
+                self.scalar_bcs[name] = self._swirl_bc(Cb, nhat)
+                continue
             for p in m.patches:
                 spec, sl = self.boundaries[p.name], self.patch_slices[p.name]
                 x, y = Cb[sl, 0], Cb[sl, 1]
@@ -507,7 +547,7 @@ class Solver2D:
 
     RESERVED = ("U", "Ux", "Uy", "U_mag", "p", "T", "k", "omega", "epsilon", "nu_tilde",
                 "continuity", "iteration", "time", "dt", "Co", "Dn", "vorticity",
-                "viscosity", "shear_rate", "nut_over_nu", "wall_distance")
+                "viscosity", "shear_rate", "nut_over_nu", "wall_distance", "U_theta")
 
     def _scalar_specs(self, scalars: dict) -> dict:
         """Paramètres des scalaires passifs, valeurs par défaut complétées."""
@@ -598,6 +638,102 @@ class Solver2D:
                          "volume": float(np.sum(self.backend.to_host(self.fvm.V)[mask]))})
         A = self.backend.asarray
         return {"D": A(D), "F": A(F), "zone": A(owner), "info": info}
+
+    def _swirl_bc(self, Cb, nhat):
+        """u_θ aux frontières : paroi Ω r (omega, rad/s) ou U_theta ; entrée U_theta
+        (défaut 0) ; champ lointain : idem en entrée, gradient nul en sortie ; axe : 0 ;
+        symétrie, sortie : gradient nul."""
+        m = self.mesh
+        nb = m.n_faces - m.n_internal
+        kind, fixed = np.ones(nb, dtype=int), np.zeros(nb)
+        for p in m.patches:
+            spec, sl = self.boundaries[p.name], self.patch_slices[p.name]
+            x, y = Cb[sl, 0], Cb[sl, 1]
+            t = spec["type"]
+            if t == "wall":
+                kind[sl] = 0
+                fixed[sl] = (float(spec["omega"]) * y if "omega" in spec
+                             else _eval_expr(spec.get("U_theta", 0.0), x, y))
+            elif t in ("inlet", "pressure_inlet"):
+                kind[sl] = 0
+                fixed[sl] = _eval_expr(spec.get("U_theta", 0.0), x, y)
+            elif t == "farfield":
+                inflow = nhat[sl] @ np.asarray(spec["U"], dtype=float) < 0.0
+                kind[sl] = np.where(inflow, 0, 1)
+                fixed[sl] = _eval_expr(spec.get("U_theta", 0.0), x, y)
+            elif t == "axis":
+                kind[sl] = 0
+        return kind, fixed, np.zeros(nb)
+
+    def _disk_setup(self, disks: list) -> dict:
+        """Disques actuateurs : forces volumiques (par unité de masse) f_x (et f_θ) dans
+        x0 ≤ x ≤ x1, r_moyeu ≤ r ≤ R (plan : |y − center| ≤ R). Poussée T et couple Q totaux
+        (sur 360° en axisymétrique, par unité de profondeur en plan), en grandeurs
+        cinématiques (N / (kg/m³)). thrust > 0 : le disque pousse le fluide vers +x
+        (hélice) ; < 0 : le fluide cède de la quantité de mouvement (éolienne). Ou
+        thrust_coefficient C_T = |T| / (½ U_ref² A) avec mode = "propeller" | "turbine"."""
+        m = self.mesh
+        C = m.cell_centers
+        V = np.asarray(self.backend.to_host(self.fvm.V))
+        k = 2.0 * np.pi if self.axisymmetric else 1.0
+        fx, ft = np.zeros(m.n_cells), np.zeros(m.n_cells)
+        info, masks = [], []
+        for i, d in enumerate(disks):
+            name = d.get("name", f"disque{i + 1}")
+            R, rh = float(d["radius"]), float(d.get("hub_radius", 0.0))
+            yc = 0.0 if self.axisymmetric else float(d.get("center", 0.0))
+            r = C[:, 1] if self.axisymmetric else np.abs(C[:, 1] - yc)
+            mask = (C[:, 0] >= d["x0"]) & (C[:, 0] <= d["x1"]) & (r >= rh) & (r <= R)
+            if not mask.any():
+                raise ValueError(f"Disque actuateur '{name}' : aucune cellule dans la zone "
+                                 f"(épaisseur x1 − x0 à mailler par au moins une cellule).")
+            area = np.pi * (R ** 2 - rh ** 2) if self.axisymmetric else 2.0 * (R - rh)
+            if "thrust" in d:
+                T = float(d["thrust"])
+            elif "thrust_coefficient" in d:
+                T = float(d["thrust_coefficient"]) * 0.5 * self.U_ref ** 2 * area
+                T = -T if d.get("mode", "turbine") == "turbine" else T
+            else:
+                raise ValueError(f"Disque actuateur '{name}' : donner thrust ou "
+                                 f"thrust_coefficient.")
+            rs = np.clip((r - rh) / max(R - rh, 1e-300), 0.0, 1.0)
+            dist = d.get("distribution", "uniform")
+            if dist == "uniform":
+                w = np.ones_like(rs)
+            elif dist == "optimal":
+                w = rs * np.sqrt(np.maximum(1.0 - rs, 0.0))        # Hough & Ordway
+            else:
+                raise ValueError(f"Disque '{name}' : distribution = uniform | optimal.")
+            w = np.where(mask, w, 0.0)
+            fx += T * w / (k * np.sum(w * V))
+            Q = float(d.get("torque", 0.0))
+            if Q:
+                if not self.swirl:
+                    raise ValueError(f"Disque '{name}' : un couple (torque) exige la rotation "
+                                     f"propre ([physics] swirl = true, axisymétrique).")
+                ft += Q * w / (k * np.sum(w * C[:, 1] * V))
+            info.append({"name": name, "cells": int(mask.sum()), "thrust": T, "torque": Q,
+                         "area": area})
+            masks.append(mask)
+        A = self.backend.asarray
+        return {"fx": A(fx), "ftheta": A(ft), "info": info, "masks": [A(q) for q in masks]}
+
+    def disk_report(self) -> list:
+        """Par disque : vitesse axiale moyenne dans le disque (pondérée par le volume),
+        puissance P = −∫ f·U dV reçue par le disque (éolienne > 0)."""
+        xp = self.xp
+        k = 2.0 * np.pi if self.axisymmetric else 1.0
+        out = []
+        V = self.fvm.V
+        fu = self.disks["fx"] * self.U[:, 0]
+        if self.swirl:
+            fu = fu + self.disks["ftheta"] * self.scalars["U_theta"]
+        for d, sel in zip(self.disks["info"], self.disks["masks"]):
+            vol = xp.sum(xp.where(sel, V, 0.0))
+            ud = float(xp.sum(xp.where(sel, self.U[:, 0] * V, 0.0)) / vol)
+            out.append({**d, "U_disk": ud, "power": -k * float(xp.sum(xp.where(sel, fu * V,
+                                                                             0.0)))})
+        return out
 
     def porous_coefficients(self, U=None):
         """K = ν D + ½|U| F par cellule (nc, 2, 2), |U| figé (linéarisation de Picard)."""
@@ -725,6 +861,12 @@ class Solver2D:
         if self.porous is not None:
             Kb = self.porous_coefficients()[self.fvm.Pb]
             f = f - xp.einsum("bij,bj->bi", Kb, self.boundary_U(self.U))
+        if self.swirl:
+            # équilibre radial : ∂p/∂r = u_θ²/r à la paroi (glissement, paroi tournante)
+            rb = self.xp.asarray(self.mesh.face_centers[self.mesh.n_internal:, 1])
+            Wb = self.boundary_scalar("U_theta")
+            fr = xp.where(rb > 0.0, Wb * Wb / xp.where(rb > 0.0, rb, 1.0), 0.0)
+            f = f + xp.stack([xp.zeros_like(fr), fr], axis=1)
         return f
 
     def _boundary_force_normal(self):
@@ -783,7 +925,8 @@ class Solver2D:
     # ------------------------------------------------------------------ quantité de mouvement
     def _has_force(self):
         e = self.energy
-        if (e is not None and e["beta"]) or self.porous is not None:
+        if ((e is not None and e["beta"]) or self.porous is not None or self.swirl
+                or self.disks is not None):
             return True
         return callable(self.body_force) or bool(np.any(np.asarray(self.body_force) != 0))
 
@@ -863,6 +1006,9 @@ class Solver2D:
             T = self.fvm.interp(self.T) if face else self.T
             g = xp.asarray(np.asarray(e["gravity"], dtype=float))
             f = f - float(e["beta"]) * (T - float(e["T_ref"]))[:, None] * g[None, :]
+        if self.disks is not None:
+            fx = self.fvm.interp(self.disks["fx"]) if face else self.disks["fx"]
+            f = f + xp.stack([fx, xp.zeros_like(fx)], axis=1)
         return f
 
     def temperature_bc(self):
@@ -931,6 +1077,9 @@ class Solver2D:
         xp = self.xp
         fvm, s = self.fvm, self.settings
         for name, sp in self.scalar_specs.items():
+            if sp.get("swirl"):
+                self._swirl_eq(a0, hist, relax)
+                continue
             phi = self.scalars[name]
             D = sp["diffusivity"]
             gam = D + self.nut / sp["Sc_t"] if self.model.variables else xp.full(fvm.nc, D)
@@ -958,6 +1107,55 @@ class Solver2D:
             self.residuals_now[name] = normalized_residual(A, phi, rhs, scale)
             self.scalars[name] = fvm.lin.solve(A, rhs, phi, s.solver_U,
                                                rtol=0.1 if self.steady else 1e-6, tag=name)
+
+    def _swirl_eq(self, a0=0.0, hist=None, relax=1.0):
+        """Composante u_θ (rotation propre, axisymétrique) :
+        ∂u_θ/∂t + ∇·(U u_θ) = ∇·(ν_eff∇u_θ) − c u_θ + f_θ,
+        c = ν_eff/r² + (∂ν_eff/∂r)/r + u_r/r (partie positive implicite, le reste explicite)."""
+        xp = self.xp
+        fvm, s = self.fvm, self.settings
+        W = self.scalars["U_theta"]
+        nu_eff = self.nu_lam + self.nut
+        gam_i = fvm.interp(nu_eff)
+        gam_b = xp.where(self.is_wall, self.nu_wall, nu_eff[fvm.Pb])
+        bc = self.scalar_bc_coeffs("U_theta")
+        Wb = bc[0] * W[fvm.Pb] + bc[1]
+        grad = fvm.grad(W, Wb)
+        diag, up, lo, rhs = fvm.assemble(self.F_i, self.F_b, gam_i, gam_b, bc, grad_phi=grad,
+                                         scheme=s.convection_U, bounded=self.steady, phi=W,
+                                         nonorth_limit=s.nonorth_limit)
+        r = fvm.radius
+        dnu = fvm.grad(nu_eff, nu_eff[fvm.Pb])[:, 1] if self.model.variables else 0.0
+        c = nu_eff / r ** 2 + dnu / r + self.U[:, 1] / r
+        V = fvm.V
+        diag = diag + xp.maximum(c, 0.0) * V
+        rhs = rhs - xp.minimum(c, 0.0) * W * V
+        if self.disks is not None:
+            rhs = rhs + self.disks["ftheta"] * V
+        if _active(a0):
+            diag = diag + a0 * V
+            rhs = rhs - hist["U_theta"] * V
+        rel = s.relax_U if (self.steady and not _active(a0)) else 1.0
+        if rel < 1.0:
+            rhs = rhs + (1.0 - rel) / rel * diag * W
+            diag = diag / rel
+        A = fvm.matrix(diag, up, lo)
+        self.residuals_now["U_theta"] = normalized_residual(A, W, rhs, self.u_scale)
+        self.scalars["U_theta"] = fvm.lin.solve(A, rhs, W, s.solver_U,
+                                                rtol=0.1 if self.steady else 1e-6,
+                                                tag="U_theta")
+
+    def torque(self, patch):
+        """Couple (autour de l'axe x, sur 360°) exercé par le fluide sur une paroi."""
+        xp, fvm = self.xp, self.fvm
+        sl = self.patch_slices[patch]
+        W = self.scalars["U_theta"]
+        Wb = self.boundary_scalar("U_theta")[sl]
+        rb = xp.asarray(self.mesh.face_centers[self.mesh.n_internal:][sl][:, 1])
+        # contrainte τ_θn = ν (∂u_θ/∂n − (u_θ/r) n_r), n vers le fluide (τ_rθ = ν r ∂(u_θ/r)/∂r)
+        tau = self.nu_wall[sl] * ((W[fvm.Pb[sl]] - Wb) / fvm.dperp[sl]
+                                  + Wb / xp.maximum(rb, 1e-300) * fvm.nb_hat[sl][:, 1])
+        return 2.0 * np.pi * float(xp.sum(rb * tau * fvm.magSb[sl]))
 
     def scalar_fluxes(self, name):
         """Flux sortant total (convection + diffusion) de `name` à travers chaque frontière ;
@@ -1043,6 +1241,9 @@ class Solver2D:
                 # −τ_θθ/r = −2 ν_eff u_r/r² (les autres termes de ∇·τ sont donnés exactement
                 # par la divergence pondérée par r des deux termes ci-dessus)
                 diag = diag + 2.0 * nu_eff * V / fvm.radius ** 2
+            if c == 1 and self.swirl:
+                W = self.scalars["U_theta"]
+                rhs = rhs + W * W / fvm.radius * V              # force centrifuge u_θ²/r
             if Kp is not None:
                 # milieu poreux : terme diagonal implicite, couplage entre composantes
                 # (zone tournée, anisotrope) explicite
@@ -1597,6 +1798,10 @@ class Solver2D:
         self.scalar_bcs = {k: tuple(h(a) for a in v) for k, v in self.scalar_bcs.items()}
         if self.porous is not None:
             self.porous = {**self.porous, **{k: h(self.porous[k]) for k in ("D", "F", "zone")}}
+        if self.disks is not None:
+            self.disks = {**self.disks, "fx": h(self.disks["fx"]),
+                          "ftheta": h(self.disks["ftheta"]),
+                          "masks": [h(q) for q in self.disks["masks"]]}
         if not isinstance(self.nu_lam, float):
             self.nu_lam = h(self.nu_lam)
         if self.energy is not None:

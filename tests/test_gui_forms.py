@@ -71,3 +71,26 @@ def test_porous_table_roundtrip(win):
                  "y1": 0.5, "darcy": 100.0, "forchheimer": [2.0, 4.0], "angle": 30.0}
     win.porous_table.item(0, 1).setText("x > 1.5")
     assert win.cfg["porous"][0]["expression"] == "x > 1.5"
+
+
+def test_swirl_and_actuator_disk_forms(win):
+    cfg = {"mesh": {"type": "rectangle", "x0": 0, "x1": 2, "y0": 0, "y1": 1, "nx": 8, "ny": 4,
+                    "names": {"left": "inlet", "right": "outlet", "bottom": "axis",
+                              "top": "wall"}},
+           "physics": {"nu": 0.01, "axisymmetric": True, "swirl": True},
+           "actuator_disk": [{"name": "rotor", "x0": 0.9, "x1": 1.1, "radius": 0.5,
+                              "thrust_coefficient": 0.4, "mode": "propeller",
+                              "distribution": "optimal"}],
+           "boundary": {"inlet": {"type": "inlet", "U": [1.0, 0.0], "U_theta": "2*y"},
+                        "outlet": {"type": "outlet"}, "axis": {"type": "axis"},
+                        "wall": {"type": "wall", "omega": 3.0}}}
+    win.load_cfg(cfg)
+    assert win.disk_table.item(0, 5).text() == "CT=0.4 helice"
+    win.disk_table.item(0, 6).setText("0.1")
+    d = win.cfg["actuator_disk"][0]
+    assert d["torque"] == 0.1 and d["distribution"] == "optimal" and d["mode"] == "propeller"
+    rows = {win.bc_table.item(r, 0).text(): r for r in range(win.bc_table.rowCount())}
+    assert win.bc_table.item(rows["wall"], 9).text() == "Ω=3.0"
+    win.bc_table.item(rows["wall"], 9).setText("Ω=5")
+    assert win.cfg["boundary"]["wall"]["omega"] == 5.0
+    assert win.cfg["boundary"]["inlet"]["U_theta"] == "2*y"

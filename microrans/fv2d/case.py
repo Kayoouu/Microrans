@@ -33,6 +33,12 @@ radius) | "expression" (condition en x, y), darcy = d ou [d1, d2] (1/m², ou per
 K = 1/d en m²), forchheimer = f ou [f1, f2] (1/m), angle (° : axes principaux de la zone).
 Perte de charge par unité de longueur : ν d U + ½ f U² (vitesse superficielle).
 
+Rotation propre (axisymétrique) : [physics] swirl = true ; u_θ imposée par
+[boundary.<p>] U_theta (valeur ou expression) ou omega (paroi tournante, rad/s) ; couple sur
+les parois dans summary.json. Disques actuateurs : [[actuator_disk]] name, x0, x1, radius,
+hub_radius, thrust (ou thrust_coefficient + mode = "turbine" | "propeller"), torque,
+distribution = "uniform" | "optimal".
+
 Reprise : [initial] restart = "…/checkpoint.npz" (reprise exacte sur le même maillage,
 interpolation sinon) ; [output] checkpoint = true (défaut) écrit checkpoint.npz à la fin
 du calcul, à l'arrêt demandé et toutes les `checkpoint_minutes` (défaut 5) minutes.
@@ -155,7 +161,8 @@ def build_solver(cfg: dict, base_dir=".", verbose=False, mesh=None):
                       settings=_settings_from(cfg.get("solver", {})),
                       reference_velocity=ph.get("reference_velocity"),
                       energy=_energy_from(cfg), axisymmetric=axi, viscosity=visc,
-                      scalars=cfg.get("scalars"), porous=cfg.get("porous"))
+                      scalars=cfg.get("scalars"), porous=cfg.get("porous"),
+                      swirl=ph.get("swirl", False), actuator_disks=cfg.get("actuator_disk"))
     solver.restart_info = None
     if init.get("restart"):
         path = Path(init["restart"])
@@ -325,9 +332,12 @@ def run_case(cfg: dict, base_dir=".", out_dir=None, verbose=True, plot=True, cal
                                 "cells_at_nu_max": int(np.sum(nl >= 0.999 * solver.rheology.nu_max))}
     if solver.porous is not None:
         summary["porous"] = solver.porous_report()
-    if solver.scalars:
+    if solver.disks is not None:
+        summary["actuator_disks"] = solver.disk_report()
+    user_scalars = [k for k in solver.scalars if k != "U_theta"]
+    if user_scalars:
         # bilan : flux sortants par frontière (convection + diffusion) et source totale
-        summary["scalars"] = {k: solver.scalar_fluxes(k) for k in solver.scalars}
+        summary["scalars"] = {k: solver.scalar_fluxes(k) for k in user_scalars}
     if ckpt is not None:
         save_checkpoint(solver, ckpt, hist)
         summary["checkpoint"] = str(ckpt)
@@ -340,6 +350,8 @@ def run_case(cfg: dict, base_dir=".", out_dir=None, verbose=True, plot=True, cal
             Cd_viscous=float(f["viscous"] @ ed * kF))
         xf, tau, yp = solver.wall_shear(name)
         summary[name].update(yplus_max=float(yp.max()), yplus_mean=float(yp.mean()))
+        if solver.swirl:
+            summary[name]["torque"] = solver.torque(name)
         # distribution pariétale (comme les « XY plots » de Fluent) : Cf, Cp, y+ (, T, q)
         pb = solver.boundary_p(solver.p)[solver.patch_slices[name]]
         cols = [xf, tau, tau / (0.5 * Uref ** 2), pb / (0.5 * Uref ** 2), yp]

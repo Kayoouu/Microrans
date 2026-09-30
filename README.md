@@ -10,7 +10,8 @@ Outil de simulation d'écoulements **incompressibles turbulents ou laminaires**,
   instationnaire (PIMPLE implicite ou Runge-Kutta explicite) ; thermique (convection forcée et
   naturelle, Boussinesq) ; scalaires transportés (concentration, polluant, âge du fluide) ;
   fluides non newtoniens (loi puissance, Carreau, Cross, Bingham, Herschel-Bulkley, Casson) ;
-  zones poreuses (filtres, échangeurs : Darcy-Forchheimer, anisotropes) ;
+  zones poreuses (filtres, échangeurs : Darcy-Forchheimer, anisotropes) ; rotation propre
+  (swirl) en axisymétrique et disques actuateurs (hélices, éoliennes, ventilateurs) ;
   polaires et balayages de paramètres ; reprise de calcul ; mailleur intégré et
   import/export Gmsh / SU2 / VTK / OpenFOAM ;
 - **1D** : canal plan turbulent intégré jusqu'à la paroi (RANS et URANS pulsé), très rapide,
@@ -125,6 +126,7 @@ reynolds = 1e6
 model = "sst"              # laminar | sa | ke | kw | sst
 angle_of_attack = 4.0      # incidence de l'écoulement amont (°) ; Cd, Cl en axes écoulement
 axisymmetric = false       # true : x = axe, y = rayon ; frontière d'axe : type = "axis"
+swirl = false              # axisymétrique : rotation propre u_θ (U_theta / omega aux frontières)
 [physics.viscosity]        # optionnel : fluide non newtonien (laminaire)
 model = "carreau"          # power_law | carreau | cross | herschel_bulkley | bingham | casson
 nu0 = 5.33e-5
@@ -145,6 +147,12 @@ y0 = 0.0
 y1 = 1.0
 darcy = 1000.0             # 1/m² (ou permeability = 1e-3 m²) ; [d1, d2] + angle : anisotrope
 forchheimer = 10.0         # 1/m
+[[actuator_disk]]          # optionnel : hélice / éolienne (poussée, couple)
+x0 = -0.075
+x1 = 0.075
+radius = 1.0
+thrust_coefficient = 0.5   # ou thrust = T (> 0 : pousse vers +x) ; torque = Q (avec swirl)
+mode = "turbine"           # turbine | propeller
 [boundary.inlet]
 type = "inlet"             # wall | inlet | outlet | symmetry | farfield | axis | pressure_inlet
 U = [1.0, 0.0]             # ou flow_rate = Q (débit ; profile = "uniform" | "parabolic")
@@ -201,6 +209,8 @@ API Python : `from microrans.fv2d import Solver2D, Settings`, `from microrans.me
 | Scalaires passifs | transport convection-diffusion (D + ν_t/Sc_t), sources, limiteur de Barth-Jespersen (`linearUpwindLimited`), bilans par frontière, âge du fluide | `scalarTransport` / `cellLimited` d'OpenFOAM, UDS de Fluent |
 | Non newtonien | ν(γ̇) : loi puissance, Carreau(-Yasuda), Cross, Herschel-Bulkley / Bingham (bi-viscosité), Casson ; ν pariétal au cisaillement de paroi ; sous-relaxation de Picard | `generalisedNewtonian` d'OpenFOAM, « Non-Newtonian » de Fluent |
 | Milieux poreux | Darcy-Forchheimer (vitesse superficielle), tenseurs anisotropes tournés, terme diagonal implicite, résistance incluse dans le gradient de pression imposé aux parois (`fixedFluxPressure`) | `explicitPorositySource` d'OpenFOAM, « Porous zone » de Fluent |
+| Rotation propre | u_θ transportée (axisymétrique) : termes −ν_eff u_θ/r², −(∂ν_eff/∂r) u_θ/r, −u_r u_θ/r, force centrifuge u_θ²/r, parois tournantes (Ω r), couple pariétal avec τ_rθ = ν r ∂(u_θ/r)/∂r | `wedge` + 3e composante d'OpenFOAM, « Axisymmetric swirl » de Fluent |
+| Disques actuateurs | poussée et couple répartis dans une zone mince (uniforme ou Hough-Ordway), C_T ou poussée imposés, vitesse au disque et puissance | `actuationDiskSource` d'OpenFOAM, « fan / virtual blade » de Fluent |
 | Conditions limites | paroi (mobile), entrée (vitesse ou débit, profil uniforme ou parabolique), pression totale, sortie, symétrie, champ lointain, périodicité, axe | SU2 / OpenFOAM (`flowRateInletVelocity`, `totalPressure`) |
 | Axisymétrique | secteur d'un radian (volumes et surfaces pondérés par r), gradient avec faces latérales, contrainte circonférentielle −2ν_eff u_r/r², déformation (u_r/r)², moyenne des diagonales dans H/A | `wedge` d'OpenFOAM, « Axisymmetric » de Fluent |
 | Arrêt | résidus normalisés (OpenFOAM) ou stabilisation des efforts (moniteurs Fluent) | — |
@@ -391,6 +401,10 @@ deux côtés, écart affiché). Sélection d'un matériel Intel précis : `backe
 | Canal entièrement poreux (Brinkman, d = 25) | ordre ; erreur max (64 cellules) | 1.8 ; 2.8e-3 | exact |
 | Bouchon poreux anisotrope (d = 100/400, f = 2/8) tourné de 30° | ∂p/∂x, ∂p/∂y au cœur ; vitesse | exacts à 1e-5 ; u = U, v < 1e-6 | −K·U (exact) |
 | Filtre dans une conduite (exemple, Re = 100) | puissance dissipée | 15.10 | 15 (estimation 1D, profil plat) |
+| Taylor-Couette (R2/R1 = 2) | ordre u_θ ; couple (32 cellules) ; couples intérieur + extérieur | 1.9 ; écart 1.5e-4 (ordre 2) ; 3.5e-7 | exact ; 0 |
+| Tuyau tournant (rotation solide) | u_θ ; p(R) − p(0) | Ω r (2e-5, itératif) ; Ω²R²/2 à 1 % | exact |
+| Éolienne en disque actuateur, C_T = 0.5 | vitesse au disque et puissance : 120×60 / 240×120 (Re = 100) ; 240×120 (Re = 500) | −0.76 % / +0.81 % ; +0.09 % | théorie de Froude (a = 0.146, C_P = 0.427) |
+| Disque avec couple Q | flux de moment cinétique en sortie | Q à 2 % | conservation |
 
 ### 2D, thermique (convection naturelle, de Vahl Davis 1983, Pr = 0.71)
 
@@ -496,8 +510,9 @@ limites turbulentes, dont la convergence est dominée par les équations de turb
    écart de 3 à 50 % selon la viscosité, sans convergence en maillage). Placer la sortie
    loin en aval ; pas de sortie « sans contrainte » (essai abandonné : il comptait deux fois
    la contrainte visqueuse normale).
-12. **Axisymétrique** : sans rotation propre (pas de composante u_θ, donc pas de jet
-   tournant ni de cyclone) ; axe = x, rayon = y. Terme E du k-ε Launder-Sharma : dérivées
+12. **Axisymétrique** : axe = x, rayon = y ; rotation propre (`swirl`) laminaire validée
+   (Taylor-Couette), avec turbulence non validée (les modèles RANS ne prennent pas en compte
+   la stabilisation par la rotation : pas de correction de courbure / rotation). Terme E du k-ε Launder-Sharma : dérivées
    secondes circonférentielles négligées. Le k-ε Launder-Sharma peut se relaminariser en
    partant d'une vitesse uniforme avec peu de turbulence (tuyau Re_τ = 550 : rapport de
    viscosité initial 10 insuffisant, 50 suffit ; même comportement en canal plan).
@@ -516,6 +531,9 @@ limites turbulentes, dont la convergence est dominée par les équations de turb
    saut de résistance, même artefact dans OpenFOAM) ; débits conservés exactement et perte
    de charge exacte. Milieu poreux sans effet thermique (pas de conduction solide, pas de
    porosité dans le terme instationnaire : vitesse superficielle).
+16. **Disques actuateurs** : charge imposée (pas de couplage avec des profils de pale,
+   pas d'« actuator line ») ; la poussée ne s'adapte pas à la vitesse locale ; résultats à
+   ±1 % de la théorie de Froude pour C_T = 0.5 (sensibles au maillage et à la viscosité).
 
 ## 9. Feuille de route
 
@@ -555,7 +573,7 @@ microrans/
   gui/                   interface PySide6 (app.py, widgets.py)
   examples/              cas fournis (microrans examples)
 packaging/               PyInstaller (microrans.spec) : exécutables GUI + CLI
-tests/                   pytest (216 tests : vérification, validation, GUI hors écran, faux GPU)
+tests/                   pytest (222 tests : vérification, validation, GUI hors écran, faux GPU)
 .github/workflows/       tests (Python 3.10 / 3.12) ; exécutables Windows / Linux
 ```
 
