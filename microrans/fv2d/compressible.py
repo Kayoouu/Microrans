@@ -887,14 +887,28 @@ class CompressibleSolver2D:
         it = 0
         prev = None
         cfl_min = min(1.0, s.cfl)
+        cfl_cap = s.cfl_max
+        best, since, cuts = np.inf, 0, 0
         for it in range(1, max_iter + 1):
             gi = self.iterations_total + it
             order = 1 if gi <= s.first_order_iter else s.order
             R = self.residual(self.Q, order, gi)
             rel = self._relative(self.residual_norms(R))
             if stepper is not None:
-                # CFL adaptatif : croît tant que les résidus baissent, réduit sinon
+                # CFL adaptatif : croît tant que les résidus baissent, réduit s'ils
+                # augmentent ; plafond divisé par 2 si les résidus stagnent (cycle limite
+                # de la correction de défaut : jacobienne d'ordre 1, résidu d'ordre 2)
                 r = max(rel)
+                if r < 0.9 * best:
+                    best, since = r, 0
+                else:
+                    since += 1
+                if since >= 25 and gi > s.first_order_iter + 25 and cuts < 3:
+                    # (3 fois au plus : une stagnation qui persiste vient d'ailleurs,
+                    # typiquement du limiteur — voir limiter_freeze)
+                    cfl_cap = max(0.5 * min(cfl, cfl_cap), cfl_min)
+                    cfl = min(cfl, cfl_cap)
+                    best, since, cuts = r, 0, cuts + 1
                 grow = prev is None or r <= s.cfl_adapt * prev
                 if not grow:
                     cfl = max(0.7 * cfl, cfl_min)
@@ -902,7 +916,7 @@ class CompressibleSolver2D:
                 if not ok:
                     cfl = max(0.5 * cfl, cfl_min)
                 elif grow:
-                    cfl = min(cfl * s.cfl_growth, s.cfl_max)
+                    cfl = min(cfl * s.cfl_growth, cfl_cap)
                 prev = r
             else:
                 dt = self.local_dt(self.Q, cfl)
