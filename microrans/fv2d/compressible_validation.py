@@ -72,7 +72,7 @@ def sod(out: Path, ns=(100, 200, 400), fluxes=("roe", "hllc")):
             shock = _cross(x, W[:, 0], 0.5 * (w["rho_star_right"] + 0.125), 0.75, 0.95)
             contact = _cross(x, W[:, 0], 0.5 * (w["rho_star_left"] + w["rho_star_right"]),
                              0.6, 0.8)
-            fan = _cross(x, W[:, 1], 0.5 * w["u_star"] * a, 0.2, 0.55, falling=False)
+            fan = _cross(x, W[:, 1], 0.5 * w["u_star"], 0.2, 0.55, falling=False)
             g = 1.4
             cl = np.sqrt(g * 1e5)
             xi_mid = (g + 1) / 2 * 0.5 * w["u_star"] - cl     # u = u*/2 dans la détente

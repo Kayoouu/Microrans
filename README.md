@@ -176,7 +176,7 @@ parameter = "physics.angle_of_attack"
 range = "-4:14:2"          # ou values = [0, 5, 10]
 jobs = 1                   # points calculés en parallèle (0 = tous les cœurs)
 [output]
-moment_center = [0.25, 0.0]   # Cm autour du quart de corde
+moment_center = [0.25, 0.0]   # Cm autour du quart de corde (positif = cabrer)
 nusselt = "bulk"           # conduites : Nu local sur la température de mélange
 probes = [[1.0, 0.0], [2.0, 0.5]]   # sondes : Ux, Uy, p à chaque itération (history.csv)
 average_from = 50.0        # instationnaire : moyennes et écarts-types (Ux_mean, p_rms…)

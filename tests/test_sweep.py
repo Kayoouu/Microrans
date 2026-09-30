@@ -144,3 +144,17 @@ def test_parallel_sweep_stop(tmp_path):
                      out_dir=tmp_path, continuation=False, verbose=False, plot=False, jobs=2,
                      should_stop=lambda: True)
     assert len(rows) <= 2 and not any(r["converged"] for r in rows)
+
+
+def test_pitching_moment_sign_nose_up_positive(tmp_path):
+    """Convention aéronautique : autour du bord d'attaque, la portance (appliquée vers le
+    quart de corde) pique le profil : C_m,BA ≈ −C_l/4 < 0."""
+    cfg = _ogrid_case({"type": "naca", "code": "0012", "chord": 1.0, "name": "airfoil"},
+                      500, 48, 24, 5e-3, radius=10.0)
+    cfg["physics"]["angle_of_attack"] = 4.0
+    cfg["output"]["moment_center"] = [0.0, 0.0]
+    cfg["solver"].update(tol=1e-5, algorithm="coupled")
+    s = run_case(cfg, out_dir=tmp_path, verbose=False, plot=False)
+    cl, cm = s["airfoil"]["Cl"], s["airfoil"]["Cm"]
+    assert cl > 0.1
+    assert cm == pytest.approx(-cl / 4, rel=0.15)

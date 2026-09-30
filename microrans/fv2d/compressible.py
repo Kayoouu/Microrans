@@ -1089,12 +1089,14 @@ class CompressibleSolver2D:
         return out
 
     def moment(self, patch, center=(0.0, 0.0)):
+        """Moment (N·m/m) autour de `center`, positif = cabrer (sens horaire pour un
+        écoulement selon +x), comme Solver2D.moment."""
         sl = self.patch_slices[patch]
         pb = self.boundary_p()[sl]
         dF = (pb - self.fs.p)[:, None] * self.mesh.Sf[self.ni:][sl]
         dF = dF + self._viscous_traction(sl)
         r = self.mesh.face_centers[self.ni:][sl] - np.asarray(center, float)
-        return float(np.sum(r[:, 0] * dF[:, 1] - r[:, 1] * dF[:, 0]))
+        return -float(np.sum(r[:, 0] * dF[:, 1] - r[:, 1] * dF[:, 0]))
 
     def wall_shear(self, patch):
         """(centres de faces, τ_w signé selon la tangente t = (−n_y, n_x), y⁺)."""

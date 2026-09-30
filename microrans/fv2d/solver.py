@@ -1873,9 +1873,11 @@ class Solver2D:
         return out
 
     def moment(self, patch, center=(0.0, 0.0)):
-        """Moment (par unité d'envergure, ρ = 1, sens trigonométrique : positif = cabrer
-        pour un écoulement selon +x) des efforts de pression et de frottement sur `patch`
-        autour de `center`."""
+        """Moment (par unité d'envergure, ρ = 1) des efforts de pression et de frottement
+        sur `patch` autour de `center`, convention aéronautique : positif = cabrer, soit le
+        sens HORAIRE pour un écoulement selon +x (profil : C_m,BA = −C_l/4 si la portance
+        s'applique au quart de corde). Jusqu'ici le sens trigonométrique était renvoyé
+        (signe opposé, contraire à ce qu'annonçait cette documentation)."""
         xp = self.xp
         fvm = self.fvm
         sl = self.patch_slices[patch]
@@ -1885,7 +1887,7 @@ class Solver2D:
                                          / fvm.dperp[sl])[:, None] * du
         r = self.backend.asarray(self.mesh.face_centers[self.mesh.n_internal:][
             self.patch_slices[patch]] - np.asarray(center, float))
-        return float(xp.sum(r[:, 0] * dF[:, 1] - r[:, 1] * dF[:, 0]))
+        return -float(xp.sum(r[:, 0] * dF[:, 1] - r[:, 1] * dF[:, 0]))
 
     def wall_shear(self, patch):
         """(abscisse curviligne implicite) centres de faces, τ_w signé (tangente locale), y⁺."""
