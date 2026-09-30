@@ -23,6 +23,11 @@ Les patches périodiques sont gérés par le maillage (pas de condition à donne
 Axisymétrique (axisymmetric=True ; x = axe, y = rayon, sans rotation propre) : géométrie
 pondérée par r (voir fvm.py) ; terme circonférentiel de la contrainte visqueuse
 −τ_θθ/r = −2 ν_eff u_r / r² (implicite) ; taux de déformation complété par (u_r / r)².
+
+Scalaires passifs (scalars = {nom: {diffusivity | schmidt, Sc_t, source, initial, scheme}}) :
+∂c/∂t + ∇·(Uc) = ∇·((D + ν_t/Sc_t)∇c) + S ; conditions par patch : [boundary.<p>.scalars]
+nom = valeur imposée (défaut 0 en entrée, gradient nul ailleurs), [boundary.<p>.scalar_flux]
+nom = flux entrant. Fluides non newtoniens : viscosity = {model, …} (voir rheology.py).
 """
 from __future__ import annotations
 
@@ -99,6 +104,9 @@ class Settings:
     convection_turb: str = "upwind"
     convection_T: str = "linearUpwind"
     relax_T: float = 0.9
+    # scalaires passifs : sans effet sur l'écoulement, donc sans sous-relaxation (la
+    # relaxation implicite converge en O(N²) itérations quand la diffusion domine)
+    relax_scalar: float = 1.0
     max_iter: int = 3000
     tol: float = 1e-5                     # résidus normalisés (OpenFOAM) de tous les champs
     # critère complémentaire (comme les moniteurs de Fluent) : arrêt quand les efforts sur
@@ -134,7 +142,8 @@ def _eval_expr(expr, x, y):
         return np.full_like(x, float(expr))
     ns = {"x": x, "y": y, "np": np, "pi": np.pi, "sqrt": np.sqrt, "sin": np.sin, "cos": np.cos,
           "exp": np.exp, "tanh": np.tanh, "abs": np.abs, "minimum": np.minimum,
-          "maximum": np.maximum}
+          "maximum": np.maximum, "where": np.where, "log": np.log, "arctan2": np.arctan2,
+          "hypot": np.hypot}
     val = eval(str(expr), {"__builtins__": {}}, ns)    # expression fournie par l'utilisateur
     return np.broadcast_to(np.asarray(val, dtype=float), x.shape).copy()
 
@@ -271,7 +280,8 @@ class Solver2D:
                  model_options: dict | None = None, body_force=(0.0, 0.0),
                  initial_U=(0.0, 0.0), turbulence_inflow: dict | None = None,
                  settings: Settings | None = None, reference_velocity: float | None = None,
-                 energy: dict | None = None, axisymmetric: bool = False):
+                 energy: dict | None = None, axisymmetric: bool = False,
+                 viscosity: dict | None = None, scalars: dict | None = None):
         self.mesh = mesh
         self.axisymmetric = bool(axisymmetric)
         # thermique (optionnelle) : Pr, Pr_t, beta (Boussinesq), T_ref, gravity, T0, source
@@ -279,7 +289,10 @@ class Solver2D:
             "Pr": 0.71, "Pr_t": 0.85, "beta": 0.0, "T_ref": 0.0, "gravity": (0.0, -9.81),
             **energy}
         self.nu = float(nu)
+        self.nu_lam = self.nu                 # viscosité moléculaire (champ si non newtonien)
+        self.rheology = None
         self.settings = settings or Settings()
+        self.scalar_specs = self._scalar_specs(scalars or {})
         # force volumique : constante (fx, fy) ou fonction du temps t -> (fx, fy)
         self.body_force = body_force if callable(body_force) else np.asarray(body_force, float)
         self._t_eval = 0.0
@@ -346,6 +359,25 @@ class Solver2D:
         self.nut = xp.zeros(nc)
         if self.energy is not None:
             self.T = xp.full(nc, float(self.energy.get("T0", self.energy["T_ref"])))
+        C = mesh.cell_centers
+        self.scalars = {k: xp.asarray(_eval_expr(sp["initial"], C[:, 0], C[:, 1]))
+                        for k, sp in self.scalar_specs.items()}
+        self.scalar_source = {k: xp.asarray(_eval_expr(sp["source"], C[:, 0], C[:, 1]))
+                              for k, sp in self.scalar_specs.items()}
+        if viscosity and str(viscosity.get("model", "newtonian")).lower() != "newtonian":
+            from .rheology import Rheology
+            if self.model.variables:
+                raise ValueError("Fluide non newtonien : uniquement en laminaire (les modèles "
+                                 "de turbulence RANS supposent un fluide newtonien).")
+            spec = dict(viscosity)
+            gref = spec.pop("gamma_ref", None)
+            if gref is None:
+                bb = mesh.bbox()
+                gref = uref / max(bb[2] - bb[0], bb[3] - bb[1], 1e-300)
+            self.rheology = Rheology(spec, float(gref))
+            self.nu_lam = xp.full(nc, self.rheology.nu_ref)
+            self.nu_wall = xp.where(self.backend.asarray(self.is_wall), self.rheology.nu_ref,
+                                    self.nu_wall)
         self.steady = True
         self.time = 0.0
         self.dt = 0.0
@@ -440,8 +472,28 @@ class Solver2D:
                     inflow = nhat[sl] @ np.asarray(spec["U"], dtype=float) < 0.0
                     self.kindTemp[sl] = np.where(inflow, 0, 1)
                     self.T_fixed[sl] = spec.get("T", Tref)
+        # scalaires passifs : 0 valeur imposée, 1 gradient imposé (flux / D)
+        self.scalar_bcs = {}
+        for name, sp in self.scalar_specs.items():
+            kind, fixed, grad = np.ones(nb, dtype=int), np.zeros(nb), np.zeros(nb)
+            for p in m.patches:
+                spec, sl = self.boundaries[p.name], self.patch_slices[p.name]
+                x, y = Cb[sl, 0], Cb[sl, 1]
+                vals, flux = spec.get("scalars", {}), spec.get("scalar_flux", {})
+                kind_p = spec["type"]
+                if name in vals or kind_p in ("inlet", "pressure_inlet", "farfield"):
+                    v = _eval_expr(vals.get(name, 0.0), x, y)
+                    inflow = (nhat[sl] @ np.asarray(spec["U"], dtype=float) < 0.0
+                              if kind_p == "farfield" else np.ones(len(x), dtype=bool))
+                    kind[sl] = np.where(inflow, 0, 1)
+                    fixed[sl] = v
+                elif name in flux:
+                    # flux entrant q = D ∂c/∂n (n sortante)
+                    grad[sl] = _eval_expr(flux[name], x, y) / sp["diffusivity"]
+            self.scalar_bcs[name] = (kind, fixed, grad)
         host = (self.kindU.copy(), self.U_fixed.copy(), self.kindP.copy())
         A = self.backend.asarray
+        self.scalar_bcs = {k: tuple(A(a) for a in v) for k, v in self.scalar_bcs.items()}
         self.kindTemp, self.T_fixed = A(self.kindTemp), A(self.T_fixed)
         self.T_grad = A(self.T_grad)
         self.kindU, self.U_fixed, self.kindP = A(self.kindU), A(self.U_fixed), A(self.kindP)
@@ -449,6 +501,37 @@ class Solver2D:
         self.has_p0 = bool(self.p0_mask.any())
         self.p0_mask, self.p0 = A(self.p0_mask), A(self.p0)
         return host
+
+    RESERVED = ("U", "Ux", "Uy", "U_mag", "p", "T", "k", "omega", "epsilon", "nu_tilde",
+                "continuity", "iteration", "time", "dt", "Co", "Dn", "vorticity",
+                "viscosity", "shear_rate", "nut_over_nu", "wall_distance")
+
+    def _scalar_specs(self, scalars: dict) -> dict:
+        """Paramètres des scalaires passifs, valeurs par défaut complétées."""
+        import re
+        out = {}
+        for name, sp in scalars.items():
+            if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", name) or name in self.RESERVED:
+                raise ValueError(f"Nom de scalaire invalide ou réservé : '{name}' (lettres, "
+                                 f"chiffres, _ ; pas {', '.join(self.RESERVED)}).")
+            sp = dict(sp or {})
+            if "diffusivity" in sp:
+                D = float(sp["diffusivity"])
+            elif "schmidt" in sp:
+                D = self.nu / float(sp["schmidt"])
+            else:
+                raise ValueError(f"Scalaire '{name}' : donner diffusivity (D, m²/s) ou "
+                                 f"schmidt (Sc = ν/D).")
+            if D < 0.0:
+                raise ValueError(f"Scalaire '{name}' : diffusivité négative.")
+            scheme = sp.get("scheme", "linearUpwindLimited")
+            if scheme not in ("upwind", "linearUpwind", "linearUpwindLimited"):
+                raise ValueError(f"Scalaire '{name}' : scheme = upwind | linearUpwind | "
+                                 f"linearUpwindLimited (reçu {scheme}).")
+            out[name] = {"diffusivity": D, "Sc_t": float(sp.get("Sc_t", 0.7)),
+                         "source": sp.get("source", 0.0), "initial": sp.get("initial", 0.0),
+                         "scheme": scheme}
+        return out
 
     def _flow_rate_velocity(self, patch, spec, sl):
         """Vitesse normale entrante donnant le débit `flow_rate` (profil uniforme ou
@@ -730,6 +813,103 @@ class Solver2D:
         self.T = fvm.lin.solve(A, rhs, self.T, s.solver_U, rtol=0.1 if self.steady else 1e-6,
                                tag="T")
 
+    # ------------------------------------------------------------------ scalaires passifs
+    def scalar_bc_coeffs(self, name):
+        xp = self.xp
+        dp = self.fvm.dperp
+        kind, fixed, grad = self.scalar_bcs[name]
+        fx = kind == 0
+        a = xp.where(fx, 0.0, 1.0)
+        b = xp.where(fx, fixed, dp * grad)
+        g = xp.where(fx, -1.0 / dp, 0.0)
+        d = xp.where(fx, fixed / dp, grad)
+        return a, b, g, d
+
+    def boundary_scalar(self, name, phi=None):
+        a, b, _, _ = self.scalar_bc_coeffs(name)
+        phi = self.scalars[name] if phi is None else phi
+        return a * phi[self.fvm.Pb] + b
+
+    def _scalar_eqs(self, a0=0.0, hist=None, relax=1.0):
+        """∂c/∂t + ∇·(Uc) = ∇·((D + ν_t/Sc_t)∇c) + S pour chaque scalaire passif."""
+        xp = self.xp
+        fvm, s = self.fvm, self.settings
+        for name, sp in self.scalar_specs.items():
+            phi = self.scalars[name]
+            D = sp["diffusivity"]
+            gam = D + self.nut / sp["Sc_t"] if self.model.variables else xp.full(fvm.nc, D)
+            gam_i = fvm.interp(gam)
+            gam_b = xp.where(self.is_wall, D, gam[fvm.Pb])
+            bc = self.scalar_bc_coeffs(name)
+            phib = bc[0] * phi[fvm.Pb] + bc[1]
+            grad = fvm.grad(phi, phib)
+            gconv = (fvm.limit_grad(phi, grad, phib) if sp["scheme"] == "linearUpwindLimited"
+                     else None)
+            diag, up, lo, rhs = fvm.assemble(self.F_i, self.F_b, gam_i, gam_b, bc,
+                                             grad_phi=grad, scheme=sp["scheme"],
+                                             bounded=self.steady, phi=phi,
+                                             nonorth_limit=s.nonorth_limit, grad_conv=gconv)
+            rhs = rhs + self.scalar_source[name] * fvm.V
+            if _active(a0):
+                diag = diag + a0 * fvm.V
+                rhs = rhs - hist[name] * fvm.V
+            if relax < 1.0:
+                rhs = rhs + (1.0 - relax) / relax * diag * phi
+                diag = diag / relax
+            A = fvm.matrix(diag, up, lo)
+            kind, fixed, _ = self.scalar_bcs[name]
+            scale = max(float(xp.max(xp.abs(xp.where(kind == 0, fixed, 0.0)))), 1.0)
+            self.residuals_now[name] = normalized_residual(A, phi, rhs, scale)
+            self.scalars[name] = fvm.lin.solve(A, rhs, phi, s.solver_U,
+                                               rtol=0.1 if self.steady else 1e-6, tag=name)
+
+    def scalar_fluxes(self, name):
+        """Flux sortant total (convection + diffusion) de `name` à travers chaque frontière ;
+        sur les frontières traversées par l'écoulement, moyenne et écart-type pondérés par
+        le débit (écart-type / moyenne : défaut de mélange). Axisymétrique : sur 360°."""
+        xp, fvm = self.xp, self.fvm
+        sp = self.scalar_specs[name]
+        a, b, g, d = self.scalar_bc_coeffs(name)
+        phi = self.scalars[name]
+        phib = a * phi[fvm.Pb] + b
+        D = sp["diffusivity"]
+        gam_b = xp.where(self.is_wall, D, D + self.nut[fvm.Pb] / sp["Sc_t"])
+        flux = self.F_b * phib - gam_b * fvm.magSb * (g * phi[fvm.Pb] + d)
+        k = 2.0 * np.pi if self.axisymmetric else 1.0
+        out = {}
+        for p in self.mesh.patches:
+            sl = self.patch_slices[p.name]
+            q = float(xp.sum(xp.abs(self.F_b[sl])))
+            out[p.name] = {"flux": k * float(xp.sum(flux[sl]))}
+            if q > 1e-12 * self.U_ref * float(xp.sum(fvm.magSb[sl]) + 1e-300):
+                w = xp.abs(self.F_b[sl])
+                mean = float(xp.sum(w * phib[sl])) / q
+                out[p.name]["mean"] = mean
+                out[p.name]["std"] = float(xp.sqrt(xp.sum(w * (phib[sl] - mean) ** 2) / q))
+        out["source_total"] = k * float(xp.sum(self.scalar_source[name] * fvm.V))
+        return out
+
+    # ------------------------------------------------------------------ non newtonien
+    def shear_rate(self):
+        return self.flow().strain
+
+    def _update_viscosity(self):
+        """ν = ν(γ̇) au champ de vitesse courant (sous-relaxé en stationnaire : relax) ;
+        aux parois, ν au taux de cisaillement pariétal |ΔU_t|/d."""
+        if self.rheology is None:
+            return
+        xp, fvm = self.xp, self.fvm
+        rh = self.rheology
+        r = rh.relax if self.steady else 1.0
+        new = rh(self.shear_rate(), xp)
+        self.nu_lam = new if r >= 1.0 else self.nu_lam + r * (new - self.nu_lam)
+        n = fvm.nb_hat
+        du = self.U[fvm.Pb] - self.U_fixed
+        gw = xp.abs(du[:, 0] * n[:, 1] - du[:, 1] * n[:, 0]) / fvm.dperp
+        nw = rh(gw, xp)
+        nw = nw if r >= 1.0 else self.nu_wall + r * (nw - self.nu_wall)
+        self.nu_wall = xp.where(self.is_wall, nw, self.nu_wall)
+
     def _momentum(self, a0=0.0, hist=None, relax=1.0, theta=1.0, explicit=None):
         """Équations de U (composantes x, y) : (diag, upper, lower, rhs) sans gradient de p.
 
@@ -741,7 +921,8 @@ class Solver2D:
         force = self.cell_force()
         self._update_wall_function()
         self._update_total_pressure()
-        nu_eff = self.nu + self.nut
+        self._update_viscosity()
+        nu_eff = self.nu_lam + self.nut
         gam_i = fvm.interp(nu_eff)
         gam_b = xp.where(self.is_wall, self.nu_wall, nu_eff[fvm.Pb])
         gradU = self.grad_U(U)
@@ -914,6 +1095,7 @@ class Solver2D:
             else:
                 self._turbulence(relax=s.relax_turb)
                 self._energy_eq(relax=s.relax_T)
+            self._scalar_eqs(relax=s.relax_scalar)
             cont = float(xp.sum(xp.abs(self.fvm.div(self.F_i, self.F_b))) /
                          (self.u_scale * self.fvm.total_area + 1e-300))
             rec = {"iteration": self.iterations_total + it, **self.residuals_now,
@@ -957,9 +1139,10 @@ class Solver2D:
         xp = self.xp
         fvm = self.fvm
         dt = self.dt if dt is None else dt
-        nu_eff = self.nu + self.nut
+        nu_eff = self.nu_lam + self.nut
         nu_f = fvm.interp(nu_eff) * fvm.g
-        nu_b = xp.where(self.kindU != 1, xp.where(self.is_wall, self.nu, nu_eff[fvm.Pb])
+        nu_w = self.nu if self.rheology is None else self.nu_wall
+        nu_b = xp.where(self.kindU != 1, xp.where(self.is_wall, nu_w, nu_eff[fvm.Pb])
                         * fvm.magSb / fvm.dperp, 0.0)
         diff = (xp.bincount(fvm.P, nu_f, fvm.nc) + xp.bincount(fvm.N, nu_f, fvm.nc)
                 + xp.bincount(fvm.Pb, nu_b, fvm.nc)) / fvm.V
@@ -1041,7 +1224,8 @@ class Solver2D:
         t0 = time.perf_counter()
         n = 0
         step = self._pimple_step if info["kind"] == "implicit" else self._explicit_step
-        self._hist = restart or {"U": [], "F": [], "state": [], "dt": [], "R": [], "T": []}
+        self._hist = restart or {"U": [], "F": [], "state": [], "dt": [], "R": [], "T": [],
+                                 "scalars": []}
         eps = 1e-9 * max(abs(t_end), 1.0)
         while self.time < t_end - eps:
             n += 1
@@ -1078,8 +1262,9 @@ class Solver2D:
         h["F"].insert(0, self.F_i.copy())
         h["state"].insert(0, {k: v.copy() for k, v in self.state.items()})
         h["T"].insert(0, self.T.copy() if self.energy is not None else None)
+        h.setdefault("scalars", []).insert(0, {k: v.copy() for k, v in self.scalars.items()})
         h["dt"].insert(0, self.dt)
-        for key in ("U", "F", "state", "dt", "T"):
+        for key in ("U", "F", "state", "dt", "T", "scalars"):
             del h[key][3:]
 
     def _pimple_step(self, name, info):
@@ -1144,6 +1329,8 @@ class Solver2D:
                 self._turbulence(a0=aT, hist=histT)
             if self.energy is not None:
                 self._energy_eq(a0=aT, hist=self._T_hist(aT, name))
+            if self.scalars:
+                self._scalar_eqs(a0=aT, hist=self._scalar_hist(name))
         self._push_history()
 
     def _ddt_coef(self, c1, F_old):
@@ -1165,6 +1352,20 @@ class Solver2D:
             w = self.dt / h["dt"][1]
             return -(1.0 + w) / self.dt * T1 + w * w / ((1.0 + w) * self.dt) * h["T"][1]
         return -T1 / self.dt
+
+    def _scalar_hist(self, name):
+        """Termes d'histoire des scalaires (mêmes schémas que T)."""
+        h = self._hist
+        lv = h["scalars"]
+        out = {}
+        for k in self.scalars:
+            if name in ("backward", "crankNicolson") and len(lv) >= 2 and k in lv[1]:
+                w = self.dt / h["dt"][1]
+                out[k] = (-(1.0 + w) / self.dt * lv[0][k]
+                          + w * w / ((1.0 + w) * self.dt) * lv[1][k])
+            else:
+                out[k] = -lv[0][k] / self.dt
+        return out
 
     def _spatial_operator(self):
         """R(U)·V = b − A·U : convection + diffusion + forces volumiques (sans pression),
@@ -1234,6 +1435,7 @@ class Solver2D:
         t_n = self.time
         U0, st_old = self.U.copy(), {k: v.copy() for k, v in self.state.items()}
         T0 = self.T.copy() if self.energy is not None else None
+        S0 = {k: v.copy() for k, v in self.scalars.items()}
         if name == "ab2":
             self._t_eval = t_n
             R = self._spatial_operator() / V
@@ -1265,6 +1467,8 @@ class Solver2D:
             self._turbulence(a0=1.0 / dt, hist={k: -v / dt for k, v in st_old.items()})
         if self.energy is not None:
             self._energy_eq(a0=1.0 / dt, hist=-T0 / dt)
+        if self.scalars:
+            self._scalar_eqs(a0=1.0 / dt, hist={k: -v / dt for k, v in S0.items()})
 
     # ------------------------------------------------------------------ matériel
     def to_cpu(self):
@@ -1278,6 +1482,11 @@ class Solver2D:
                      "u_tau_wall"):
             setattr(self, name, h(getattr(self, name)))
         self.state = {k: h(v) for k, v in self.state.items()}
+        self.scalars = {k: h(v) for k, v in self.scalars.items()}
+        self.scalar_source = {k: h(v) for k, v in self.scalar_source.items()}
+        self.scalar_bcs = {k: tuple(h(a) for a in v) for k, v in self.scalar_bcs.items()}
+        if not isinstance(self.nu_lam, float):
+            self.nu_lam = h(self.nu_lam)
         if self.energy is not None:
             self.T = h(self.T)
         self.model.d = h(self.model.d)
@@ -1349,6 +1558,10 @@ class Solver2D:
             out.update(self.state)
         if self.energy is not None:
             out["T"] = self.T
+        out.update(self.scalars)
+        if self.rheology is not None:
+            out["viscosity"] = self.nu_lam
+            out["shear_rate"] = self.shear_rate()
         out["wall_distance"] = self.mesh.wall_distance
         return out
 

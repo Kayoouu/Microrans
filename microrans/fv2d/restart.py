@@ -47,6 +47,11 @@ def save_checkpoint(solver, path, history=None) -> Path:
         data["state_" + k] = h(v)
     if solver.energy is not None:
         data["T"] = h(solver.T)
+    for k, v in solver.scalars.items():
+        data["scalar_" + k] = h(v)
+    if not isinstance(solver.nu_lam, float):
+        data["nu_lam"] = h(solver.nu_lam)
+        data["nu_wall"] = h(solver.nu_wall)
     hist = getattr(solver, "_hist", None) or {}
     for lvl, U in enumerate(hist.get("U", [])[:2]):           # niveaux n et n-1 (BDF2)
         data[f"hist{lvl}_U"] = h(U)
@@ -56,6 +61,9 @@ def save_checkpoint(solver, path, history=None) -> Path:
             data[f"hist{lvl}_state_{k}"] = h(v)
         if hist["T"][lvl] is not None:
             data[f"hist{lvl}_T"] = h(hist["T"][lvl])
+        sc = hist.get("scalars") or []
+        for k, v in (sc[lvl] if lvl < len(sc) else {}).items():
+            data[f"hist{lvl}_scalar_{k}"] = h(v)
     if getattr(solver, "averager", None) is not None:        # moyennes temporelles
         data.update(solver.averager.state())
     if hist.get("R"):                                         # AB2
@@ -141,13 +149,22 @@ def load_checkpoint(solver, path, fields_only=False, shift_U=None) -> dict:
             info["ignored"].append(k)           # autre modèle : valeur amont conservée
     if solver.energy is not None and "T" in d:
         solver.T = A(conv(d["T"]).copy())
+    for k in solver.scalars:
+        if "scalar_" + k in d:
+            solver.scalars[k] = A(conv(d["scalar_" + k]).copy())
+        else:
+            info["ignored"].append(k)
+    if solver.rheology is not None and "nu_lam" in d:
+        solver.nu_lam = A(conv(d["nu_lam"]).copy())
+        if same:
+            solver.nu_wall = A(d["nu_wall"].copy())
     if exact:
         solver.F_i, solver.F_b = A(d["F_i"].copy()), A(d["F_b"].copy())
         solver.time, solver.dt = float(d["time"]), float(d["dt"])
         solver.iterations_total = int(d["iteration"])
         solver.history = list(meta.get("history") or []) if meta.get("steady") else []
         solver.series_restart = [] if meta.get("steady") else list(meta.get("history") or [])
-        hist = {"U": [], "F": [], "state": [], "dt": [], "R": [], "T": []}
+        hist = {"U": [], "F": [], "state": [], "dt": [], "R": [], "T": [], "scalars": []}
         lvl = 0
         while f"hist{lvl}_U" in d:
             hist["U"].append(A(d[f"hist{lvl}_U"].copy()))
@@ -156,9 +173,13 @@ def load_checkpoint(solver, path, fields_only=False, shift_U=None) -> dict:
             hist["state"].append({k: A(d[f"hist{lvl}_state_{k}"].copy())
                                   for k in solver.state if f"hist{lvl}_state_{k}" in d})
             hist["T"].append(A(d[f"hist{lvl}_T"].copy()) if f"hist{lvl}_T" in d else None)
+            hist["scalars"].append({k: A(d[f"hist{lvl}_scalar_{k}"].copy())
+                                    for k in solver.scalars
+                                    if f"hist{lvl}_scalar_{k}" in d})
             lvl += 1
-        if any(len(s) != len(solver.state) for s in hist["state"]):
-            hist = {"U": [], "F": [], "state": [], "dt": [], "R": [], "T": []}
+        if any(len(s) != len(solver.state) for s in hist["state"]) or any(
+                len(s) != len(solver.scalars) for s in hist["scalars"]):
+            hist = {"U": [], "F": [], "state": [], "dt": [], "R": [], "T": [], "scalars": []}
         if "histR" in d:
             hist["R"] = [A(d["histR"].copy())]
             if not hist["dt"]:

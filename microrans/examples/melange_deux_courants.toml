@@ -1,0 +1,51 @@
+# Mélange de deux courants dans un canal (laminaire, Re = 100) et âge du fluide : ~9 s.
+# Scalaire c : 1 dans la moitié basse de l'entrée, 0 en haut ; « age » : source 1, donc
+# âge moyen (temps de séjour) de chaque particule depuis l'entrée. Bilans par frontière
+# dans summary.json → « scalars » : flux, moyenne et écart-type pondérés par le débit
+# (écart-type de c en sortie : 0.34, contre 0.5 à l'entrée : mélange partiel). Âge moyen en sortie 9.99 = volume /
+# débit (10) à 0.1 % près (le reste sort par diffusion à l'entrée).
+# microrans run2d melange_deux_courants
+[mesh]
+type = "rectangle"
+x0 = 0.0
+x1 = 10.0
+y0 = 0.0
+y1 = 1.0
+nx = 160
+ny = 32
+names = { left = "inlet", right = "outlet", bottom = "wall", top = "wall" }
+
+[physics]
+reynolds = 100
+reference_velocity = 1.0
+reference_length = 1.0
+
+[scalars.c]
+diffusivity = 0.002          # nombre de Péclet U H / D = 500
+
+[scalars.age]
+diffusivity = 0.002
+source = 1.0                 # dâge/dt = 1
+
+[initial]
+U = [1.0, 0.0]
+
+[boundary.inlet]
+type = "inlet"
+U = ["6*y*(1-y)", 0.0]       # Poiseuille établi, U_b = 1
+scalars = { c = "where(y < 0.5, 1.0, 0.0)", age = 0.0 }
+
+[boundary.outlet]
+type = "outlet"
+
+[boundary.wall]
+type = "wall"
+
+[solver]
+mode = "steady"
+max_iter = 2000
+tol = 1e-8
+
+[output]
+directory = "results/melange_deux_courants"
+lines = [{ name = "sortie", start = [9.9, 0.0], end = [9.9, 1.0], n = 60 }]

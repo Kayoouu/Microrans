@@ -8,8 +8,10 @@ Outil de simulation d'écoulements **incompressibles turbulents ou laminaires**,
 - **2D plan ou axisymétrique** (tuyaux, jets, corps de révolution) : volumes finis sur
   maillages structurés, non structurés ou hybrides ; stationnaire (SIMPLE/SIMPLEC) et
   instationnaire (PIMPLE implicite ou Runge-Kutta explicite) ; thermique (convection forcée et
-  naturelle, Boussinesq) ; polaires et balayages de paramètres ; reprise de calcul ; mailleur
-  intégré et import/export Gmsh / SU2 / VTK / OpenFOAM ;
+  naturelle, Boussinesq) ; scalaires transportés (concentration, polluant, âge du fluide) ;
+  fluides non newtoniens (loi puissance, Carreau, Cross, Bingham, Herschel-Bulkley, Casson) ;
+  polaires et balayages de paramètres ; reprise de calcul ; mailleur intégré et
+  import/export Gmsh / SU2 / VTK / OpenFOAM ;
 - **1D** : canal plan turbulent intégré jusqu'à la paroi (RANS et URANS pulsé), très rapide,
   idéal pour comparer les modèles ;
 - **modèles de turbulence** : Spalart-Allmaras, k-ε (Launder-Sharma), k-ω (Wilcox 2006),
@@ -121,12 +123,23 @@ reynolds = 1e6
 model = "sst"              # laminar | sa | ke | kw | sst
 angle_of_attack = 4.0      # incidence de l'écoulement amont (°) ; Cd, Cl en axes écoulement
 axisymmetric = false       # true : x = axe, y = rayon ; frontière d'axe : type = "axis"
+[physics.viscosity]        # optionnel : fluide non newtonien (laminaire)
+model = "carreau"          # power_law | carreau | cross | herschel_bulkley | bingham | casson
+nu0 = 5.33e-5
+nu_inf = 3.29e-6
+lambda = 3.313
+n = 0.3568
 [energy]                   # optionnel : thermique
 Pr = 0.71
 beta = 3.4e-3
+[scalars.c]                # optionnel : scalaire transporté (autant que voulu)
+diffusivity = 1e-3         # ou schmidt = Sc ; Sc_t = 0.7 ; source = 1 : âge du fluide
+initial = 0.0              # scheme = "linearUpwindLimited" (défaut, borné) | linearUpwind
 [boundary.inlet]
 type = "inlet"             # wall | inlet | outlet | symmetry | farfield | axis | pressure_inlet
 U = [1.0, 0.0]             # ou flow_rate = Q (débit ; profile = "uniform" | "parabolic")
+scalars = { c = 1.0 }      # valeur imposée (défaut 0 en entrée, flux nul ailleurs)
+# scalar_flux = { c = 0.1 } : flux entrant imposé (paroi)
 # pressure_inlet : p0 = pression totale (p = p0 − ½|U|² en entrée)
 [initial]
 restart = "results/grossier/checkpoint.npz"   # optionnel : repartir d'un calcul
@@ -175,6 +188,8 @@ API Python : `from microrans.fv2d import Solver2D, Settings`, `from microrans.me
 | Turbulence | SA, k-ε LS, k-ω 2006, SST 2003 (formes NASA TMR), sources linéarisées par Newton | NASA TMR |
 | Parois | résolues (y⁺ ≈ 1) ou **lois de paroi** : loi de Spalding (viscosité pariétale), ω imposé dans les cellules pariétales, k à gradient nul, cisaillement de la loi de paroi pour la production | nutUSpaldingWallFunction, omegaWallFunction, kqRWallFunction d'OpenFOAM |
 | Thermique | température, Boussinesq, flux / température imposés, Nusselt ; force aux faces + `fixedFluxPressure` | buoyantBoussinesq d'OpenFOAM |
+| Scalaires passifs | transport convection-diffusion (D + ν_t/Sc_t), sources, limiteur de Barth-Jespersen (`linearUpwindLimited`), bilans par frontière, âge du fluide | `scalarTransport` / `cellLimited` d'OpenFOAM, UDS de Fluent |
+| Non newtonien | ν(γ̇) : loi puissance, Carreau(-Yasuda), Cross, Herschel-Bulkley / Bingham (bi-viscosité), Casson ; ν pariétal au cisaillement de paroi ; sous-relaxation de Picard | `generalisedNewtonian` d'OpenFOAM, « Non-Newtonian » de Fluent |
 | Conditions limites | paroi (mobile), entrée (vitesse ou débit, profil uniforme ou parabolique), pression totale, sortie, symétrie, champ lointain, périodicité, axe | SU2 / OpenFOAM (`flowRateInletVelocity`, `totalPressure`) |
 | Axisymétrique | secteur d'un radian (volumes et surfaces pondérés par r), gradient avec faces latérales, contrainte circonférentielle −2ν_eff u_r/r², déformation (u_r/r)², moyenne des diagonales dans H/A | `wedge` d'OpenFOAM, « Axisymmetric » de Fluent |
 | Arrêt | résidus normalisés (OpenFOAM) ou stabilisation des efforts (moniteurs Fluent) | — |
@@ -335,6 +350,20 @@ maillage et la préparation restent sur CPU.
 | Tuyau lisse turbulent, Re_τ = 550 (Re_D ≈ 19 000), y1⁺ = 0.5 | λ, SA / SST / k-ω / k-ε | +2.5 / +1.8 / −0.1 / −4.8 % | loi de Prandtl (±2-3 % sur les mesures) |
 | idem Re_τ = 2 000 (Re_D ≈ 83 000) | λ, SA / SST / k-ω / k-ε | +2.6 / −0.7 / −3.4 / −2.2 % | idem |
 
+### 2D, scalaires transportés et fluides non newtoniens
+
+| Cas | Grandeur | microrans | Référence |
+|-----|----------|-----------|-----------|
+| Convection-diffusion 1D avec source (Pe = 50) | ordre en espace ; bilan flux = source | 2.2 ; 1e-15 | solution exacte |
+| Scalaire avec D = ν/Pr et mêmes conditions que T | écart c − T | < 1e-8 | identité |
+| Créneau advecté en cavité (D = 0), limiteur / sans | masse ; dépassement de [0, 1] | conservée à 1e-9 ; 2e-4 / 0.1 | — |
+| Canal, loi puissance n = 0.5 / 1.5 (16-64 cellules) | ordre ; erreur max (64) | 2.0 / 1.65 ; 7e-4 / 8e-4 | exact (1.65 = 5/3 : profil exact non régulier sur l'axe) |
+| Canal, Carreau (64 cellules) | erreur max | 8e-4 | profil intégré numériquement |
+| Canal, Bingham τ_y = 0.3 (bouchon) | ordre ; erreur max (256 cellules) | ~1.3 ; 0.2 % | exact (bouchon + Poiseuille) |
+| Tuyau axisymétrique, loi puissance n = 0.5 | ordre | 2.0 | exact |
+| Sang (Carreau) en artère de 4 mm (exemple) | u_axe / U_b | 1.895 (écart profil 0.5 % U_b) | 1.898 (profil établi intégré) |
+| Mélange de deux courants, âge du fluide (exemple) | âge moyen en sortie | 9.99 | volume / débit = 10 |
+
 ### 2D, thermique (convection naturelle, de Vahl Davis 1983, Pr = 0.71)
 
 | Ra | Maillage | Nu moyen | écart | u_max | écart | v_max | écart |
@@ -443,13 +472,23 @@ limites turbulentes, dont la convergence est dominée par les équations de turb
    secondes circonférentielles négligées. Le k-ε Launder-Sharma peut se relaminariser en
    partant d'une vitesse uniforme avec peu de turbulence (tuyau Re_τ = 550 : rapport de
    viscosité initial 10 insuffisant, 50 suffit ; même comportement en canal plan).
+13. **Non newtonien** : laminaire uniquement (combinaison avec un modèle RANS refusée : non
+   validée). Fluides à seuil : régularisation bi-visqueuse (`nu_max` = viscosité du
+   « bouchon », qui s'écoule très lentement au lieu d'être rigide) ; ordre ~1.3 à cause de
+   la surface d'écoulement. Pas de viscoélasticité (Oldroyd-B…), ni de thixotropie. Thermique
+   : Pr est défini avec la viscosité de référence ν (ou ν(γ̇_ref)). Écoulement entraîné par
+   une force sans entrée : `relax_U = 1` conseillé (sinon mise en vitesse très lente).
+14. **Scalaires** : passifs (sans effet sur l'écoulement ; pas de réaction chimique ni de
+   masse volumique variable). Le limiteur réduit les dépassements de [min, max] d'un facteur
+   ~500 mais ne les supprime pas exactement en PIMPLE (correction différée : ~2e-4 sur le
+   créneau test) ; `upwind` est strictement borné mais diffusif.
 
 ## 9. Feuille de route
 
 Maillage en C et validation NASA TMR (profils) ; étude de convergence en maillage (GCI) ;
 parallélisme multi-cœur (Numba) ou CuPy validé sur carte ; transition γ-Re_θ ; rugosité,
 corrections de courbure, loi de paroi thermique et k-ε haut-Reynolds ; rotation propre
-(swirl) en axisymétrique ; compressible (Roe/HLLC, RK SSP) ; en option, plus tard : solveur
+(swirl) en axisymétrique ; zones poreuses ; viscoélasticité ; compressible (Roe/HLLC, RK SSP) ; en option, plus tard : solveur
 couplé pression-vitesse (type « Coupled » de Fluent).
 
 ---
@@ -473,12 +512,13 @@ microrans/
     restart.py           sauvegarde / reprise, interpolation sur un autre maillage
     fmg.py               démarrage multigrille (maillages grossiers reconstruits)
     sampling.py          sondes, profils sur ligne, moyennes temporelles
+    rheology.py          lois de viscosité non newtoniennes
     animation.py         animations GIF des calculs instationnaires
     sweep.py             polaires et balayages de paramètres
   gui/                   interface PySide6 (app.py, widgets.py)
   examples/              cas fournis (microrans examples)
 packaging/               PyInstaller (microrans.spec) : exécutables GUI + CLI
-tests/                   pytest (169 tests : vérification, validation, GUI hors écran, faux GPU)
+tests/                   pytest (183 tests : vérification, validation, GUI hors écran, faux GPU)
 .github/workflows/       tests (Python 3.10 / 3.12) ; exécutables Windows / Linux
 ```
 

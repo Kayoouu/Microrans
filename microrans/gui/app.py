@@ -49,7 +49,20 @@ BODY_TYPES = [("circle", "Cercle"), ("rectangle", "Rectangle"), ("ellipse", "Ell
               ("naca", "Profil NACA 4 chiffres"), ("file", "Contour importé (.dat .csv .svg .dxf)")]
 FIELD_LABELS = {"T": "température T", "U_mag": "|U|", "Ux": "U_x", "Uy": "U_y", "p": "pression p", "vorticity":
                 "vorticité ω_z", "nut_over_nu": "ν_t / ν", "k": "k", "omega": "ω", "eps": "ε",
-                "nu_tilde": "ν̃", "wall_distance": "distance à la paroi"}
+                "nu_tilde": "ν̃", "wall_distance": "distance à la paroi",
+                "viscosity": "viscosité ν (non newtonien)", "shear_rate": "taux de cisaillement γ̇"}
+VISCOSITY_MODELS = [("newtonian", "Newtonien (ν constante)"), ("power_law", "Loi puissance"),
+                    ("carreau", "Carreau"), ("cross", "Cross"),
+                    ("herschel_bulkley", "Herschel-Bulkley (seuil)"), ("bingham", "Bingham (seuil)"),
+                    ("casson", "Casson (sang…)")]
+# paramètres (clé, libellé) de chaque loi ; nu_min / nu_max communs
+VISCOSITY_PARAMS = {"power_law": ("K", "n"), "carreau": ("nu0", "nu_inf", "lambda", "n"),
+                    "cross": ("nu0", "nu_inf", "m", "n"), "herschel_bulkley": ("tau_y", "K", "n"),
+                    "bingham": ("tau_y", "K"), "casson": ("tau_y", "nu_inf")}
+VISCOSITY_LABELS = {"K": "K (consistance, m²/sⁿ⁻¹…)", "n": "n (indice)", "nu0": "ν₀ (γ̇ → 0)",
+                    "nu_inf": "ν∞ (γ̇ → ∞)", "lambda": "λ (temps, s)", "m": "m (temps, s)",
+                    "tau_y": "τ_y / ρ (seuil)", "nu_max": "ν max (bouchon / borne)",
+                    "nu_min": "ν min (borne)"}
 
 DEFAULT_CASE = {
     "mesh": {"type": "rectangle", "x0": 0.0, "x1": 1.0, "y0": 0.0, "y1": 1.0, "nx": 48,
@@ -405,6 +418,20 @@ class MainWindow(QMainWindow):
                        "initiale) est tourné de α ; Cd et Cl sont donnés dans les axes de "
                        "l'écoulement."))
         lay.addWidget(box)
+        box, f = _form("Viscosité (fluide non newtonien)")
+        self.visc_combo = B.combo(("physics", "viscosity", "model"), VISCOSITY_MODELS,
+                                  "newtonian")
+        self.visc_combo.currentIndexChanged.connect(self._visc_changed)
+        f.addRow("Loi", self.visc_combo)
+        self.visc_fields = {}
+        for key in ("K", "n", "nu0", "nu_inf", "lambda", "m", "tau_y", "nu_max", "nu_min"):
+            wdg = B.sci(("physics", "viscosity", key), None, True, "défaut")
+            self.visc_fields[key] = wdg
+            f.addRow(VISCOSITY_LABELS[key], wdg)
+        f.addRow(_note("ν = ν(γ̇), grandeurs cinématiques (divisées par ρ) ; laminaire "
+                       "uniquement. Sans ν ci-dessus, ν de référence = ν(U/L). Écoulement "
+                       "entraîné par une force (sans entrée) : relaxation U = 1 conseillée."))
+        lay.addWidget(box)
         box, f = _form("Turbulence")
         self.model_combo = B.combo(("physics", "model"), MODEL_LABELS, "laminar")
         f.addRow("Modèle", self.model_combo)
@@ -433,6 +460,26 @@ class MainWindow(QMainWindow):
         f.addRow(_note("Conditions de paroi : colonne T (température imposée) ou q (flux "
                        "entrant) de la page Conditions limites ; sinon adiabatique."))
         lay.addWidget(self.box_energy)
+        box, f = _form("Scalaires transportés (concentration, polluant, âge du fluide…)")
+        self.scalar_table = QTableWidget(0, 5)
+        self.scalar_table.setHorizontalHeaderLabels(["Nom", "Diffusivité D (m²/s)", "Sc_t",
+                                                     "Source S", "Valeur initiale"])
+        self.scalar_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        self.scalar_table.setMinimumHeight(110)
+        self.scalar_table.itemChanged.connect(lambda *_: self._scalars_changed())
+        f.addRow(self.scalar_table)
+        row = QHBoxLayout()
+        for text, fn in (("Ajouter", self._scalar_add), ("Supprimer", self._scalar_remove)):
+            b = QPushButton(text)
+            b.clicked.connect(fn)
+            row.addWidget(b)
+        row.addStretch(1)
+        f.addRow(row)
+        f.addRow(_note("∂c/∂t + ∇·(Uc) = ∇·((D + ν_t/Sc_t)∇c) + S. Valeurs aux frontières : "
+                       "colonne « scalaires » de la page Conditions limites (ex. c=1) ; "
+                       "défaut 0 en entrée, flux nul ailleurs. Source S = 1 : âge moyen du "
+                       "fluide (temps de séjour). Bilan par frontière dans summary.json."))
+        lay.addWidget(box)
         box, f = _form("Conditions initiales et forces")
         f.addRow("Vitesse initiale (Ux, Uy)", B.vec(("initial", "U"), (0.0, 0.0)))
         f.addRow("Perturbation du sillage", B.sci(("initial", "perturbation"), None, True, "0"))
@@ -457,9 +504,9 @@ class MainWindow(QMainWindow):
                             "p = p0 ; Sortie : p imposée ; Champ lointain : U∞ en entrée, p∞ en "
                             "sortie selon le signe de U∞·n. Les composantes de U acceptent des "
                             "expressions en x, y (ex. 6*y*(1-y))."))
-        self.bc_table = QTableWidget(0, 8)
+        self.bc_table = QTableWidget(0, 9)
         self.bc_table.setHorizontalHeaderLabels(["Patch", "Type", "Ux", "Uy", "p", "T", "flux q",
-                                                 "débit Q"])
+                                                 "débit Q", "scalaires"])
         self.bc_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         self.bc_table.itemChanged.connect(lambda *_: self._bc_changed())
         lay.addWidget(self.bc_table, 1)
@@ -533,7 +580,8 @@ class MainWindow(QMainWindow):
         f.addRow("Animation GIF (instationnaire)", B.combo(
             ("output", "animate"), [(None, "aucune"), ("vorticity", "vorticité"),
                                     ("U_mag", "|U|"), ("p", "pression"),
-                                    ("T", "température")], None))
+                                    ("T", "température"), ("viscosity", "viscosité")], None))
+        f.addRow(_note("Animation d'un scalaire : animate = \"nom\" dans l'onglet TOML."))
         lay.addWidget(box)
         lay.addStretch(1)
         return w
@@ -680,6 +728,8 @@ class MainWindow(QMainWindow):
         self.energy_on.setChecked("energy" in cfg)
         for _, wdg in self.energy_fields:
             wdg.setEnabled("energy" in cfg)
+        self._visc_changed()
+        self._fill_scalar_table()
         self._fill_bc_table()
         self._syncing = False
         self._refresh_toml()
@@ -695,6 +745,14 @@ class MainWindow(QMainWindow):
         if not self.energy_on.isChecked():
             self.cfg.pop("energy", None)
         ph = self.cfg.setdefault("physics", {})
+        v = ph.get("viscosity") or {}
+        model = v.get("model", "newtonian")
+        if model == "newtonian":
+            ph.pop("viscosity", None)
+        else:
+            keep = {"model", "nu_min", "nu_max", "relax", "a", "gamma_ref",
+                    *VISCOSITY_PARAMS.get(model, ())}
+            ph["viscosity"] = {k: val for k, val in v.items() if k in keep}
         if self.nu_mode.currentData() == "nu":
             ph.pop("reynolds", None)
         else:
@@ -991,6 +1049,83 @@ class MainWindow(QMainWindow):
             self.cfg.pop("energy", None)
         self._toml_timer.start()
 
+    def _visc_changed(self, *_):
+        model = self.visc_combo.currentData() or "newtonian"
+        used = set(VISCOSITY_PARAMS.get(model, ()))
+        if model != "newtonian":
+            used |= {"nu_max", "nu_min"}
+        for key, wdg in self.visc_fields.items():
+            wdg.setEnabled(key in used)
+        if not self._syncing:
+            self._form_changed()
+
+    def _fill_scalar_table(self):
+        self._scalar_sync = True
+        sc = self.cfg.get("scalars", {}) or {}
+        self.scalar_table.setRowCount(0)
+        self.scalar_table.setRowCount(len(sc))
+        for r, (name, sp) in enumerate(sc.items()):
+            D = sp.get("diffusivity", "")
+            if D == "" and "schmidt" in sp:
+                D = f"Sc={sp['schmidt']}"
+            for c, val in enumerate((name, D, sp.get("Sc_t", ""), sp.get("source", ""),
+                                     sp.get("initial", ""))):
+                self.scalar_table.setItem(r, c, QTableWidgetItem(str(val)))
+        self._scalar_sync = False
+
+    def _scalar_add(self):
+        sc = self.cfg.setdefault("scalars", {})
+        i = 1
+        while f"c{i}" in sc:
+            i += 1
+        sc[f"c{i}"] = {"diffusivity": 1e-3}
+        self._fill_scalar_table()
+        self._toml_timer.start()
+
+    def _scalar_remove(self):
+        r = self.scalar_table.currentRow()
+        sc = self.cfg.get("scalars", {})
+        if r < 0 or not sc:
+            return
+        sc.pop(list(sc)[r], None)
+        if not sc:
+            self.cfg.pop("scalars", None)
+        self._fill_scalar_table()
+        self._toml_timer.start()
+
+    def _scalars_changed(self):
+        if getattr(self, "_scalar_sync", False):
+            return
+        old = self.cfg.get("scalars", {}) or {}
+        new = {}
+
+        def cell(r, c):
+            it = self.scalar_table.item(r, c)
+            txt = it.text().strip() if it else ""
+            if not txt:
+                return None
+            try:
+                return float(txt)
+            except ValueError:
+                return txt                          # expression en x, y
+        for r, prev in enumerate(old.values()):
+            name = cell(r, 0)
+            if not isinstance(name, str):
+                name = f"c{r + 1}"
+            sp = {k: v for k, v in prev.items() if k in ("scheme",)}
+            D = cell(r, 1)
+            if isinstance(D, str) and D.lower().startswith("sc="):
+                sp["schmidt"] = float(D[3:])
+            elif D is not None:
+                sp["diffusivity"] = D
+            for key, c in (("Sc_t", 2), ("source", 3), ("initial", 4)):
+                val = cell(r, c)
+                if val is not None:
+                    sp[key] = val
+            new[name] = sp
+        self.cfg["scalars"] = new
+        self._toml_timer.start()
+
     def _mode_changed(self):
         steady = self.mode_combo.currentData() == "steady"
         self.box_steady.setVisible(steady)
@@ -1062,6 +1197,8 @@ class MainWindow(QMainWindow):
             self.bc_table.setItem(r, 5, QTableWidgetItem(str(spec.get("T", ""))))
             self.bc_table.setItem(r, 6, QTableWidgetItem(str(spec.get("q", ""))))
             self.bc_table.setItem(r, 7, QTableWidgetItem(str(spec.get("flow_rate", ""))))
+            self.bc_table.setItem(r, 8, QTableWidgetItem("; ".join(
+                f"{k}={v}" for k, v in (spec.get("scalars") or {}).items())))
         self._bc_sync = False
 
     def _bc_changed(self):
@@ -1077,10 +1214,14 @@ class MainWindow(QMainWindow):
                 return float(txt)
             except ValueError:
                 return txt                          # expression en x, y
+        old = self.cfg.get("boundary", {})
         for r in range(self.bc_table.rowCount()):
             name = self.bc_table.item(r, 0).text()
             t = self.bc_table.cellWidget(r, 1).currentData()
-            spec = {"type": t}
+            # clés sans colonne (profil de débit, flux de scalaires…) conservées
+            spec = {k: v for k, v in old.get(name, {}).items()
+                    if k in ("profile", "scalar_flux")}
+            spec["type"] = t
             ux = num(self.bc_table.item(r, 2).text() if self.bc_table.item(r, 2) else "")
             uy = num(self.bc_table.item(r, 3).text() if self.bc_table.item(r, 3) else "")
             Q = num(self.bc_table.item(r, 7).text() if self.bc_table.item(r, 7) else "")
@@ -1099,6 +1240,14 @@ class MainWindow(QMainWindow):
                 spec["T"] = T
             elif q is not None and t == "wall":
                 spec["q"] = q
+            sc = self.bc_table.item(r, 8).text() if self.bc_table.item(r, 8) else ""
+            vals = {}
+            for part in sc.replace(",", ";").split(";"):
+                if "=" in part:
+                    k, v = (x.strip() for x in part.split("=", 1))
+                    vals[k] = num(v)
+            if vals:
+                spec["scalars"] = vals
             bnd[name] = spec
         self.cfg["boundary"] = bnd
         self._toml_timer.start()

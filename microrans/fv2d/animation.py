@@ -30,13 +30,18 @@ def field_values(solver, key):
         v = s.p
     elif key == "T" and s.energy is not None:
         v = s.T
+    elif key in s.scalars:
+        v = s.scalars[key]
+    elif key == "viscosity" and s.rheology is not None:
+        v = s.nu_lam
     elif key in s.state:
         v = s.state[key]
     elif key == "nut_over_nu":
         v = s.nut / s.nu
     else:
         raise ValueError(f"animate = '{key}' : grandeur inconnue (choix : vorticity, U_mag, "
-                         f"Ux, Uy, p, T, nut_over_nu, {', '.join(s.state)}).")
+                         f"Ux, Uy, p, T, nut_over_nu, viscosity, "
+                         f"{', '.join(list(s.state) + list(s.scalars))}).")
     return np.asarray(s.backend.to_host(v), dtype=np.float32)
 
 

@@ -1,0 +1,51 @@
+# Sang (fluide rhéofluidifiant, loi de Carreau) dans une artère de 4 mm, axisymétrique :
+# ~3 s. Paramètres de Cho & Kensey (1991), divisés par ρ = 1050 kg/m³. Profil établi plus
+# aplati que Poiseuille : u_axe / U_b = 1.895 (référence intégrée : 1.898 ; 2 en
+# newtonien), écart maximal 0.5 % de U_b sur le profil « rayon » (line_rayon.csv).
+# Viscosité de 3.6e-6 (paroi) à 1.6e-5 m²/s (axe) : viscosity.png.
+# microrans run2d sang_carreau_artere
+[mesh]
+type = "rectangle"
+x0 = 0.0
+x1 = 0.04                    # 10 diamètres
+y0 = 0.0
+y1 = 0.002                   # rayon R = 2 mm
+nx = 100
+ny = 24
+names = { left = "inlet", right = "outlet", bottom = "axis", top = "wall" }
+
+[physics]
+axisymmetric = true
+reference_velocity = 0.1     # vitesse débitante U_b (m/s)
+reference_length = 0.004     # diamètre
+
+[physics.viscosity]
+model = "carreau"
+nu0 = 5.33e-5                # 0.056 Pa·s / 1050 kg/m³
+nu_inf = 3.29e-6             # 0.00345 Pa·s / 1050
+lambda = 3.313               # s
+n = 0.3568
+
+[boundary.inlet]
+type = "inlet"
+flow_rate = 1.2566e-6        # π R² U_b (m³/s, total sur 360°)
+profile = "uniform"
+
+[boundary.outlet]
+type = "outlet"
+
+[boundary.axis]
+type = "axis"
+
+[boundary.wall]
+type = "wall"
+
+[solver]
+mode = "steady"
+max_iter = 3000
+tol = 1e-7
+
+[output]
+directory = "results/sang_carreau_artere"
+probes = [[0.036, 0.0001]]
+lines = [{ name = "rayon", start = [0.036, 0.0], end = [0.036, 0.002], n = 60 }]

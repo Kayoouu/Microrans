@@ -51,6 +51,12 @@ def plot_case(solver, hist, out: Path, mode, force_patches, qdyn):
     if "nut_over_nu" in f:
         plot_field(solver.mesh, f["nut_over_nu"], out / "nut.png", title="ν_t/ν", zoom=zoom,
                    cmap="magma", mirror=mir)
+    for name, v in solver.scalars.items():
+        plot_field(solver.mesh, v, out / f"scalar_{name}.png", title=f"scalaire {name}",
+                   zoom=zoom, cmap="viridis", mirror=mir)
+    if solver.rheology is not None:
+        plot_field(solver.mesh, np.log10(solver.nu_lam), out / "viscosity.png",
+                   title="log₁₀ ν (non newtonien)", zoom=zoom, cmap="magma", mirror=mir)
     if not hist:
         return
     color = MODEL_COLORS.get(solver.model_name, "#4a3aa7")

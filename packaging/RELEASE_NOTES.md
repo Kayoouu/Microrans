@@ -34,13 +34,17 @@ Le programme n'est pas signé numériquement (cela demande un certificat payant)
 
 Autres exemples : cylindre (écoulement autour d'un obstacle, lâcher de tourbillons),
 plaque plane et profil d'aile turbulents, polaire d'un profil, sphère et tuyaux
-(axisymétrique), convection naturelle (air chauffé), canal 1D.
+(axisymétrique), convection naturelle (air chauffé), sang dans une artère, mélange de deux
+courants, canal 1D.
 
 ## Contenu de cette version
 
 - Simulation d'écoulements 1D, 2D plans et **axisymétriques** (tuyaux, jets, corps de
   révolution), laminaires ou turbulents (modèles Spalart-Allmaras, k-ε, k-ω, k-ω SST),
   stationnaires ou instationnaires, avec thermique et lois de paroi ;
+- **scalaires transportés** (concentration, polluant, âge du fluide / temps de séjour) et
+  **fluides non newtoniens** (sang, polymères, boues : loi puissance, Carreau, Bingham…) ;
+- **sondes, profils le long d'une ligne, moyennes temporelles, animations GIF** ;
 - **polaires** Cl(α), Cd(α), Cm(α) et balayage de n'importe quel paramètre ;
 - **sauvegarde automatique et reprise** : « Continuer le calcul précédent », ou démarrer un
   maillage fin depuis un calcul grossier ;

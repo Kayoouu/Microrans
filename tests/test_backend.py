@@ -110,3 +110,18 @@ def test_wall_functions_on_gpu():
     c, g = _pair(build, lambda s: s.run_steady(max_iter=30, tol=1e-12),
                  wall_treatment="wall_function", solver_p="direct")
     assert np.max(np.abs(c.U - g.U)) < 1e-6
+
+
+def test_scalars_and_non_newtonian_on_gpu():
+    def build(st):
+        m = channel_mesh(4.0, 1.0, 20, 10, periodic=False)
+        return Solver2D(m, 0.05, {"inlet": {"type": "inlet", "flow_rate": 1.0,
+                                            "scalars": {"c": "where(y < 0.5, 1.0, 0.0)"}},
+                                  "outlet": {"type": "outlet"}, "bottom": {"type": "wall"},
+                                  "top": {"type": "wall"}},
+                        viscosity={"model": "power_law", "K": 0.05, "n": 0.6},
+                        scalars={"c": {"diffusivity": 0.01}}, settings=st)
+    c, g = _pair(build, lambda s: s.run_steady(max_iter=40, tol=1e-12))
+    assert np.max(np.abs(c.U - g.U)) < 1e-8
+    assert np.max(np.abs(c.scalars["c"] - g.scalars["c"])) < 1e-8
+    assert np.allclose(c.nu_lam, g.nu_lam, rtol=1e-8, atol=0)

@@ -93,6 +93,9 @@ def test_probes_and_lines_in_case_outputs(tmp_path):
     assert len(d) == 50 and d["Ux"][-1] == pytest.approx(1.0, abs=0.02)
     assert (tmp_path / "line_v.png").exists()
     assert parse_points("1, 2; 3 4").tolist() == [[1, 2], [3, 4]]
+    import json                                    # résumé écrit après sondes et profils
+    saved = json.loads((tmp_path / "summary.json").read_text(encoding="utf-8"))
+    assert "probes" in saved and "lines" in saved
 
 
 def test_time_averages_and_exact_restart(tmp_path):

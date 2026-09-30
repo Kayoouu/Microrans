@@ -108,6 +108,12 @@ class Sampler:
                 out[k] = self._rec(v, fvm.grad(v, a * v[fvm.Pb] + b))
         if s.energy is not None and want("T"):
             out["T"] = self._rec(s.T, fvm.grad(s.T, s.boundary_T(s.T)))
+        for k, v in s.scalars.items():
+            if want(k):
+                out[k] = self._rec(v, fvm.grad(v, s.boundary_scalar(k)))
+        if s.rheology is not None and want("viscosity"):
+            vv = np.asarray(s.backend.to_host(s.nu_lam))
+            out["viscosity"] = np.where(self.ok, vv[self._c], np.nan)
         for k, v in s.mean_fields().items():
             if want(k):
                 # moyennes : valeur de la cellule (pas de gradient stocké)
@@ -146,7 +152,8 @@ def write_lines(solver, lines, out_dir, plot=True):
 
 def _plot_line(cols, path, name):
     from matplotlib.figure import Figure
-    keys = [k for k in ("Ux", "Uy", "p", "T") if k in cols]
+    keys = [k for k in cols if k not in ("s", "x", "y", "U_mag") and "_mean" not in k
+            and "_rms" not in k and k not in ("k", "omega", "epsilon", "nu_tilde")][:6]
     fig = Figure(figsize=(4.0 * len(keys), 3.4), layout="constrained")
     axes = np.atleast_1d(fig.subplots(1, len(keys)))
     for ax, k in zip(axes, keys):
@@ -161,7 +168,6 @@ class TimeAverage:
     """Moyenne temporelle pondérée par Δt et écart-type des fluctuations (RMS) de U, p (, T),
     à partir de t_start — comme fieldAverage d'OpenFOAM."""
 
-    FIELDS = ("Ux", "Uy", "p", "T")
 
     def __init__(self, solver, t_start: float):
         self.solver, self.t_start = solver, float(t_start)
@@ -173,6 +179,7 @@ class TimeAverage:
         v = {"Ux": s.U[:, 0], "Uy": s.U[:, 1], "p": s.p}
         if s.energy is not None:
             v["T"] = s.T
+        v.update(s.scalars)
         return v
 
     def update(self):
@@ -208,7 +215,7 @@ class TimeAverage:
     def load(self, d: dict):
         A = self.solver.backend.asarray
         self.weight = float(d["avg_weight"])
-        for k in self.FIELDS:
+        for k in self._values():
             if f"avg_sum_{k}" in d:
                 self.sum[k] = A(d[f"avg_sum_{k}"].copy())
                 self.sumsq[k] = A(d[f"avg_sumsq_{k}"].copy())

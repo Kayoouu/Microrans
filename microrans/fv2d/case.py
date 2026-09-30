@@ -21,6 +21,13 @@ chaque itération / pas de temps dans history.csv) ; [[output.lines]] name, star
 Ux_mean, Ux_rms, p_mean…) ; animate = "vorticity" (| U_mag | p | T…), animate_every = N
 (instationnaire : animation_<grandeur>.gif, voir animation.py).
 
+Scalaires passifs : [scalars.<nom>] diffusivity (ou schmidt), Sc_t, source, initial, scheme ;
+valeurs aux frontières [boundary.<patch>.scalars] <nom> = valeur (défaut : 0 en entrée,
+gradient nul ailleurs), flux entrant [boundary.<patch>.scalar_flux] <nom> = q. Bilan par
+frontière dans summary.json (« scalars »). Fluide non newtonien : [physics.viscosity]
+model = power_law | carreau | cross | herschel_bulkley | bingham | casson (voir
+rheology.py) ; ν de [physics] facultatif (défaut : ν(γ̇_ref), γ̇_ref = U_ref / L_ref).
+
 Reprise : [initial] restart = "…/checkpoint.npz" (reprise exacte sur le même maillage,
 interpolation sinon) ; [output] checkpoint = true (défaut) écrit checkpoint.npz à la fin
 du calcul, à l'arrêt demandé et toutes les `checkpoint_minutes` (défaut 5) minutes.
@@ -113,10 +120,20 @@ def build_solver(cfg: dict, base_dir=".", verbose=False, mesh=None):
     if mesh is None:
         mesh = case_mesh(cfg, base_dir, verbose)
     ph = cfg.get("physics", {})
+    visc = ph.get("viscosity")
+    if visc and str(visc.get("model", "newtonian")).lower() != "newtonian":
+        visc = {"gamma_ref": ph.get("reference_velocity", 1.0) / ph.get("reference_length", 1.0),
+                **visc}
+    else:
+        visc = None
     if "nu" in ph:
         nu = float(ph["nu"])
     elif "reynolds" in ph:
         nu = ph.get("reference_velocity", 1.0) * ph.get("reference_length", 1.0) / ph["reynolds"]
+    elif visc:
+        from .rheology import reference_viscosity
+        nu = reference_viscosity({k: v for k, v in visc.items() if k != "gamma_ref"},
+                                 visc["gamma_ref"])
     else:
         raise ValueError("[physics] : donner nu ou reynolds.")
     init = cfg.get("initial", {})
@@ -132,7 +149,8 @@ def build_solver(cfg: dict, base_dir=".", verbose=False, mesh=None):
                       turbulence_inflow=cfg.get("turbulence"),
                       settings=_settings_from(cfg.get("solver", {})),
                       reference_velocity=ph.get("reference_velocity"),
-                      energy=_energy_from(cfg), axisymmetric=axi)
+                      energy=_energy_from(cfg), axisymmetric=axi, viscosity=visc,
+                      scalars=cfg.get("scalars"))
     solver.restart_info = None
     if init.get("restart"):
         path = Path(init["restart"])
@@ -211,7 +229,8 @@ def run_case(cfg: dict, base_dir=".", out_dir=None, verbose=True, plot=True, cal
     # sondes : Ux, Uy, p (, T) en des points fixes, à chaque itération / pas de temps
     probe_pts = parse_points(oc.get("probes"))
     sampler = Sampler(solver, probe_pts) if len(probe_pts) else None
-    probe_fields = ["Ux", "Uy", "p"] + (["T"] if solver.energy is not None else [])
+    probe_fields = (["Ux", "Uy", "p"] + (["T"] if solver.energy is not None else [])
+                    + list(solver.scalars))
     if sampler is not None and not sampler.ok.all() and verbose:
         print(f"  ATTENTION : sondes hors du domaine : {probe_pts[~sampler.ok].tolist()}")
 
@@ -294,6 +313,14 @@ def run_case(cfg: dict, base_dir=".", out_dir=None, verbose=True, plot=True, cal
     summary["U_mean"] = [float(v) for v in solver.backend.to_host(
         solver.xp.sum(solver.U * solver.fvm.V[:, None], axis=0) / solver.xp.sum(solver.fvm.V))]
     summary["backend"] = solver.backend.name
+    if solver.rheology is not None:
+        nl = solver.backend.to_host(solver.nu_lam)
+        summary["viscosity"] = {"model": solver.rheology.describe(),
+                                "nu_min": float(nl.min()), "nu_max": float(nl.max()),
+                                "cells_at_nu_max": int(np.sum(nl >= 0.999 * solver.rheology.nu_max))}
+    if solver.scalars:
+        # bilan : flux sortants par frontière (convection + diffusion) et source totale
+        summary["scalars"] = {k: solver.scalar_fluxes(k) for k in solver.scalars}
     if ckpt is not None:
         save_checkpoint(solver, ckpt, hist)
         summary["checkpoint"] = str(ckpt)
@@ -328,8 +355,6 @@ def run_case(cfg: dict, base_dir=".", out_dir=None, verbose=True, plot=True, cal
                 header += ",T_bulk,Nu_bulk"
         np.savetxt(out / f"wall_{name}.csv", np.column_stack(cols), delimiter=",",
                    header=header, comments="", encoding="utf-8")
-    (out / "summary.json").write_text(json.dumps(summary, indent=2, ensure_ascii=False),
-                                      encoding="utf-8")
     if hist:
         keys = list(dict.fromkeys(k for h in hist for k in h))
         with open(out / "history.csv", "w", newline="", encoding="utf-8") as fh:
@@ -356,6 +381,9 @@ def run_case(cfg: dict, base_dir=".", out_dir=None, verbose=True, plot=True, cal
     if oc.get("lines"):
         summary["lines"] = [str(p) for p in write_lines(solver, oc["lines"], out,
                                                         plot and oc.get("plots", True))]
+    # écrit après les sondes, profils et animation (sinon absents du fichier)
+    (out / "summary.json").write_text(json.dumps(summary, indent=2, ensure_ascii=False),
+                                      encoding="utf-8")
     if oc.get("vtk", True):
         write_vtk(solver.mesh, out / "fields.vtk", solver.fields())
     if plot and oc.get("plots", True):

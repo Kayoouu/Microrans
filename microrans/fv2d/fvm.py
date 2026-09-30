@@ -112,6 +112,46 @@ class FVM:
             g = g - phi[:, None] * self._side
         return g
 
+    def limit_grad(self, phi, grad, phi_b):
+        """Limiteur de Barth-Jespersen (« cellLimited Gauss linear 1 » d'OpenFOAM) : le
+        gradient est réduit pour que les valeurs reconstruites aux faces restent entre le
+        minimum et le maximum de la cellule et de ses voisines (valeurs frontières
+        comprises). Uniquement des lectures indexées : même code sur tous les backends."""
+        xp = self.xp
+        if getattr(self, "_lim", None) is None:
+            self._lim = self._limiter_stencil()
+        idx, R = self._lim
+        ext = xp.concatenate([phi, phi_b])[idx]                  # (nc, k), cellule incluse
+        dmax = xp.max(ext, axis=1) - phi
+        dmin = xp.min(ext, axis=1) - phi
+        d = xp.sum(grad[:, None, :] * R, axis=2)                 # variation cellule → face
+        pos, neg = d > 0.0, d < 0.0
+        r = xp.where(pos, dmax[:, None] / xp.where(pos, d, 1.0),
+                     xp.where(neg, dmin[:, None] / xp.where(neg, d, -1.0), 1.0))
+        return grad * xp.minimum(xp.min(r, axis=1), 1.0)[:, None]
+
+    def _limiter_stencil(self):
+        m, ni, nc = self.mesh, self.ni, self.nc
+        P, N, Pb = m.owner[:ni], m.neighbour, m.owner[ni:]
+        C = m.cell_centers
+        cells = np.concatenate([P, N, Pb])
+        other = np.concatenate([N, P, nc + np.arange(self.nb)])
+        R = np.concatenate([m.face_centers[:ni] - C[P],
+                            m.face_centers[:ni] - (C[N] - m.shift),
+                            m.face_centers[ni:] - C[Pb]])
+        order = np.argsort(cells, kind="stable")
+        cs = cells[order]
+        counts = np.bincount(cells, minlength=nc)
+        start = np.concatenate([[0], np.cumsum(counts)[:-1]])
+        pos = np.arange(len(cs)) - start[cs]
+        k = int(counts.max()) + 1                                # + la cellule elle-même
+        idx = np.tile(np.arange(nc)[:, None], (1, k))
+        Rk = np.zeros((nc, k, 2))
+        idx[cs, pos] = other[order]
+        Rk[cs, pos] = R[order]
+        A = self.backend.asarray
+        return A(idx), A(Rk)
+
     def div(self, flux_i, flux_b):
         return self.sum_faces(flux_i, flux_b)
 
@@ -133,8 +173,12 @@ class FVM:
         return corr
 
     def assemble(self, F_i, F_b, gam_i, gam_b, bc, grad_phi=None, scheme="upwind",
-                 bounded=False, phi=None, nonorth_limit: float | None = 0.5):
-        """Convection (flux F) + diffusion (Γ) d'un scalaire. Retourne (diag, upper, lower, rhs)."""
+                 bounded=False, phi=None, nonorth_limit: float | None = 0.5, grad_conv=None):
+        """Convection (flux F) + diffusion (Γ) d'un scalaire. Retourne (diag, upper, lower, rhs).
+
+        grad_conv : gradient utilisé par la correction linearUpwind (par défaut grad_phi ;
+        gradient limité pour linearUpwindLimited), grad_phi servant à la correction non
+        orthogonale de la diffusion."""
         xp = self.xp
         P, N = self.P, self.N
         alpha, beta, gamma, delta = bc
@@ -149,9 +193,10 @@ class FVM:
         if bounded:
             diag = diag - self.sum_faces(F_i, F_b)
         if grad_phi is not None:
-            if scheme == "linearUpwind":
-                corr = xp.where(F_i >= 0.0, xp.sum(grad_phi[P] * self.rP, axis=1),
-                                xp.sum(grad_phi[N] * self.rN, axis=1))
+            if scheme in ("linearUpwind", "linearUpwindLimited"):
+                gc = grad_phi if grad_conv is None else grad_conv
+                corr = xp.where(F_i >= 0.0, xp.sum(gc[P] * self.rP, axis=1),
+                                xp.sum(gc[N] * self.rN, axis=1))
                 fc = F_i * corr
                 rhs = rhs - (self._sum(P, fc) - self._sum(N, fc))
             if not self.orthogonal and bool(xp.any(gam_i)):
