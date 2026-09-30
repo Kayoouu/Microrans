@@ -39,7 +39,7 @@ Validation et limites : docs/notes_transition.md.
 """
 from __future__ import annotations
 
-import numpy as np
+from ._xp import anp
 
 from ..linalg import array_module
 from .base import float_array, linearize_source
@@ -92,9 +92,9 @@ class MenterSSTGamma(MenterSST):
     # -- fonctions du modèle --------------------------------------------------------------
     def blending(self, k, w, cross):
         f1, f2 = super().blending(k, w, cross)
-        ry = self.d * np.sqrt(np.maximum(k, 0.0)) / self.nu
-        f3 = np.exp(-(ry / 120.0) ** 8)
-        return np.maximum(f1, f3), f2
+        ry = self.d * anp.sqrt(anp.maximum(k, 0.0)) / self.nu
+        f3 = anp.exp(-(ry / 120.0) ** 8)
+        return anp.maximum(f1, f3), f2
 
     def _wall_normal(self):
         """Normale pariétale sur le même matériel que les champs (transfert au 1er appel)."""
@@ -116,13 +116,13 @@ class MenterSSTGamma(MenterSST):
     def re_theta_c(self, k, w, flow):
         """Reynolds critique Re_θc(Tu_L, λ_θL) ; renvoie aussi Tu_L et λ_θL."""
         d, nu = self.d, self.nu
-        tu_l = np.minimum(100.0 * np.sqrt(2.0 * np.maximum(k, 0.0) / 3.0) / (w * d), 100.0)
-        lam = np.clip(-7.57e-3 * self._dvdy(flow) * d ** 2 / nu + 0.0128, -1.0, 1.0)
-        f_pos = np.minimum(1.0 + self.c_pg1 * lam, self.c_pg1_lim)
-        f_neg = np.minimum(1.0 + self.c_pg2 * lam + self.c_pg3 * np.minimum(lam + 0.0681, 0.0),
+        tu_l = anp.minimum(100.0 * anp.sqrt(2.0 * anp.maximum(k, 0.0) / 3.0) / (w * d), 100.0)
+        lam = anp.clip(-7.57e-3 * self._dvdy(flow) * d ** 2 / nu + 0.0128, -1.0, 1.0)
+        f_pos = anp.minimum(1.0 + self.c_pg1 * lam, self.c_pg1_lim)
+        f_neg = anp.minimum(1.0 + self.c_pg2 * lam + self.c_pg3 * anp.minimum(lam + 0.0681, 0.0),
                            self.c_pg2_lim)
-        f_pg = np.maximum(np.where(lam >= 0.0, f_pos, f_neg), 0.0)
-        re_thc = self.c_tu1 + self.c_tu2 * np.exp(-self.c_tu3 * tu_l * f_pg)
+        f_pg = anp.maximum(anp.where(lam >= 0.0, f_pos, f_neg), 0.0)
+        re_thc = self.c_tu1 + self.c_tu2 * anp.exp(-self.c_tu3 * tu_l * f_pg)
         return re_thc, tu_l, lam
 
     def onset_functions(self, k, w, flow, strain=None):
@@ -131,10 +131,10 @@ class MenterSSTGamma(MenterSST):
         re_v = self.d ** 2 * (flow.strain if strain is None else strain) / nu
         r_t = k / (nu * w)
         re_thc, tu_l, _ = self.re_theta_c(k, w, flow)
-        f_onset2 = np.minimum(re_v / (2.2 * re_thc), 2.0)
-        f_onset3 = np.maximum(1.0 - (r_t / 3.5) ** 3, 0.0)
-        f_onset = np.maximum(f_onset2 - f_onset3, 0.0)
-        f_turb = np.exp(-(r_t / 2.0) ** 4)
+        f_onset2 = anp.minimum(re_v / (2.2 * re_thc), 2.0)
+        f_onset3 = anp.maximum(1.0 - (r_t / 3.5) ** 3, 0.0)
+        f_onset = anp.maximum(f_onset2 - f_onset3, 0.0)
+        f_turb = anp.exp(-(r_t / 2.0) ** 4)
         return f_onset, f_turb, re_v, re_thc, tu_l
 
     # -- une itération ------------------------------------------------------------------
@@ -156,7 +156,7 @@ class MenterSSTGamma(MenterSST):
         if len(self.wall_nodes):
             self._gamma_wall = (float(g[1]), float(g[-2]))
         g_new = self._solve(step, "gamma", nu + nut / self.sigma_f, source, sink)
-        g_new = np.minimum(g_new, 1.0)
+        g_new = anp.minimum(g_new, 1.0)
 
         # 2) k : production × γ (+ P_k^lim), destruction × max(γ, 0.1)
         def blend(c1, c2):
@@ -168,12 +168,12 @@ class MenterSSTGamma(MenterSST):
         gamma_w = blend(self.gamma1, self.gamma2)
 
         p_raw = nut * S * Om if self.kato_launder else nut * s2
-        prod_k = np.minimum(p_raw, 10.0 * bs * k * w)
-        f_on_lim = np.minimum(np.maximum(re_v / (2.2 * self.re_thc_lim) - 1.0, 0.0), 3.0)
-        p_lim = (5.0 * self.c_k * np.maximum(g_new - 0.2, 0.0) * (1.0 - g_new) * f_on_lim
-                 * np.maximum(3.0 * self.c_sep * nu - nut, 0.0) * S * Om)
+        prod_k = anp.minimum(p_raw, 10.0 * bs * k * w)
+        f_on_lim = anp.minimum(anp.maximum(re_v / (2.2 * self.re_thc_lim) - 1.0, 0.0), 3.0)
+        p_lim = (5.0 * self.c_k * anp.maximum(g_new - 0.2, 0.0) * (1.0 - g_new) * f_on_lim
+                 * anp.maximum(3.0 * self.c_sep * nu - nut, 0.0) * S * Om)
         k_new = self._solve(step, "k", nu + sigma_k * nut, g_new * prod_k + p_lim,
-                            np.maximum(g_new, 0.1) * bs * w)
+                            anp.maximum(g_new, 0.1) * bs * w)
 
         # 3) ω : équation du SST inchangée
         cd = 2.0 * (1.0 - f1) * self.sigma_w2 * self.ops.grad_dot(k_new, w, "k", "omega") / w
@@ -202,7 +202,7 @@ def freestream_decay(distance, velocity, nu, intensity, viscosity_ratio, beta=0.
     `distance` : distance parcourue depuis l'entrée. Renvoie (Tu, ν_t/ν) à cette distance.
     Sert à choisir Tu et ν_t/ν d'entrée pour retrouver le Tu mesuré au bord d'attaque et
     sa décroissance le long de la plaque (voir docs/notes_transition.md)."""
-    x = np.asarray(distance, dtype=float)
+    x = anp.asarray(distance, dtype=float)
     k0 = 1.5 * (intensity * velocity) ** 2
     w0 = k0 / (nu * viscosity_ratio)
     f = 1.0 + beta * w0 * x / velocity

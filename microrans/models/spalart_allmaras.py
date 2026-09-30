@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import numpy as np
 
+from ._xp import anp
+
 from .base import TurbulenceModel, float_array, linearize_source
 
 
@@ -39,13 +41,13 @@ class SpalartAllmaras(TurbulenceModel):
     def nu_tilde_from_nut(self, nut):
         """Inverse de ν_t = ν̃ f_v1(ν̃/ν) par dichotomie (fonction monotone croissante)."""
         target = float_array(nut) / self.nu
-        lo = np.zeros_like(target)
-        hi = np.maximum(2.0 * target, 20.0)
+        lo = anp.zeros_like(target)
+        hi = anp.maximum(2.0 * target, 20.0)
         for _ in range(80):
             mid = 0.5 * (lo + hi)
             too_big = mid * self.fv1(mid) > target
-            hi = np.where(too_big, mid, hi)
-            lo = np.where(too_big, lo, mid)
+            hi = anp.where(too_big, mid, hi)
+            lo = anp.where(too_big, lo, mid)
         return 0.5 * (lo + hi) * self.nu
 
     def initial_state(self, flow, nut0):
@@ -68,18 +70,18 @@ class SpalartAllmaras(TurbulenceModel):
         with np.errstate(divide="ignore", invalid="ignore"):
             s_lim = omega + omega * (self.cv2 ** 2 * omega + self.cv3 * s_bar) / (
                 (self.cv3 - 2.0 * self.cv2) * omega - s_bar)
-        return np.where(s_bar >= -self.cv2 * omega, omega + s_bar, s_lim)
+        return anp.where(s_bar >= -self.cv2 * omega, omega + s_bar, s_lim)
 
     def local_source(self, nt, omega):
         """Terme source local net Q(ν̃) = production − destruction."""
         k2, d = self.kappa ** 2, self.d
         s_tilde = self.s_tilde(nt, omega)
         with np.errstate(divide="ignore", invalid="ignore"):
-            r = np.where(s_tilde > 1e-300, nt / (s_tilde * k2 * d ** 2), 10.0)
-        r = np.minimum(r, 10.0)
+            r = anp.where(s_tilde > 1e-300, nt / (s_tilde * k2 * d ** 2), 10.0)
+        r = anp.minimum(r, 10.0)
         g = r + self.cw2 * (r ** 6 - r)
         fw = g * ((1.0 + self.cw3 ** 6) / (g ** 6 + self.cw3 ** 6)) ** (1.0 / 6.0)
-        ft2 = self.ct3 * np.exp(-self.ct4 * (nt / self.nu) ** 2) if self.use_ft2 else 0.0
+        ft2 = self.ct3 * anp.exp(-self.ct4 * (nt / self.nu) ** 2) if self.use_ft2 else 0.0
         production = self.cb1 * (1.0 - ft2) * s_tilde * nt
         destruction = (self.cw1 * fw - self.cb1 / k2 * ft2) * (nt / d) ** 2
         return production - destruction

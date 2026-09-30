@@ -7,7 +7,7 @@ Condition pariétale : ω_w = 10 · 6ν / (β Δy₁²) (Menter 1994), Δy₁ = 
 """
 from __future__ import annotations
 
-import numpy as np
+from ._xp import anp
 
 from .base import (TurbulenceModel, float_array, k_omega_freestream, k_omega_guess,
                    linearize_source)
@@ -39,7 +39,7 @@ class WilcoxKOmega2006(TurbulenceModel):
         return {"k": k, "omega": omega}
 
     def _omega_tilde(self, omega, flow):
-        return np.maximum(omega, self.c_lim * flow.strain / np.sqrt(self.beta_star))
+        return anp.maximum(omega, self.c_lim * flow.strain / anp.sqrt(self.beta_star))
 
     def eddy_viscosity(self, state, flow):
         return self._zero_at_walls(state["k"] / self._omega_tilde(state["omega"], flow))
@@ -55,7 +55,7 @@ class WilcoxKOmega2006(TurbulenceModel):
                             self.beta_star * w)
 
         cross = self.ops.grad_dot(k_new, w, "k", "omega")
-        cross_diff = np.where(cross > 0.0, self.sigma_do * cross / w, 0.0)
+        cross_diff = anp.where(cross > 0.0, self.sigma_do * cross / w, 0.0)
         # α (ω/k) P_k = α (ω/ω̃) S² ; Newton sur −βω² et sur la diffusion croisée (∝ 1/ω).
         q = self.alpha * (w / w_t) * s2 + cross_diff - self.beta * w ** 2
         dq = -2.0 * self.beta * w - cross_diff / w

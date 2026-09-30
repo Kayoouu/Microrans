@@ -8,7 +8,7 @@ Condition pariétale : ω_w = 10 · 6ν / (β1 Δy₁²).
 """
 from __future__ import annotations
 
-import numpy as np
+from ._xp import anp
 
 from .base import (TurbulenceModel, float_array, k_omega_freestream, k_omega_guess,
                    linearize_source)
@@ -43,15 +43,15 @@ class MenterSST(TurbulenceModel):
     def blending(self, k, w, cross):
         """Fonctions de raccordement F1 et F2 (cross = ∇k·∇ω)."""
         nu, d, bs = self.nu, self.d, self.beta_star
-        sqk = np.sqrt(np.maximum(k, 0.0))
-        cd_kw = np.maximum(2.0 * self.sigma_w2 * cross / w, 1e-10)
-        arg1 = np.minimum(np.maximum(sqk / (bs * w * d), 500.0 * nu / (d ** 2 * w)),
+        sqk = anp.sqrt(anp.maximum(k, 0.0))
+        cd_kw = anp.maximum(2.0 * self.sigma_w2 * cross / w, 1e-10)
+        arg1 = anp.minimum(anp.maximum(sqk / (bs * w * d), 500.0 * nu / (d ** 2 * w)),
                           4.0 * self.sigma_w2 * k / (cd_kw * d ** 2))
-        arg2 = np.maximum(2.0 * sqk / (bs * w * d), 500.0 * nu / (d ** 2 * w))
-        return np.tanh(arg1 ** 4), np.tanh(arg2 ** 2)
+        arg2 = anp.maximum(2.0 * sqk / (bs * w * d), 500.0 * nu / (d ** 2 * w))
+        return anp.tanh(arg1 ** 4), anp.tanh(arg2 ** 2)
 
     def _nut(self, k, w, f2, flow):
-        return self._zero_at_walls(self.a1 * k / np.maximum(self.a1 * w, flow.strain * f2))
+        return self._zero_at_walls(self.a1 * k / anp.maximum(self.a1 * w, flow.strain * f2))
 
     def eddy_viscosity(self, state, flow):
         k, w = state["k"], state["omega"]
@@ -73,7 +73,7 @@ class MenterSST(TurbulenceModel):
         beta = blend(self.beta1, self.beta2)
         gamma = blend(self.gamma1, self.gamma2)
 
-        prod_k = np.minimum(nut * s2, 10.0 * bs * k * w)
+        prod_k = anp.minimum(nut * s2, 10.0 * bs * k * w)
         k_new = self._solve(step, "k", nu + sigma_k * nut, prod_k, bs * w)
 
         # Diffusion croisée (∝ 1/ω) et −βω² linéarisés par Newton.

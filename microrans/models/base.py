@@ -13,6 +13,8 @@ from abc import ABC, abstractmethod
 
 import numpy as np
 
+from ._xp import anp
+
 from ..numerics import ddy
 
 
@@ -55,7 +57,7 @@ class TurbulenceModel(ABC):
         else:
             self.wall_nodes = np.array([], dtype=int)
             self.ops = None          # fourni par le solveur 2D
-        self.d = np.maximum(d, 1e-300)
+        self.d = anp.maximum(d, 1e-300)
 
     # -- à implémenter -----------------------------------------------------------
     @abstractmethod
@@ -120,7 +122,7 @@ def float_array(x):
     """Tableau de réels sans changer de module (NumPy ou CuPy) ; accepte les scalaires."""
     if hasattr(x, "astype"):
         return x.astype(float, copy=False)
-    return np.asarray(x, dtype=float)
+    return anp.asarray(x, dtype=float)
 
 
 def linearize_source(phi: np.ndarray, q: np.ndarray, dq: np.ndarray):
@@ -131,14 +133,14 @@ def linearize_source(phi: np.ndarray, q: np.ndarray, dq: np.ndarray):
     (indispensable pour les puits quadratiques βω², C2 ε²/k, c_w1 f_w (ν̃/d)²,
     qu'une linéarisation « Picard » rend oscillants aux grands pas de temps).
     """
-    sink = np.maximum(-dq, 0.0)
+    sink = anp.maximum(-dq, 0.0)
     source = q + sink * phi
     negative = source < 0.0
-    if np.any(negative):
+    if anp.any(negative):
         with np.errstate(divide="ignore", over="ignore", invalid="ignore"):
-            extra = np.where(phi > 0.0, -source / phi, 0.0)
-        sink = np.where(negative, sink + np.minimum(extra, 1e30), sink)
-        source = np.where(negative, 0.0, source)
+            extra = anp.where(phi > 0.0, -source / phi, 0.0)
+        sink = anp.where(negative, sink + anp.minimum(extra, 1e30), sink)
+        source = anp.where(negative, 0.0, source)
     return source, sink
 
 
@@ -150,8 +152,8 @@ def k_omega_guess(model: TurbulenceModel, nut0: np.ndarray, beta: float = 0.075,
     u_τ/(√β* κ d) ; k = ν_t ω donne k ≈ u_τ²/√β* dans la zone log et k ~ d² à la paroi.
     """
     d = model.d
-    omega = np.sqrt((6.0 * model.nu / (beta * d ** 2)) ** 2
-                    + (u_tau / (np.sqrt(beta_star) * kappa * d)) ** 2)
+    omega = anp.sqrt((6.0 * model.nu / (beta * d ** 2)) ** 2
+                    + (u_tau / (anp.sqrt(beta_star) * kappa * d)) ** 2)
     k = nut0 * omega
     k[model.wall_nodes] = 0.0
     return k, omega
