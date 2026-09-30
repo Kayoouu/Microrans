@@ -1,0 +1,51 @@
+# Tube à choc de Sod (1978) sur une bande 2D d'une maille d'épaisseur (compressible, Euler).
+# Solution exacte : problème de Riemann (Toro 2009, chap. 4) ; à t = 0.2·L/√(p_L/ρ_L) :
+# choc x = 0.8504, contact x = 0.6855, détente de x = 0.2634 à 0.4859 (voir
+# docs/compressible.md pour les erreurs L1 mesurées). Durée ~2 s.
+# microrans run2d compressible_tube_sod
+[mesh]
+type = "rectangle"
+x0 = 0.0
+x1 = 1.0
+y0 = 0.0
+y1 = 0.0025                  # = 1/nx : cellules carrées
+nx = 400
+ny = 1
+names = { left = "left", right = "right", bottom = "walls", top = "walls" }
+
+[physics]
+compressible = true
+
+[flow]                       # état de référence (sert à p∞, ρ∞ ; fluide au repos)
+mach = 0.0
+pressure = 1e5
+density = 1.0
+viscosity = "inviscid"
+
+[initial]                    # diaphragme en x = 0.5
+rho = "where(x < 0.5, 1.0, 0.125)"
+p = "where(x < 0.5, 1e5, 1e4)"
+U = [0.0, 0.0]
+
+[boundary.left]
+type = "supersonic_outlet"   # extrapolation (les ondes n'atteignent pas les bords)
+
+[boundary.right]
+type = "supersonic_outlet"
+
+[boundary.walls]
+type = "symmetry"
+
+[solver]
+mode = "transient"
+flux = "roe"
+order = 2
+limiter = "venkatakrishnan"
+cfl = 0.8
+t_end = 6.32455532e-4        # 0.2 / √(1e5 / 1.0) s
+log_every = 100
+
+[output]
+directory = "results/compressible_tube_sod"
+probes = [[0.25, 0.00125], [0.75, 0.00125]]
+lines = [{ name = "axe", start = [0.0, 0.00125], end = [1.0, 0.00125], n = 400 }]

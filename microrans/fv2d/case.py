@@ -193,7 +193,13 @@ def build_solver(cfg: dict, base_dir=".", verbose=False, mesh=None):
 def run_case(cfg: dict, base_dir=".", out_dir=None, verbose=True, plot=True, callback=None,
              mesh=None, return_solver=False):
     """Exécute un cas complet. callback(solver, n) -> True pour arrêter (interface
-    graphique) ; mesh : maillage déjà construit ; return_solver : renvoie (résumé, solveur)."""
+    graphique) ; mesh : maillage déjà construit ; return_solver : renvoie (résumé, solveur).
+
+    [physics] compressible = true : solveur compressible en densité (compressible_case.py)."""
+    if cfg.get("physics", {}).get("compressible", False):
+        from .compressible_case import run_compressible_case
+        return run_compressible_case(cfg, base_dir, out_dir, verbose, plot, callback, mesh,
+                                     return_solver)
     ph, sc, oc = cfg.get("physics", {}), cfg.get("solver", {}), cfg.get("output", {})
     out = Path(out_dir or oc.get("directory", "results/case2d"))
     out.mkdir(parents=True, exist_ok=True)

@@ -24,6 +24,7 @@ from PySide6.QtWidgets import (QApplication, QCheckBox, QFileDialog, QFormLayout
 
 from .. import __version__
 from ..cli import examples_dir
+from ..fv2d.compressible import COMP_BC_TYPES
 from ..fv2d.solver import BC_TYPES, TIME_SCHEMES
 from ..linalg import SOLVERS
 from ..models import MODELS
@@ -41,6 +42,19 @@ MODEL_LABELS = [("laminar", "Laminaire"), ("sa", "Spalart-Allmaras"), ("ke", "k-
 BC_LABELS = {"wall": "Paroi", "inlet": "Entrée (vitesse)", "outlet": "Sortie (pression)",
              "symmetry": "Symétrie", "farfield": "Champ lointain",
              "axis": "Axe (axisymétrique)", "pressure_inlet": "Entrée (pression totale)"}
+# cas compressibles ([physics] compressible = true) : voir fv2d/compressible.py
+COMP_BC_LABELS = {"farfield": "Champ lointain (invariants de Riemann)",
+                  "supersonic_inlet": "Entrée supersonique (état imposé)",
+                  "inlet": "Entrée subsonique (p0, T0)", "outlet": "Sortie subsonique (p)",
+                  "supersonic_outlet": "Sortie supersonique (extrapolation)",
+                  "slip_wall": "Paroi glissante (Euler)", "symmetry": "Symétrie",
+                  "wall": "Paroi adhérente (T : isotherme)"}
+# clés des formulaires conservées pour un cas compressible (le reste est dans [flow],
+# [initial], [boundary] et [solver] : onglet « Fichier de cas »)
+COMP_FORM_KEYS = {("solver", "mode"), ("solver", "max_iter"), ("solver", "tol"),
+                  ("solver", "t_end"), ("solver", "monitor_tol"),
+                  ("physics", "angle_of_attack"), ("physics", "reference_length"),
+                  ("initial", "restart")}
 MESH_TYPES = [("rectangle", "Rectangle structuré"), ("ogrid", "Structuré en O autour d'un corps"),
               ("unstructured", "Triangles (non structuré)"),
               ("hybrid", "Hybride : couches de quadrilatères + triangles"),
@@ -52,7 +66,9 @@ FIELD_LABELS = {"T": "température T", "U_mag": "|U|", "Ux": "U_x", "Uy": "U_y",
                 "vorticité ω_z", "nut_over_nu": "ν_t / ν", "k": "k", "omega": "ω", "eps": "ε",
                 "nu_tilde": "ν̃", "wall_distance": "distance à la paroi",
                 "viscosity": "viscosité ν (non newtonien)", "shear_rate": "taux de cisaillement γ̇",
-                "U_theta": "vitesse de rotation u_θ"}
+                "U_theta": "vitesse de rotation u_θ", "Mach": "nombre de Mach",
+                "rho": "masse volumique ρ", "Cp": "coefficient de pression Cp",
+                "entropy": "écart d'entropie (p/p∞)/(ρ/ρ∞)^γ − 1"}
 VISCOSITY_MODELS = [("newtonian", "Newtonien (ν constante)"), ("power_law", "Loi puissance"),
                     ("carreau", "Carreau"), ("cross", "Cross"),
                     ("herschel_bulkley", "Herschel-Bulkley (seuil)"), ("bingham", "Bingham (seuil)"),
@@ -403,6 +419,10 @@ class MainWindow(QMainWindow):
         w = QWidget()
         lay = QVBoxLayout(w)
         B = self.binder
+        self.comp_info = _note("")
+        self.comp_info.setStyleSheet("color:#0b0b0b; background:#fff4d6; padding:8px;")
+        self.comp_info.setVisible(False)
+        lay.addWidget(self.comp_info)
         box, f = _form("Fluide (incompressible, grandeurs cinématiques ρ = 1)")
         self.nu_mode = combo([("nu", "Viscosité ν"), ("reynolds", "Nombre de Reynolds")])
         self.nu_mode.currentIndexChanged.connect(self._nu_mode_changed)
@@ -802,8 +822,27 @@ class MainWindow(QMainWindow):
         self._fill_porous_table()
         self._fill_disk_table()
         self._fill_bc_table()
+        self._show_compressible()
         self._syncing = False
         self._refresh_toml()
+
+    def _compressible(self) -> bool:
+        return bool(self.cfg.get("physics", {}).get("compressible", False))
+
+    def _show_compressible(self):
+        comp = self._compressible()
+        self.comp_info.setVisible(comp)
+        if comp:
+            fl = self.cfg.get("flow", {})
+            desc = ", ".join(f"{k} = {fl[k]}" for k in ("mach", "velocity", "pressure",
+                                                         "temperature", "density",
+                                                         "viscosity", "reynolds", "mu")
+                             if k in fl)
+            self.comp_info.setText(
+                "<b>Cas compressible</b> (solveur en densité, grandeurs SI) : " + desc
+                + ". L'écoulement amont ([flow]), l'état initial et les réglages numériques "
+                "(flux, limiteur, CFL, schéma implicite) se modifient dans l'onglet « Fichier "
+                "de cas » ; les réglages incompressibles de cette page sont ignorés.")
 
     def _form_changed(self):
         if self._syncing:
@@ -812,6 +851,15 @@ class MainWindow(QMainWindow):
         self._toml_timer.start()
 
     def _store_forms(self):
+        if self._compressible():
+            # cas compressible : seuls maillage, sorties et quelques clés génériques
+            # viennent des formulaires (sinon ν, U initiale, Δt… incompressibles seraient
+            # écrits dans le cas)
+            only = {p for p, *_ in self.binder.items if p[0] in ("mesh", "domain", "output")
+                    or p in COMP_FORM_KEYS}
+            self.binder.store(self.cfg, only=only)
+            self._prune_mesh_keys()
+            return
         self.binder.store(self.cfg)
         if not self.energy_on.isChecked():
             self.cfg.pop("energy", None)
@@ -1375,9 +1423,15 @@ class MainWindow(QMainWindow):
             return set()
         return {p for pair in self.mesh.periodic_pairs for p in pair[:2]}
 
-    @staticmethod
-    def _guess_bc(name, ptype):
+    def _guess_bc(self, name, ptype):
         n = name.lower()
+        if self._compressible():
+            if any(k in n for k in ("far", "inlet", "entree", "inflow", "outlet", "sortie",
+                                    "outflow")):
+                return {"type": "farfield"}
+            if "sym" in n or ptype == "symmetry":
+                return {"type": "symmetry"}
+            return {"type": "wall"}
         if "farfield" in n or "far" in n:
             return {"type": "farfield", "U": [1.0, 0.0]}
         if "inlet" in n or "entree" in n or "inflow" in n:
@@ -1417,7 +1471,10 @@ class MainWindow(QMainWindow):
             it = QTableWidgetItem(n)
             it.setFlags(it.flags() & ~Qt.ItemIsEditable)
             self.bc_table.setItem(r, 0, it)
-            cb = combo([(t, BC_LABELS[t]) for t in BC_TYPES])
+            if self._compressible():
+                cb = combo([(t, COMP_BC_LABELS[t]) for t in COMP_BC_TYPES])
+            else:
+                cb = combo([(t, BC_LABELS[t]) for t in BC_TYPES])
             set_combo(cb, spec.get("type", "wall"))
             cb.currentIndexChanged.connect(lambda *_: self._bc_changed())
             self.bc_table.setCellWidget(r, 1, cb)
@@ -1425,7 +1482,8 @@ class MainWindow(QMainWindow):
             self.bc_table.setItem(r, 2, QTableWidgetItem(str(U[0])))
             self.bc_table.setItem(r, 3, QTableWidgetItem(str(U[1])))
             self.bc_table.setItem(r, 4, QTableWidgetItem(str(spec.get("p", spec.get("p0", "")))))
-            self.bc_table.setItem(r, 5, QTableWidgetItem(str(spec.get("T", ""))))
+            self.bc_table.setItem(r, 5, QTableWidgetItem(str(spec.get("T", spec.get("T0",
+                                                                                    "")))))
             self.bc_table.setItem(r, 6, QTableWidgetItem(str(spec.get("q", ""))))
             self.bc_table.setItem(r, 7, QTableWidgetItem(str(spec.get("flow_rate", ""))))
             self.bc_table.setItem(r, 8, QTableWidgetItem("; ".join(
@@ -1449,6 +1507,9 @@ class MainWindow(QMainWindow):
             except ValueError:
                 return txt                          # expression en x, y
         old = self.cfg.get("boundary", {})
+        if self._compressible():
+            self._bc_changed_compressible(old, num)
+            return
         for r in range(self.bc_table.rowCount()):
             name = self.bc_table.item(r, 0).text()
             t = self.bc_table.cellWidget(r, 1).currentData()
@@ -1487,6 +1548,38 @@ class MainWindow(QMainWindow):
                 spec["omega"] = float(rot.split("=", 1)[1])
             elif rot:
                 spec["U_theta"] = num(rot)
+            bnd[name] = spec
+        self.cfg["boundary"] = bnd
+        self._toml_timer.start()
+
+    def _bc_changed_compressible(self, old, num):
+        """Cas compressible : le tableau change le type et les valeurs usuelles (p de sortie,
+        p0 / T0 d'entrée, T et vitesse de paroi) ; les autres clés sont conservées."""
+        bnd = {}
+        for r in range(self.bc_table.rowCount()):
+            name = self.bc_table.item(r, 0).text()
+            t = self.bc_table.cellWidget(r, 1).currentData()
+            spec = dict(old.get(name, {}))
+            spec["type"] = t
+
+            def cell(c):
+                it = self.bc_table.item(r, c)
+                return num(it.text()) if it else None
+            ux, uy, p, T = cell(2), cell(3), cell(4), cell(5)
+            for k in ("p", "p0", "T", "T0", "U"):
+                spec.pop(k, None)
+            if t == "outlet" and p is not None:
+                spec["p"] = p
+            if t == "inlet":
+                if p is not None:
+                    spec["p0"] = p
+                if T is not None:
+                    spec["T0"] = T
+            if t == "wall":
+                if T is not None:
+                    spec["T"] = T
+                if ux or uy:
+                    spec["U"] = [ux or 0.0, uy or 0.0]
             bnd[name] = spec
         self.cfg["boundary"] = bnd
         self._toml_timer.start()
@@ -1711,8 +1804,10 @@ class MainWindow(QMainWindow):
         self.summary_view.setPlainText(text)
         fields = solver.fields()
         self.field_combo.clear()
-        for k in ["U_mag", "Ux", "Uy", "p", "vorticity"] + [k for k in fields if k not in (
-                "U", "U_mag", "p", "vorticity")]:
+        first = ["U_mag", "Ux", "Uy", "p", "vorticity"]
+        if summary.get("solver") == "compressible":
+            first = ["Mach", "p", "rho", "T", "U_mag", "Ux", "Uy", "vorticity"]
+        for k in first + [k for k in fields if k not in first and k != "U"]:
             self.field_combo.addItem(FIELD_LABELS.get(k, k), k)
         self.wall_combo.clear()
         for p in self.mesh.patches:
@@ -1785,7 +1880,11 @@ class MainWindow(QMainWindow):
             return
         key = self.field_combo.currentData() or "U_mag"
         dist, pts = line_points(self.line_start.value(), self.line_end.value(), 300)
-        smp = Sampler(s, pts)
+        if hasattr(s, "fs"):                        # solveur compressible
+            from ..fv2d.compressible_case import CompressibleSampler
+            smp = CompressibleSampler(s, pts)
+        else:
+            smp = Sampler(s, pts)
         vals = smp.sample([key]).get(key)
         if vals is None:                            # grandeur sans reconstruction : cellule
             f = s.fields()
@@ -1814,8 +1913,12 @@ class MainWindow(QMainWindow):
         q = 0.5 * s.U_ref ** 2
         pb = s.boundary_p(s.p)[s.patch_slices[name]]
         what = self.wall_q.currentData()
+        comp = hasattr(s, "fs")
+        if comp:                    # compressible : coefficients rapportés à ½ρ∞U∞²
+            q = 0.5 * s.fs.rho * max(s.fs.speed, 1e-300) ** 2
+            pb = pb - s.fs.p
         if what in ("q", "Tw"):
-            if s.energy is None:
+            if s.energy is None and not (comp and s.gas.viscous):
                 self.canvas.message("Pas de thermique dans ce calcul.")
                 return
             Tw, qw = s.wall_heat_flux(name)
@@ -1878,7 +1981,8 @@ def QLineEdit_(text=""):
 
 # ============================================================================ lancement
 def _selftest(win: MainWindow, app, shot: str | None) -> int:
-    """Test de fumée (CI, exécutable) : cavité 16×16, quelques itérations, tracés."""
+    """Test de fumée (CI, exécutable) : cavité 16×16, quelques itérations, tracés ; puis
+    rampe supersonique compressible (maillage réduit, 40 itérations implicites)."""
     import time
     win.open_case(examples_dir() / "cavite_re100.toml")
     win.cfg["mesh"].update(nx=16, ny=16)
@@ -1922,10 +2026,43 @@ def _selftest(win: MainWindow, app, shot: str | None) -> int:
         win.line_start.set_value((0.5, 0.0))
         win.line_end.set_value((0.5, 1.0))
         win.plot_line()
+    # cas compressible (rampe M = 2, maillage réduit) : ouverture de l'exemple, maillage,
+    # calcul (le fichier de cas pilote tout), champs Mach / p, Cp pariétal
+    win.open_case(examples_dir() / "compressible_rampe_mach2.toml")
+    for b in win.cfg["mesh"]["blocks"]:
+        b["cells"] = [max(c // 4, 4) for c in b["cells"]]
+    win.cfg["solver"].update(max_iter=40, steady_scheme="implicit", cfl=5.0)
+    win.cfg["output"]["directory"] = str(results_root() / "selftest_compressible")
+    win.load_cfg(win.cfg)
+    win.summary = None
+    for action in (win.generate_mesh, win.run_2d):
+        action()
+        t0 = time.time()
+        while win.thread is not None and time.time() - t0 < 300:
+            app.processEvents()
+            time.sleep(0.02)
+    comp = (not errors and win.summary is not None
+            and win.summary.get("solver") == "compressible"
+            and win.cfg["flow"]["mach"] == 2.0
+            and win.cfg["boundary"]["inlet"]["type"] == "supersonic_inlet"
+            and "nu" not in win.cfg["physics"]
+            and win.field_combo.currentData() == "Mach")
+    if errors:
+        print("SELFTEST ÉCHEC (compressible) :", errors[0])
+    for key in ("Mach", "p", "rho"):
+        set_combo(win.field_combo, key)
+        win.plot_field()
+    set_combo(win.wall_q, "Cp")
+    win.plot_wall()
+    win.line_start.set_value((0.0, 0.5))
+    win.line_end.set_value((1.5, 0.5))
+    win.plot_line()
     app.processEvents()
+    ok = ok and comp and not errors
     if shot:
         win.grab().save(shot)
-    print("SELFTEST", "OK" if ok else "ÉCHEC", its, len(win.sweep_rows))
+    print("SELFTEST", "OK" if ok else "ÉCHEC", its, len(win.sweep_rows),
+          "compressible" if comp else "compressible ÉCHEC")
     return 0 if ok else 1
 
 

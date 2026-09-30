@@ -1,0 +1,53 @@
+# Profil NACA 0012 transsonique, M = 0.8, α = 1.25° (Euler, compressible, schéma implicite).
+# Références : AGARD-AR-211 (1985), Cl ≈ 0.35-0.36, Cd ≈ 0.022-0.023 (valeurs convergées
+# en maillage). Ce maillage (192 × 64 = 12 288 cellules) donne une portance plus FAIBLE :
+# voir l'étude de maillage de docs/compressible.md. Durée ~1-2 min.
+# microrans run2d compressible_naca0012_transsonique
+[mesh]
+type = "ogrid"
+n_around = 192
+n_radial = 64
+farfield_radius = 30.0
+first_height = 2e-3
+
+[[bodies]]
+type = "naca"
+code = "0012"
+chord = 1.0
+name = "airfoil"
+
+[physics]
+compressible = true
+angle_of_attack = 1.25       # oriente l'écoulement amont ; Cd, Cl en axes vent
+reference_length = 1.0       # corde
+
+[flow]
+mach = 0.8
+pressure = 101325.0
+temperature = 288.15
+viscosity = "inviscid"
+
+[boundary.airfoil]
+type = "slip_wall"
+
+[boundary.farfield]
+type = "farfield"
+
+[solver]
+mode = "steady"
+flux = "roe"
+order = 2
+limiter = "venkatakrishnan"
+limiter_freeze = 200         # limiteur gelé ensuite (sinon cycle limite des résidus)
+steady_scheme = "implicit"
+cfl = 5.0
+cfl_max = 50.0
+max_iter = 1000
+tol = 1e-6
+monitor_tol = 1e-5           # ou efforts stabilisés (relatif) sur 200 itérations
+log_every = 50
+
+[output]
+directory = "results/compressible_naca0012_transsonique"
+forces = ["airfoil"]
+moment_center = [0.25, 0.0]
