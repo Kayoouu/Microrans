@@ -501,6 +501,7 @@ microrans/
   backend.py             choix CPU / GPU (module de tableaux)
   linalg.py              AMG par agrégation, CG flexible, BiCGStab, choix du solveur
   tomlio.py              écriture TOML (aller-retour exact)
+  safe_expr.py           formules des fichiers de cas évaluées sans exécution de code
   studies.py             études précision / coût des schémas en temps
   grid.py numerics.py flow.py solver.py cases.py   solveur 1D (canal) et ses schémas en temps
   models/                modèles de turbulence (communs 1D/2D)
@@ -518,7 +519,7 @@ microrans/
   gui/                   interface PySide6 (app.py, widgets.py)
   examples/              cas fournis (microrans examples)
 packaging/               PyInstaller (microrans.spec) : exécutables GUI + CLI
-tests/                   pytest (183 tests : vérification, validation, GUI hors écran, faux GPU)
+tests/                   pytest (207 tests : vérification, validation, GUI hors écran, faux GPU)
 .github/workflows/       tests (Python 3.10 / 3.12) ; exécutables Windows / Linux
 ```
 
@@ -535,7 +536,13 @@ onglet **Releases → Draft a new release**, tag `v0.x.y` (« Create new tag on 
 **Publish release** ; le workflow `executables` construit, teste et attache les trois
 archives et les notes de version (`packaging/RELEASE_NOTES.md`) en ~5 minutes.
 
-## 11. Licence
+## 11. Sécurité
+
+Aucun accès réseau ni télémétrie ; les formules des fichiers de cas passent par un analyseur
+à liste blanche (un cas reçu ne peut pas exécuter de code) ; reprises lues sans `pickle`.
+Détails et signalement d'une faille : `SECURITY.md`.
+
+## 12. Licence
 
 Code sous **licence MIT** (fichier `LICENSE`) : utilisation, modification et redistribution
 libres, y compris commerciales, à condition de conserver la mention de copyright ; aucune

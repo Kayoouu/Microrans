@@ -137,7 +137,11 @@ def write_lines(solver, lines, out_dir, plot=True):
     out_dir = Path(out_dir)
     written = []
     for i, ln in enumerate(lines or []):
-        name = ln.get("name", f"ligne{i + 1}")
+        import re
+        name = str(ln.get("name", f"ligne{i + 1}"))
+        if not re.fullmatch(r"[\w-]{1,64}", name):
+            raise ValueError(f"[[output.lines]] name = {name!r} : lettres, chiffres, _ ou - "
+                             f"seulement (nom de fichier).")
         s, pts = line_points(ln["start"], ln["end"], ln.get("n", 200))
         vals = Sampler(solver, pts).sample()
         cols = {"s": s, "x": pts[:, 0], "y": pts[:, 1], **vals}

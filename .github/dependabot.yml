@@ -1,0 +1,12 @@
+# Mises à jour automatiques proposées (pull requests) pour les actions GitHub épinglées par
+# empreinte de commit. Les alertes de sécurité des dépendances Python (numpy, scipy…) sont
+# un réglage du dépôt : Settings → Code security → Dependabot alerts.
+version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+    groups:
+      actions:
+        patterns: ["*"]

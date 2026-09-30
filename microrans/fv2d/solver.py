@@ -138,13 +138,9 @@ class Settings:
 
 
 def _eval_expr(expr, x, y):
-    if isinstance(expr, (int, float)):
-        return np.full_like(x, float(expr))
-    ns = {"x": x, "y": y, "np": np, "pi": np.pi, "sqrt": np.sqrt, "sin": np.sin, "cos": np.cos,
-          "exp": np.exp, "tanh": np.tanh, "abs": np.abs, "minimum": np.minimum,
-          "maximum": np.maximum, "where": np.where, "log": np.log, "arctan2": np.arctan2,
-          "hypot": np.hypot}
-    val = eval(str(expr), {"__builtins__": {}}, ns)    # expression fournie par l'utilisateur
+    """Formule en x, y (texte du fichier de cas) évaluée sans risque : voir safe_expr.py."""
+    from ..safe_expr import evaluate
+    val = evaluate(expr, {"x": x, "y": y})
     return np.broadcast_to(np.asarray(val, dtype=float), x.shape).copy()
 
 

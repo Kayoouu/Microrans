@@ -6,3 +6,9 @@ dist/
 .pytest_cache/
 .venv/
 results/
+# jamais de secrets ni de résultats volumineux dans le dépôt
+.env
+*.pem
+*.key
+*.npz
+microrans_resultats/

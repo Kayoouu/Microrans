@@ -38,6 +38,8 @@ def parse_values(spec) -> list[float]:
         if h == 0 or (b - a) * h < 0:
             raise ValueError(f"Plage invalide : {spec}")
         n = int(np.floor((b - a) / h + 1e-9)) + 1
+        if n > 10000:
+            raise ValueError(f"Plage {spec} : {n} points (maximum 10 000).")
         return [round(a + i * h, 12) for i in range(n)]
     return [float(x) for x in spec.replace(";", ",").split(",") if x.strip()]
 
