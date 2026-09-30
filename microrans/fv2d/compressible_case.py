@@ -250,6 +250,11 @@ class CompressibleSampler:
         Xb = s.boundary_values(W)
         X = np.vstack([W, W[3] / (W[0] * s.gas.R)])
         gx, gy = s.gradient(X, Xb)
+        # gradients limités (Barth-Jespersen, fvm.limit_grad) : pas de dépassement au
+        # voisinage des chocs
+        for k in range(len(X)):
+            g = s.fvm.limit_grad(X[k], np.column_stack([gx[k], gy[k]]), Xb[k])
+            gx[k], gy[k] = g[:, 0], g[:, 1]
         c = self._c
         v = X[:, c] + gx[:, c] * self._d[:, 0] + gy[:, c] * self._d[:, 1]
         r, u, vv, p, T = v

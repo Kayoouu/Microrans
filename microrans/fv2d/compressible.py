@@ -396,7 +396,7 @@ class CompressibleSolver2D:
         self._res0 = None
         self._res0_count = 0
         self._psi = None                   # limiteur mémorisé (gel / réutilisation)
-        self._psi_it = None
+        self._psi_frozen = None            # limiteur gelé (limiter_freeze)
         self._last = {}
         C = mesh.cell_centers
         if initial is None:
@@ -735,12 +735,15 @@ class CompressibleSolver2D:
             dP = _take(gx4, P) * self.rPx + _take(gy4, P) * self.rPy
             dN = _take(gx4, N) * self.rNx + _take(gy4, N) * self.rNy
             db = _take(gx4, Pb) * self.rbx + _take(gy4, Pb) * self.rby
-            frozen = s.limiter_freeze and it is not None and it > s.limiter_freeze
-            if (frozen or reuse_limiter) and self._psi is not None:
+            if self._psi_frozen is not None:
+                psi = self._psi_frozen                 # limiteur gelé (tous les appels)
+            elif reuse_limiter and self._psi is not None:
                 psi = self._psi
             else:
                 psi = self._limiter(W, Xb[:4], dP, dN, db)
                 self._psi = psi
+                if s.limiter_freeze and it is not None and it >= s.limiter_freeze:
+                    self._psi_frozen = psi
             WL = _take(W, P) + _take(psi, P) * dP
             WR = _take(W, N) + _take(psi, N) * dN
             Wf = _take(W, Pb) + _take(psi, Pb) * db
