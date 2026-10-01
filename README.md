@@ -36,6 +36,12 @@ est justifié par une mesure** reproductible dans ce dépôt (sections « Métho
 > (NumPy/SciPy) : confortable jusqu'à ~10⁵ cellules en 2D ; 2D plan ou axisymétrique (pas
 > de 3D), pas de LES ; compressible sans turbulence (Euler ou laminaire, 2D plan).
 
+**Guides** (aussi dans le menu Aide de l'interface) :
+- premier calcul pas à pas : [`docs/tutoriel.md`](docs/tutoriel.md) ;
+- divergence, non-convergence, résultats douteux : [`docs/depannage.md`](docs/depannage.md) ;
+- termes de CFD : [`docs/glossaire.md`](docs/glossaire.md) ;
+- toutes les clés du fichier de cas : [`docs/reference_cas.md`](docs/reference_cas.md).
+
 ---
 
 ## 1. Démarrer sans rien installer (exécutable)
@@ -82,6 +88,7 @@ Python ≥ 3.10 ; NumPy, SciPy, Matplotlib, pyamg (+ PySide6 pour l'interface).
 ```bash
 microrans gui                                   # interface graphique
 microrans examples                              # liste des cas fournis
+microrans examples cavite_re100                 # copie modifiable dans le dossier courant
 microrans run2d cavite_re100                    # calcul 2D (nom d'exemple ou fichier .toml)
 microrans run2d plaque_plane_sa --set physics.model=sst --set solver.max_iter=3000
 microrans run2d convection_naturelle_ra1e5
@@ -759,7 +766,7 @@ microrans/
   gui/                   interface PySide6 (app.py, widgets.py)
   examples/              cas fournis (microrans examples)
 packaging/               PyInstaller (microrans.spec) : exécutables GUI + CLI
-tests/                   pytest (376 tests : vérification, validation, GUI hors écran, faux GPU)
+tests/                   pytest (394 tests : vérification, validation, GUI hors écran, faux GPU)
 .github/workflows/       tests (Python 3.10 / 3.12) ; exécutables Windows / Linux
 ```
 

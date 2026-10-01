@@ -7,7 +7,7 @@ import io
 import time
 import traceback
 
-from PySide6.QtCore import QObject, QRegularExpression, QTimer, Signal, Slot
+from PySide6.QtCore import QObject, QRegularExpression, Qt, QTimer, Signal, Slot
 from PySide6.QtGui import QRegularExpressionValidator
 from PySide6.QtWidgets import (QCheckBox, QComboBox, QHBoxLayout, QLineEdit, QSpinBox,
                                QVBoxLayout, QWidget)
@@ -90,7 +90,9 @@ def combo(options, parent=None) -> QComboBox:
     return c
 
 
-def set_combo(c: QComboBox, value):
+def set_combo(c: QComboBox, value) -> bool:
+    """Sélectionne l'option de donnée `value` ; False si elle n'existe pas (sélection
+    inchangée)."""
     c.blockSignals(True)
     if value is None:                        # option « aucune » (donnée None)
         i = next((k for k in range(c.count()) if c.itemData(k) is None), -1)
@@ -102,6 +104,10 @@ def set_combo(c: QComboBox, value):
     if i >= 0:
         c.setCurrentIndex(i)
     c.blockSignals(False)
+    return i >= 0
+
+
+_EXTRA = Qt.UserRole + 1                     # option ajoutée pour une valeur hors liste
 
 
 # ----------------------------------------------------------------------------- liaison
@@ -187,7 +193,15 @@ class Binder(QObject):
             elif kind == "int":
                 w.setValue(int(v or 0))
             elif kind == "combo":
-                set_combo(w, v)
+                for k in reversed(range(w.count())):
+                    if w.itemData(k, _EXTRA):
+                        w.removeItem(k)
+                if not set_combo(w, v) and v is not None:
+                    # valeur du fichier absente de la liste : gardée telle quelle (avant :
+                    # remplacée en silence, ex. linearUpwindLimited -> linearUpwind)
+                    w.addItem(f"{v} (valeur du fichier)", v)
+                    w.setItemData(w.count() - 1, True, _EXTRA)
+                    w.setCurrentIndex(w.count() - 1)
             elif kind == "check":
                 w.setChecked(bool(v))
             elif kind == "points":

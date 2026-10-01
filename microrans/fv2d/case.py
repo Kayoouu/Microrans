@@ -55,7 +55,7 @@ import numpy as np
 
 from ..mesh2d.builder import PRESETS, build_mesh
 from ..mesh2d.io import write_vtk
-from .report import MODES
+from .report import MODES, quality_text
 from .restart import load_checkpoint, save_checkpoint
 from .sampling import Sampler, TimeAverage, parse_points, write_lines
 from .solver import Settings, Solver2D
@@ -239,6 +239,7 @@ def run_case(cfg: dict, base_dir=".", out_dir=None, verbose=True, plot=True, cal
     if verbose:
         print(f"Cas 2D : {solver.mesh.n_cells} cellules, modèle {solver.model.label}, "
               f"ν = {solver.nu:.4g}, {MODES.get(mode, mode)}")
+        print("\n".join(quality_text(solver.mesh)))
     t0 = time.perf_counter()
     summary = {"mode": mode, "model": solver.model_name, "n_cells": solver.mesh.n_cells,
                "axisymmetric": axi,
@@ -363,6 +364,15 @@ def run_case(cfg: dict, base_dir=".", out_dir=None, verbose=True, plot=True, cal
             Cd_viscous=float(f["viscous"] @ ed * kF))
         xf, tau, yp = solver.wall_shear(name)
         summary[name].update(yplus_max=float(yp.max()), yplus_mean=float(yp.mean()))
+        if solver.model.variables and not solver.wall_function and yp.max() > 5.0:
+            # mesuré (plaque plane SST, 1re maille à y⁺ ≈ 50, traitement résolu) : Cd 0.00144
+            # au lieu de 0.0055, « convergé » sans autre signe
+            fix = ("affiner la 1re maille ou passer en wall_treatment = \"wall_function\""
+                   if solver.model_name in ("sa", "kw", "sst") else "affiner la 1re maille")
+            summary.setdefault("warnings", []).append(
+                f"y⁺ max = {yp.max():.3g} sur « {name} » avec le traitement résolu (il faut "
+                "y⁺ ≲ 1 à la 1re maille) : frottement et traînée sous-estimés (plaque plane "
+                f"SST à y⁺ ≈ 50 : Cd 4 fois trop faible). Correction : {fix}.")
         if solver.swirl:
             summary[name]["torque"] = solver.torque(name)
         # distribution pariétale (comme les « XY plots » de Fluent) : Cf, Cp, y+ (, T, q)

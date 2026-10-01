@@ -56,7 +56,7 @@ import numpy as np
 
 from ..mesh2d.io import write_vtk
 from .compressible import (CompressibleSettings, CompressibleSolver2D, Gas, make_state)
-from .report import MODES
+from .report import MODES, quality_text
 
 _SETTINGS = {"flux", "order", "limiter", "venkat_k", "limiter_freeze", "entropy_fix", "cfl",
              "steady_scheme", "cfl_max", "cfl_growth", "first_order_iter",
@@ -323,6 +323,7 @@ def run_compressible_case(cfg: dict, base_dir=".", out_dir=None, verbose=True, p
               f"p∞ = {fs.p:.6g} Pa, T∞ = {fs.T:.5g} K, "
               + (f"Re = {Re:.4g}" if Re else "Euler (non visqueux)")
               + f", flux {s.flux}, ordre {s.order}, limiteur {s.limiter}, {MODES.get(mode, mode)}")
+        print("\n".join(quality_text(solver.mesh)))
     t0 = time.perf_counter()
     summary = {"solver": "compressible", "mode": mode,
                "model": "euler" if not gas.viscous else "laminar",

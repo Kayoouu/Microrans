@@ -32,6 +32,17 @@ volontaires qu'au lot 2, sauf les corps ajoutés en maillage hybride (le cercle 
 passe ; un corps ajouté puis changé de type passe aussi, au lieu d'un maillage faux ou
 d'un refus « non manifold ») ; aucun plantage ; suite de tests : 375 réussis, 1 ignoré.
 
+Lot 4 (ligne de commande et documentation) : L1, L2 et D4 d'abord (aide et erreurs en
+français, résumé lisible en fin de calcul, référence complète des clés), puis tutoriel,
+guide de dépannage et glossaire (D1 à D3). Ces guides ont été écrits en lançant chaque
+commande et en essayant chaque piste. Ce travail a fait trouver sept défauts : une traînée
+4 fois trop faible sans signal quand y⁺ ne convient pas au traitement de paroi (C8),
+l'interface qui remplaçait en silence les valeurs absentes de ses listes (C9), un résultat
+stationnaire « convergé » mais faux pour un écoulement instationnaire (C10, documenté),
+la qualité du maillage annoncée mais pas affichée (M10), des pistes compressibles absentes
+ou inefficaces (M11), un refus tardif (M12) et l'absence de copie d'un exemple en ligne de
+commande (L4). Suite de tests : 393 réussis, 1 ignoré.
+
 L'interface est pilotée hors écran en simulant les actions de l'utilisateur (choix dans
 les listes, frappe dans les champs) ; les boîtes de dialogue sont interceptées et
 enregistrées.
@@ -49,6 +60,9 @@ Statut : **à faire** / **corrigé** (avec le test qui le vérifie).
 | C5 | **Valeurs impossibles acceptées sans avertissement** : ν < 0, x1 < x0, rayon < 0, tolérance < 0, Mach < 0, vitesse à 3 composantes, condition pour une frontière inexistante, `nu` et `reynolds` donnés ensemble (l'un est ignoré). | fichier modifié | **corrigé** : erreurs claires avant le maillage, toutes signalées en une fois (ν ≤ 0, x1 ≤ x0, nx non entier ou < 1, tolérance < 0, relaxation hors de ]0, 1], Mach < 0, dt ≤ 0, vitesse ≠ 2 composantes, `nu` et `reynolds` ensemble, algorithme ou schéma de convection inconnus — `linearupwind` en minuscules dégradait en silence au 1er ordre) ; condition pour une frontière absente : avertissement avec suggestion (`tests/test_validate.py`) |
 | C6 | **Balayage du nombre de Reynolds sans effet sur un cas donné en ν** (trouvé en écrivant la vérification des clés) : `nu` étant prioritaire, tous les points étaient calculés avec le même ν (cavité, Re = 100 et 1000 : Cd identiques à 6 chiffres), sans message. Touchait l'interface (page Balayage) et `microrans sweep`. | balayage `physics.reynolds` de `cavite_re100` | **corrigé** : balayer `reynolds` retire `nu` du point (et inversement) (`test_reynolds_sweep_on_case_given_in_nu`) |
 | C7 | **`linearUpwindLimited` sans effet pour la vitesse, la température et u_θ** (trouvé en écrivant la référence des clés, lot 4) : accepté pour `convection_U` et `convection_T`, mais le gradient limité n'était transmis que pour la turbulence et les scalaires ; vitesse identique au bit près à `linearUpwind` (cavité 24 × 24 : écart 0). L'option qu'on essaie justement sur un maillage déformé ne faisait rien. | écart mesuré entre les deux schémas | **corrigé** : gradient limité transmis pour U, T et u_θ (écart désormais 1.2·10⁻², entre linearUpwind et upwind) ; schéma par défaut inchangé (`test_limited_scheme_acts_on_velocity_and_temperature`). Sur `mesh_naca_multi` il retarde la divergence (itération 40 au lieu de 28) sans l'empêcher : voir « Observations » |
+| C8 | *(trouvé en écrivant le dépannage, lot 4)* **y⁺ trop grand en traitement résolu : traînée fausse sans aucun signal.** Plaque plane SST sur le maillage de l'exemple à lois de paroi (1re maille à y⁺ ≈ 50), `wall_treatment = "resolved"` : Cd = 0.00144 au lieu de 0.0055 (maillage fin : 0.00552 ; lois de paroi : 0.00547), affiché « Convergé ». | `plaque_plane_loi_de_paroi`, `--set solver.wall_treatment="resolved"` | **corrigé** : avec un modèle de turbulence en traitement résolu, y⁺ max > 5 sur une paroi → « ATTENTION : y⁺ max = 50 sur « plate »… frottement et traînée sous-estimés » dans le résumé (ligne de commande et interface, mention dans la ligne d'état) et dans summary.json (`warnings`) ; aucun exemple fourni ne la déclenche (y⁺ max ≤ 1.8 en résolu) (`test_yplus_too_high_for_resolved_wall_flagged`) |
+| C9 | *(trouvé en vérifiant le tutoriel)* **L'interface remplaçait en silence une valeur absente de ses listes** : un cas en `convection_U = "linearUpwindLimited"` ouvert puis lancé depuis l'interface partait en `linearUpwind` (option absente de la liste) ; même chose pour toute valeur hors liste. | ouvrir le cas, Lancer | **corrigé** : `linearUpwindLimited` ajouté à la liste ; toute valeur hors liste est gardée (option « … (valeur du fichier) »), une faute est donc signalée par la vérification au lieu d'être remplacée (`test_out_of_list_values_kept`) |
+| C10 | *(mesuré pour le dépannage)* **Écoulement instationnaire calculé en stationnaire : « Convergé », résultat faux.** Cylindre Re = 100 en `mode = "steady"` : convergé en 127 itérations, Cd = 1.104 (solution symétrique instable) contre 1.33–1.35 en moyenne pour l'écoulement réel, à lâcher de tourbillons. | `cylindre_re100_urans --set solver.mode="steady"` | **documenté** (`docs/depannage.md` § 4) ; pas de détection automatique (un critère général serait peu fiable) |
 
 ## M. Messages d'erreur
 
@@ -63,6 +77,9 @@ Statut : **à faire** / **corrigé** (avec le test qui le vérifie).
 | M7 | Maillage « fichier » sans chemin (« Format non supporté : (msh, su2) », puis `KeyError 'path'`), maillage « multi-blocs » vide (`KeyError 'vertices'`), corps « contour importé » sans fichier (`IsADirectoryError`). | **corrigé** : maillage « fichier » sans chemin, « multi-blocs » vide, contour importé sans fichier : message clair avant le maillage |
 | M8 | `"strouhal": NaN` dans `summary.json` pour un calcul instationnaire court (JSON invalide pour d'autres outils). | **corrigé** : NaN et infinis écrits `null` dans summary.json et balayage.json (`test_summary_is_strict_json_when_strouhal_undefined`) |
 | M9 | **Divergence signalée par « Factor is exactly singular »** (trouvé en relançant les campagnes : exemple `mesh_naca_multi` lancé avec les conditions devinées par l'interface). Les vitesses atteignaient ~1e50 (finies, donc non détectées) avant que la matrice de pression ne devienne singulière. | **corrigé** : arrêt dès que la vitesse dépasse 10⁶ × max(U_ref, 1) ou n'est plus finie, juste après la quantité de mouvement ; message « Le calcul a divergé à l'itération N » avec des pistes, dans l'ordre d'efficacité constaté sur ce cas (upwind : stable ; relax_U = 0.5 et pseudo_cfl = 5 : divergent encore) (`test_divergence_reported_with_tips`) |
+| M10 | *(lot 4)* Le message de divergence renvoyait à la qualité du maillage « affichée après le maillage », mais `microrans run2d` ne l'affichait pas ; l'interface montrait les valeurs sans alerte au-delà des seuils. | **corrigé** : ligne « Maillage : non-orthogonalité max …, asymétrie max … » en tête de chaque calcul (incompressible et compressible), alerte au-delà de 70° / 4 (seuils d'OpenFOAM), même alerte dans la page Maillage ; sur `mesh_naca_multi` : « ATTENTION : asymétrie max 19.25 > 4 », juste avant la divergence ; le message de divergence dit aussi comment repasser en linearUpwind (`--continue`, « Continuer le calcul précédent ») (`test_mesh_quality_shown_at_run_start`, `test_mesh_quality_alert_shown`) |
+| M11 | *(lot 4)* Compressible : « Divergence à l'itération N. » sans aucune piste ; « État non physique » proposait de démarrer à l'ordre 1, sans effet mesuré sur un CFL trop grand, et pas le schéma implicite. | **corrigé** : pistes dans l'ordre mesuré sur la rampe Mach 2 (RK3 : cfl 2 converge, 4 et 8 s'arrêtent, même avec `first_order_iter = 300` ; implicite à cfl 8 : même solution à 5·10⁻⁹ près, 1.9 s au lieu de 12 s) (`test_unphysical_state_gives_measured_tips`) |
+| M12 | *(lot 4)* Fluide non newtonien avec un modèle de turbulence : refus seulement au lancement (pas à la vérification de l'interface). | **corrigé** : refusé à la vérification, en interface et en ligne de commande (`tests/test_validate.py`) |
 
 Messages déjà bons (à garder comme modèle) : modèle, condition, schéma, matériel ou type
 de maillage inconnus (liste des choix) ; expression dangereuse refusée ; condition limite
@@ -94,14 +111,15 @@ reprise introuvable ; TOML mal formé (ligne et colonne).
 | L1 | Description « RANS/URANS » incomplète ; pas de `--version` ; aide mêlant anglais et français. | **corrigé** : `microrans --version` ; description complète et exemple de premier calcul ; aide entièrement en français (« utilisation », « arguments », « afficher cette aide »), toutes les options expliquées (21, sur 8 commandes, n'avaient aucune aide : `--no-plot`, `-q`, `-v`, `--max-iter`, `--range`…) ; erreurs de saisie en français et courtes (« commande « runn » inconnue — vouliez-vous dire « run2d » ? », « --alpha : 3 valeurs attendues », « « a » n'est pas un nombre ») au lieu de l'usage complet suivi d'un message anglais (`test_help_in_french`, `test_usage_errors_in_french`) |
 | L2 | Fin de calcul : bloc JSON de 40 lignes au lieu d'un résumé lisible. | **corrigé** : même résumé en phrases que l'interface (U7), incompressible et compressible ; « mode steady » → « stationnaire » ; summary.json toujours écrit en entier (`test_end_of_run_summary_readable`) |
 | L3 | `--set` : deux niveaux seulement (`boundary.lid.U=…` plante). | **corrigé** : `--set` à plusieurs niveaux (`boundary.lid.U=[2,0]`), indice de liste (`bodies.0.radius=0.3`), virgule décimale ; `--set` sans `=` ou clé incomplète → message clair (`tests/test_cli.py`) |
+| L4 | *(trouvé en écrivant le tutoriel)* Aucun moyen simple d'obtenir une copie modifiable d'un exemple : le fichier est dans le dossier d'installation (dossier temporaire pour l'exécutable). | **corrigé** : `microrans examples NOM [-o DOSSIER]` copie l'exemple et les fichiers qu'il lit (contour du profil), sans rien écraser, modifiable même si l'installation est en lecture seule (`test_example_copied_for_editing`) |
 
 ## D. Documentation
 
 | # | Constat | Statut |
 |---|---|---|
-| D1 | Pas de tutoriel pas à pas pour un premier calcul. | à faire |
-| D2 | Pas de section dépannage (divergence, « non convergé », y⁺, qualité du maillage). | à faire |
-| D3 | Pas de glossaire (RANS, SIMPLE, y⁺, Cp, Cf, patch, O-grid…). | à faire |
+| D1 | Pas de tutoriel pas à pas pour un premier calcul. | **corrigé** : [`docs/tutoriel.md`](tutoriel.md), interface et ligne de commande : cavité (comparaison à Ghia, écart max 0.004), changement de Reynolds, cylindre Re = 20 (Cd 2.037 contre 2.05), contrôle du maillage (Cd 2.033 avec 4 fois plus de cellules) ; toutes les commandes et sorties obtenues en suivant le texte, parcours de l'interface rejoué hors écran |
+| D2 | Pas de section dépannage (divergence, « non convergé », y⁺, qualité du maillage). | **corrigé** : [`docs/depannage.md`](depannage.md) : messages réels, et pour chaque piste le cas où elle a été essayée et le résultat, y compris celles qui n'ont pas marché ; a fait trouver C8, C10, M10, M11, M12 |
+| D3 | Pas de glossaire (RANS, SIMPLE, y⁺, Cp, Cf, patch, O-grid…). | **corrigé** : [`docs/glossaire.md`](glossaire.md), chaque terme relié à la clé ou au fichier où on le rencontre ; guides accessibles depuis le menu Aide de l'interface et le README (`test_help_menu_links_the_guides`) |
 | D4 | Pas de référence complète des clés du fichier de cas ; l'extrait du README oublie `sst_gamma`. | **corrigé** : [`docs/reference_cas.md`](reference_cas.md), générée à partir des clés que le logiciel vérifie (toutes les sections, signification, solveur et types de maillage concernés ; défauts de `[solver]` lus dans le code) ; un test échoue si elle n'est pas régénérée après un changement de clé ; défauts écrits à la main vérifiés un par un contre le code (tous exacts ; la liste des schémas des scalaires omettait `linearUpwindLimited`, qui est le défaut) ; README : `sst_gamma` ajouté et lien vers la référence |
 
 ## Corps superposés ou trop proches (mesuré pendant le lot 3, corrigé)
@@ -136,7 +154,22 @@ décrits par un fichier de contour : non vérifiés.
   (non convergé à 10⁻⁵ en 600 itérations). Le gradient limité (`linearUpwindLimited`, actif
   pour la vitesse depuis C7) retarde seulement la divergence (itération 40) : la cause n'est
   donc pas (seulement) le dépassement de la reconstruction ; à chercher (correction non
-  orthogonale à 63°, couches de paroi très aplaties). Non fait.
+  orthogonale à 63°, couches de paroi très aplaties). Non fait. La piste « démarrer en
+  upwind puis repasser en linearUpwind » est vérifiée sur ce cas, en ligne de commande
+  (`--continue`) : plus de divergence, résidus en baisse régulière (3.5·10⁻⁵ à 800
+  itérations) ; Cl passe de 0.665 (upwind seul) à 0.755, le résultat upwind n'est donc
+  pas final.
+- **Interface plus lente que la ligne de commande** : cavité, 351 itérations, 8.6 s dans
+  l'interface (hors écran) contre 3.5 s en ligne de commande. Suivi en direct des résidus
+  probablement en cause ; à mesurer.
+- **Type des frontières avant le calcul** : la page Maillage affiche « lid (patch) »,
+  « walls (patch) » pour la cavité, alors que ce sont des parois : le type n'est fixé que
+  par les conditions limites, au lancement. Peut surprendre un débutant.
+- **Rampe Mach 2** : l'exemple est réglé en Runge-Kutta (12 s) ; en implicite à CFL 8 il
+  donne la même solution en 1.9 s. Exemple non modifié.
+- **Maillage d'un million de cellules** : après l'avertissement de taille, rien ne s'affiche
+  pendant plus de 2 minutes (maillage et préparation du solveur, sans indication de
+  progression).
 
 ## Ce qui fonctionne (vérifié)
 

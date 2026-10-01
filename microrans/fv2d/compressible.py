@@ -92,6 +92,13 @@ _RK5 = (0.0695, 0.1602, 0.2898, 0.5060, 1.0)
 # Mesuré (NACA 0012, M = 0.8, 192 × 64) : 0.38 à 0.92 aux stagnations du démarrage,
 # 0.03 à 0.11 dans le cycle limite à CFL 100.
 _STALL_DRIFT = 0.2
+# pistes en cas d'arrêt, dans l'ordre mesuré (rampe Mach 2, RK3 : cfl 2 converge, cfl 4 et 8
+# s'arrêtent, même avec first_order_iter = 300 ; implicite à cfl 8 : même solution, Cp à
+# 5e-9 près, en 1.9 s au lieu de 12 s)
+_TIPS = ("Pistes : réduire [solver] cfl (Runge-Kutta : les exemples utilisent 0.8 à 2) ; "
+         "en stationnaire, steady_scheme = \"implicit\" ; démarrer à l'ordre 1 "
+         "(first_order_iter) ou flux hllc ; vérifier les conditions aux limites et la qualité "
+         "du maillage.")
 
 
 # ============================================================================ gaz
@@ -789,8 +796,7 @@ class CompressibleSolver2D:
         if not (np.all(W[0] > 0.0) and np.all(W[3] > 0.0) and np.all(np.isfinite(W))):
             bad = int(np.sum((W[0] <= 0) | (W[3] <= 0) | ~np.isfinite(W).all(axis=0)))
             raise FloatingPointError(f"État non physique (ρ ≤ 0 ou p ≤ 0) dans {bad} "
-                                     "cellule(s) : réduire le CFL, démarrer à l'ordre 1 "
-                                     "(first_order_iter) ou changer de flux (hllc).")
+                                     f"cellule(s). {_TIPS}")
         viscous = self.gas.viscous
         Xb = self.boundary_values(W)
         if order == 2 or viscous:
@@ -1011,7 +1017,8 @@ class CompressibleSolver2D:
             rec = {"iteration": gi, "rho": rel[0], "rhoU": rel[1], "rhoV": rel[2],
                    "rhoE": rel[3]}
             if not all(np.isfinite(v) for v in rel) or not np.all(np.isfinite(self.Q)):
-                raise FloatingPointError(f"Divergence à l'itération {gi}.")
+                raise FloatingPointError(f"Divergence à l'itération {gi} (valeurs non "
+                                         f"définies). {_TIPS}")
             self.history.append(rec)
             if monitor is not None and (it % 10 == 0 or it == 1):
                 self.monitor.append({"iteration": gi, **monitor(self)})
@@ -1077,7 +1084,8 @@ class CompressibleSolver2D:
             self.time += step
             self.dt = step
             if not np.all(np.isfinite(self.Q)):
-                raise FloatingPointError(f"Divergence au pas {n} (t = {self.time:.4g}).")
+                raise FloatingPointError(f"Divergence au pas {n} (t = {self.time:.4g}, "
+                                         f"valeurs non définies). {_TIPS}")
             rec = {"time": self.time, "dt": step}
             if probes:
                 rec.update(probes(self))

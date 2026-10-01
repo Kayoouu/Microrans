@@ -276,10 +276,18 @@ class MainWindow(QMainWindow):
         a.triggered.connect(self.close)
         m.addAction(a)
         h = self.menuBar().addMenu("&Aide")
-        a = QAction("Documentation (GitHub)", self)
-        a.triggered.connect(lambda: QDesktopServices.openUrl(
-            QUrl("https://github.com/Kayoouu/Microrans#readme")))
-        h.addAction(a)
+        docs = "https://github.com/Kayoouu/Microrans/blob/HEAD/docs/"
+        for text, url in [("Premier calcul (tutoriel)", docs + "tutoriel.md"),
+                          ("Dépannage : divergence, erreurs, résultats douteux",
+                           docs + "depannage.md"),
+                          ("Glossaire des termes", docs + "glossaire.md"),
+                          ("Toutes les clés du fichier de cas", docs + "reference_cas.md"),
+                          ("Documentation complète (GitHub)",
+                           "https://github.com/Kayoouu/Microrans#readme")]:
+            a = QAction(text, self)
+            a.triggered.connect(lambda _=False, u=url: QDesktopServices.openUrl(QUrl(u)))
+            h.addAction(a)
+        h.addSeparator()
         a = QAction("À propos", self)
         a.triggered.connect(lambda: QMessageBox.about(
             self, "À propos", f"<b>{APP_NAME} {__version__}</b> — écoulements 2D en volumes "
@@ -769,6 +777,8 @@ class MainWindow(QMainWindow):
         box, f = _form("Schémas spatiaux et solveurs linéaires")
         f.addRow("Convection U", B.combo(("solver", "convection_U"),
                                          [("linearUpwind", "linearUpwind (ordre 2)"),
+                                          ("linearUpwindLimited",
+                                           "linearUpwindLimited (ordre 2 limité)"),
                                           ("upwind", "upwind (ordre 1, robuste)")], "linearUpwind"))
         f.addRow("Convection turbulence", B.combo(
             ("solver", "convection_turb"),
@@ -1366,7 +1376,9 @@ class MainWindow(QMainWindow):
             f"{q['non_orthogonality_max_deg']:.1f}°, moyenne {q['non_orthogonality_mean_deg']:.1f}°"
             f"<br>asymétrie max {q['skewness_max']:.2f}, allongement max "
             f"{q['aspect_ratio_max']:.0f}<br>patches : "
-            + ", ".join(f"{n} ({t})" for n, t, _ in mesh.all_boundary_patches()))
+            + ", ".join(f"{n} ({t})" for n, t, _ in mesh.all_boundary_patches())
+            + "".join(f"<br><b>ATTENTION : {html.escape(w)}</b> (seuil usuel : précision et "
+                      "convergence dégradées)" for w in mesh.check()))
         self._sync_bc_with_mesh()
         self.draw_mesh()
         self.log(f"Maillage : {q['n_cells']} cellules.")
@@ -2228,8 +2240,9 @@ class MainWindow(QMainWindow):
                 self.wall_combo.addItem(p.name, p.name)
         conv = summary.get("converged")
         self.run_info.setText(("Calcul terminé" if conv in (True, None) else "Arrêté / non convergé")
-                              + f" en {summary.get('wall_time_s', 0):.1f} s. Résultats : "
-                              f"{self.out_dir()}")
+                              + f" en {summary.get('wall_time_s', 0):.1f} s"
+                              + (" — ATTENTION, voir le résumé" if summary.get("warnings")
+                                 else "") + f". Résultats : {self.out_dir()}")
         self.log(f"Résultats écrits dans {self.out_dir()}")
         self.nav.setCurrentRow(7)
         self.plot_field()

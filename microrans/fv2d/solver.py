@@ -158,9 +158,10 @@ class Settings:
 def _diverged(when: str, steady: bool = True) -> str:
     """Message de divergence avec des pistes (stationnaire : dans l'ordre d'efficacité
     observé, ex. mesh_naca_multi : upwind stable, relax_U = 0.5 et pseudo_cfl divergent)."""
-    tips = ('démarrer en convection_U = "upwind" (puis repasser en linearUpwind) ; qualité du '
-            "maillage (asymétrie, non-orthogonalité : affichées après le maillage) ; conditions "
-            "aux limites ; sous-relaxations plus faibles" if steady else
+    tips = ('démarrer en convection_U = "upwind", puis repasser en linearUpwind et poursuivre '
+            "(--continue, ou « Continuer le calcul précédent ») ; qualité du maillage (ligne "
+            "« Maillage » en tête du calcul) ; conditions aux limites ; sous-relaxations plus "
+            "faibles" if steady else
             "pas de temps plus petit ou adjust_dt = true ; qualité du maillage ; conditions aux "
             "limites")
     return (f"Le calcul a divergé {when} (vitesses infinies, non définies ou démesurées). "

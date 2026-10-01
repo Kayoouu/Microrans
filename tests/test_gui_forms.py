@@ -473,3 +473,44 @@ def test_mesh_only_example_after_meshing_explained(win, monkeypatch):
     assert shown[-1][0] == "Réglages à corriger"
     assert "donner la viscosité nu" in shown[-1][1]
     assert "ne décrivait qu'un maillage" in shown[-1][1]
+
+
+def test_mesh_quality_alert_shown(win):
+    from test_report import _sheared_mesh
+    win._mesh_done(_sheared_mesh())
+    assert "ATTENTION : non-orthogonalité max 78.7° &gt; 70°" in win.mesh_info.text()
+
+
+def test_help_menu_links_the_guides(win):
+    # audit D1-D3 : guides accessibles depuis l'interface (fichiers présents dans docs/)
+    from pathlib import Path
+    menu = [m for m in win.menuBar().actions() if m.text() == "&Aide"][0].menu()
+    texts = [a.text() for a in menu.actions()]
+    assert texts[:4] == ["Premier calcul (tutoriel)",
+                         "Dépannage : divergence, erreurs, résultats douteux",
+                         "Glossaire des termes", "Toutes les clés du fichier de cas"]
+    docs = Path(__file__).parents[1] / "docs"
+    for name in ("tutoriel.md", "depannage.md", "glossaire.md", "reference_cas.md"):
+        assert (docs / name).is_file(), name
+
+
+def test_out_of_list_values_kept(win):
+    # avant : convection_U = "linearUpwindLimited" (absent de la liste) devenait linearUpwind
+    # en silence ; une valeur hors liste est désormais gardée (et vérifiée avant le calcul)
+    import copy
+    import tomllib
+
+    from microrans.cli import examples_dir
+    cfg = tomllib.loads((examples_dir() / "cavite_re100.toml").read_text(encoding="utf-8"))
+    cfg["solver"].update(convection_U="linearUpwindLimited", solver_p="mon_solveur")
+    win.load_cfg(copy.deepcopy(cfg))
+    win._store_forms()
+    assert win.cfg["solver"]["convection_U"] == "linearUpwindLimited"
+    assert win.cfg["solver"]["solver_p"] == "mon_solveur"
+    combo = next(w for p, w, _, _ in win.binder.items if p == ("solver", "solver_p"))
+    assert combo.currentText() == "mon_solveur (valeur du fichier)"
+    n = combo.count()
+    cfg["solver"]["solver_p"] = "auto"
+    win.load_cfg(copy.deepcopy(cfg))
+    win._store_forms()
+    assert win.cfg["solver"]["solver_p"] == "auto" and combo.count() == n - 1

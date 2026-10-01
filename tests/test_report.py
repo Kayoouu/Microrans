@@ -54,3 +54,39 @@ def test_compressible_summary():
     assert t.startswith("Calcul compressible stationnaire, Euler (non visqueux)")
     assert "Amont : Mach 0.8, vitesse 272.2 m/s" in t
     assert "force / (½ ρ U² L)" in t and "airfoil     0.02208    0.3353  -0.03405" in t
+
+
+def _sheared_mesh():
+    from microrans.mesh2d.builder import build_mesh
+    return build_mesh({"mesh": {
+        "type": "blocks", "vertices": [[0, 0], [1, 0], [6, 1], [5, 1]],
+        "blocks": [{"vertices": [0, 1, 2, 3], "cells": [8, 4]}],
+        "patches": {"walls": {"type": "wall", "faces": [[0, 1], [1, 2], [2, 3], [3, 0]]}}}})
+
+
+def test_mesh_quality_shown_at_run_start():
+    # le message de divergence renvoie à la qualité du maillage : run2d l'affiche désormais
+    from microrans.fv2d.report import quality_text
+    lines = quality_text(_sheared_mesh())
+    assert lines[0] == ("Maillage : non-orthogonalité max 78.7° (moy. 78.7°), asymétrie max "
+                        "0.00")
+    assert lines[1] == ("  ATTENTION : non-orthogonalité max 78.7° > 70° (seuil usuel : "
+                        "précision et convergence dégradées)")
+
+
+def test_yplus_too_high_for_resolved_wall_flagged(tmp_path):
+    # audit D2 : plaque plane SST, 1re maille à y⁺ ≈ 50 en traitement résolu : Cd 0.00144 au
+    # lieu de 0.0055, affiché « convergé » sans autre signe
+    import tomllib
+    from pathlib import Path
+
+    from microrans.fv2d.case import run_case
+    ex = Path(__file__).parents[1] / "microrans" / "examples"
+    cfg = tomllib.loads((ex / "plaque_plane_loi_de_paroi.toml").read_text(encoding="utf-8"))
+    cfg["solver"].update(wall_treatment="resolved", max_iter=60)
+    s = run_case(cfg, base_dir=ex, out_dir=tmp_path, verbose=False, plot=False)
+    assert len(s["warnings"]) == 1 and "sur « plate » avec le traitement résolu" in s["warnings"][0]
+    assert "ATTENTION : y⁺ max = " in summary_text(s)
+    cfg["solver"]["wall_treatment"] = "wall_function"           # l'exemple tel quel : rien
+    s = run_case(cfg, base_dir=ex, out_dir=tmp_path, verbose=False, plot=False)
+    assert "warnings" not in s

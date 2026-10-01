@@ -121,3 +121,18 @@ def test_end_of_run_summary_readable(tmp_path, capsys):
     assert "NON CONVERGÉ après 5 itérations" in out
     assert '"n_cells"' not in out                    # plus de JSON à l'écran
     assert (tmp_path / "o" / "summary.json").is_file()  # toujours écrit en entier
+
+
+def test_example_copied_for_editing(tmp_path, capsys):
+    """Audit D1 : un exemple se copie pour être modifié (avant : fichier à chercher dans le
+    dossier d'installation), avec le contour qu'il lit ; rien n'est écrasé."""
+    dest = tmp_path / "mes_cas"
+    assert main(["examples", "mesh_naca_multi", "-o", str(dest)]) == 0
+    assert sorted(f.name for f in dest.iterdir()) == ["mesh_naca_multi.toml", "profil_volet.dat"]
+    (dest / "profil_volet.dat").write_text("modifié", encoding="utf-8")
+    assert main(["examples", "mesh_naca_multi", "-o", str(dest)]) == 2      # erreur de saisie
+    assert (dest / "profil_volet.dat").read_text(encoding="utf-8") == "modifié"
+    assert main(["examples", "cavite_re10", "-o", str(dest)]) == 2
+    out = capsys.readouterr()
+    assert "Déjà présent(s)" in out.err and "rien n'est copié" in out.err
+    assert "vouliez-vous dire « cavite_re100 » ?" in out.err

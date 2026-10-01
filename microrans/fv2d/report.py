@@ -14,7 +14,17 @@ _DONE = {"mode", "model", "n_cells", "axisymmetric", "nu", "reference_velocity",
          "checkpoint", "solver", "flux", "order", "limiter", "gas", "freestream", "reynolds",
          "dynamic_pressure", "final_residuals", "time", "steps", "steps_this_run",
          "totals_initial", "totals_final", "viscosity", "porous", "actuator_disks", "scalars",
-         "probes", "lines", "animation", "restart", "fmg"}
+         "probes", "lines", "animation", "restart", "fmg", "warnings"}
+
+
+def quality_text(mesh) -> list[str]:
+    """Qualité du maillage en tête du calcul (avant : seulement par microrans mesh et
+    l'interface, alors que le message de divergence y renvoie)."""
+    q = mesh.quality()
+    return ([f"Maillage : non-orthogonalité max {q['non_orthogonality_max_deg']:.1f}° (moy. "
+             f"{q['non_orthogonality_mean_deg']:.1f}°), asymétrie max {q['skewness_max']:.2f}"]
+            + [f"  ATTENTION : {w} (seuil usuel : précision et convergence dégradées)"
+               for w in mesh.check()])
 
 
 def _g(v) -> str:
@@ -58,6 +68,8 @@ def summary_text(s: dict) -> str:
         out.append(f"Temps simulé t = {_g(s['time'])}{steps}{dur}.")
     elif dur:
         out.append(f"Terminé{dur}.")
+    for w in s.get("warnings") or []:
+        out.append(f"ATTENTION : {w}")
     if comp:
         fs = s.get("freestream") or {}
         if fs:

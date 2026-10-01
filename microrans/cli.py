@@ -337,12 +337,43 @@ def cmd_bench(args) -> int:
 def cmd_examples(args) -> int:
     from .catalog import catalog
     d = examples_dir()
+    if args.name:
+        return _copy_example(args.name, Path(args.out or "."))
     print(f"Exemples fournis ({d}) ; durée : ordre de grandeur, variable selon la machine.")
     for group, rows in catalog(d):
         print(f"\n{group}")
         for f, title, dur in rows:
             print(f"  {f.stem:36s} {dur:>8s}  {title}")
     print("\nLancer : microrans run2d <nom>   (maillage seul : microrans mesh <nom>)")
+    print("Copier un exemple pour le modifier : microrans examples <nom>")
+    return 0
+
+
+def _copy_example(name: str, dest: Path) -> int:
+    """Copie modifiable d'un exemple et des fichiers qu'il lit (contour, maillage) ; avant :
+    fichier à chercher dans le dossier d'installation (temporaire pour l'exécutable)."""
+    import difflib
+    import shutil
+    d = examples_dir()
+    src = d / (Path(name).stem + ".toml")
+    if not src.is_file():
+        best = difflib.get_close_matches(Path(name).stem, [f.stem for f in d.glob("*.toml")],
+                                         n=1)
+        raise ValueError(f"Exemple « {name} » inconnu"
+                         + (f" — vouliez-vous dire « {best[0]} » ?" if best else "")
+                         + " (liste : microrans examples).")
+    used = re.findall(r'^\s*path\s*=\s*"([^"/\\]+)"', src.read_text(encoding="utf-8"), re.M)
+    files = [src] + [d / u for u in used if (d / u).is_file()]
+    taken = [str(dest / f.name) for f in files if (dest / f.name).exists()]
+    if taken:
+        raise ValueError(f"Déjà présent(s) : {', '.join(taken)} ; rien n'est copié (autre "
+                         "dossier : -o DOSSIER).")
+    dest.mkdir(parents=True, exist_ok=True)
+    for f in files:
+        shutil.copyfile(f, dest / f.name)       # sans les droits : modifiable même si
+                                                # l'installation est en lecture seule
+    print(f"Copié : {', '.join(str(dest / f.name) for f in files)}")
+    print(f"Modifier {dest / src.name}, puis : microrans run2d {dest / src.name}")
     return 0
 
 
@@ -516,7 +547,12 @@ def build_parser() -> argparse.ArgumentParser:
     g.add_argument("--range", nargs=3, type=float, metavar=("DEBUT", "FIN", "PAS"),
                    help="plage de valeurs, fin incluse, ex. --range 100 1000 100")
 
-    p = sub.add_parser("examples", help="liste des cas d'exemple fournis")
+    p = sub.add_parser("examples", help="liste des cas d'exemple fournis, ou copie de l'un "
+                                        "d'eux pour le modifier")
+    p.add_argument("name", nargs="?", metavar="NOM",
+                   help="copier cet exemple (et les fichiers qu'il lit) pour le modifier")
+    p.add_argument("-o", "--out", metavar="DOSSIER",
+                   help="dossier où copier l'exemple (défaut : dossier courant)")
     p.set_defaults(func=cmd_examples)
 
     p = sub.add_parser("gui", help="interface graphique (nécessite PySide6)")
