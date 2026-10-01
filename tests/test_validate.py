@@ -173,6 +173,8 @@ _BAD = [
         wall_treatment="wall_function")), "lois de paroi incompatibles avec le modèle ke"),
     (lambda c: (c["physics"].update(model="sst_gamma"), c["solver"].update(
         wall_treatment="wall_function")), "incompatibles avec le modèle sst_gamma"),
+    (lambda c: c["physics"].update(model="sst", viscosity={
+        "model": "power_law", "K": 0.1, "n": 0.5}), "non newtonien en laminaire uniquement"),
     (_set(("boundary", "lid", "omega"), "abc"), "[boundary.lid] omega = 'abc' : nombre attendu"),
     (_set(("boundary", "lid", "q"), "1,5"), "[boundary.lid] q = '1,5' : nombre attendu"),
 ]

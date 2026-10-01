@@ -605,6 +605,10 @@ def _check_values(cfg: dict, kind: str, mesh_type: str, mesh_only: bool, errors:
                             errors.append(f"[physics.model_options] {k} : option inconnue "
                                           f"pour le modèle {model} (options : "
                                           f"{', '.join(ok) or 'aucune'}).")
+        if not newtonian and model not in (None, "laminar"):   # avant : refus au lancement
+            errors.append(f"[physics] model = \"{model}\" avec [physics.viscosity] (fluide non "
+                          "newtonien) : non newtonien en laminaire uniquement (les modèles "
+                          "de turbulence supposent un fluide newtonien).")
         if sc.get("wall_treatment") == "wall_function":   # avant : refus au lancement
             if model in ("ke", "sst_gamma"):
                 errors.append(f"[solver] wall_treatment = \"wall_function\" : lois de paroi "
