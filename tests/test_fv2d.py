@@ -229,3 +229,25 @@ def test_divergence_reported_with_tips(tmp_path):
     with pytest.raises(FloatingPointError, match=r"Le calcul a divergé à l'itération \d+ .*"
                                                  r"Pistes : démarrer en convection_U = \"upwind\""):
         run_case(cfg, out_dir=tmp_path, verbose=False, plot=False)
+
+
+def test_limited_scheme_acts_on_velocity_and_temperature():
+    """linearUpwindLimited était accepté pour U, T et u_θ mais donnait exactement
+    linearUpwind (gradient limité non transmis) : écart nul, mesuré sur la cavité."""
+    import tomllib
+
+    from microrans.cli import examples_dir
+    from microrans.fv2d.case import build_solver
+    out = {}
+    for sch in ("linearUpwind", "linearUpwindLimited"):
+        c = tomllib.loads((examples_dir() / "convection_naturelle_ra1e5.toml").read_text(
+            encoding="utf-8"))
+        c["mesh"].update(nx=16, ny=16)
+        c["solver"].update(max_iter=60, convection_U=sch, convection_T=sch)
+        s = build_solver(c)
+        s.run_steady(verbose=False)
+        out[sch] = (np.array(s.U), np.array(s.T))
+    dU = np.abs(out["linearUpwind"][0] - out["linearUpwindLimited"][0]).max()
+    dT = np.abs(out["linearUpwind"][1] - out["linearUpwindLimited"][1]).max()
+    assert dU > 1e-6 and dT > 1e-6
+    assert np.all(np.isfinite(out["linearUpwindLimited"][0]))

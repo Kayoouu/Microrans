@@ -116,6 +116,8 @@ amont).
 
 ### Format de cas (TOML, extrait)
 
+Liste complète des clés, avec leur signification et leurs valeurs par défaut : [`docs/reference_cas.md`](docs/reference_cas.md) (générée à partir des clés que le logiciel vérifie).
+
 ```toml
 [mesh]                     # rectangle | blocks | ogrid | unstructured | hybrid | file
 type = "hybrid"
@@ -129,7 +131,7 @@ incidence = 4.0
 name = "profil"
 [physics]
 reynolds = 1e6
-model = "sst"              # laminar | sa | ke | kw | sst
+model = "sst"              # laminar | sa | ke | kw | sst | sst_gamma (transition)
 angle_of_attack = 4.0      # incidence de l'écoulement amont (°) ; Cd, Cl en axes écoulement
 axisymmetric = false       # true : x = axe, y = rayon ; frontière d'axe : type = "axis"
 swirl = false              # axisymétrique : rotation propre u_θ (U_theta / omega aux frontières)

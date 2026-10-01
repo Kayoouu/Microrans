@@ -188,7 +188,8 @@ SCHEMA = Table({
         "diffusivity": K("diffusivité D"), "schmidt": K("Sc = ν / D (au lieu de "
                                                          "diffusivity)"),
         "Sc_t": K("Schmidt turbulent (défaut 0.7)"), "source": K("source (formule)"),
-        "initial": K("valeur initiale"), "scheme": K("upwind | linearUpwind")})},
+        "initial": K("valeur initiale"),
+        "scheme": K("upwind | linearUpwind | linearUpwindLimited (défaut)")})},
         "scalaires passifs [scalars.<nom>]", INC),
     "porous": Table({
         "name": K("nom de la zone"), "region": K("rectangle | circle | expression"),
@@ -269,9 +270,10 @@ _SOLVER_DOC = {
     "relax_scalar": "sous-relaxation des scalaires (défaut 1)",
     "pseudo_dt": "pas de pseudo-temps (stationnaire pseudo-transitoire)",
     "pseudo_cfl": "CFL de pseudo-temps (stationnaire pseudo-transitoire)",
-    "convection_U": "upwind | linearUpwind (défaut)",
-    "convection_turb": "upwind (défaut) | linearUpwind",
-    "convection_T": "upwind | linearUpwind (défaut)",
+    "convection_U": "upwind | linearUpwind (défaut) | linearUpwindLimited (gradient limité, "
+                    "plus robuste sur maillage déformé)",
+    "convection_turb": "upwind (défaut) | linearUpwind | linearUpwindLimited",
+    "convection_T": "upwind | linearUpwind (défaut) | linearUpwindLimited",
     "solver_p": "auto | direct | amg | bicgstab | pyamg",
     "solver_U": "auto | direct | amg | bicgstab | pyamg",
     "solver_turb": "auto | direct | amg | bicgstab | pyamg",
@@ -855,3 +857,112 @@ def warn_case(cfg: dict, mesh_only: bool = False) -> list[str]:
     for w in out:
         warnings.warn(w, CaseWarning, stacklevel=2)
     return out
+
+
+# ------------------------------------------------------------------ référence (docs)
+def _defaults() -> dict:
+    """{clé de [solver] : (défaut incompressible, défaut compressible)} lus dans le code."""
+    from dataclasses import MISSING, fields
+
+    from .compressible import CompressibleSettings
+    from .solver import Settings
+
+    def get(cls):
+        return {f.name: f.default for f in fields(cls) if f.default is not MISSING}
+    inc, comp = get(Settings), get(CompressibleSettings)
+    return {k: (inc.get(k, MISSING), comp.get(k, MISSING)) for k in set(inc) | set(comp)}
+
+
+def _fmt_default(v) -> str:
+    if isinstance(v, bool):
+        return "true" if v else "false"
+    if v is None:
+        return "auto"
+    if isinstance(v, float) and v == float("inf"):
+        return "aucun"
+    return f"`{v}`" if isinstance(v, str) else f"{v:g}" if isinstance(v, float) else str(v)
+
+
+def _cell(text: str) -> str:
+    return text.replace("|", "\\|")             # « a | b » dans un tableau Markdown
+
+
+def _applies(item) -> str:
+    out = []
+    if item.only:
+        out.append(f"{item.only} seulement")
+    if item.types:
+        out.append("maillage " + ", ".join(item.types))
+    return " ; ".join(out)
+
+
+def reference_markdown() -> str:
+    """Référence de toutes les clés du fichier de cas, tirée de SCHEMA (docs/reference_cas.md ;
+    un test vérifie que le fichier publié est à jour)."""
+    from dataclasses import MISSING
+    defaults = _defaults()
+    lines = [
+        "# Référence des clés du fichier de cas",
+        "",
+        "Document généré à partir de la liste des clés que le logiciel vérifie "
+        "(`microrans/fv2d/validate.py`) : il contient exactement les clés reconnues. Ne pas "
+        "le modifier à la main ; le régénérer avec",
+        "`python -m microrans.fv2d.validate > docs/reference_cas.md`.",
+        "",
+        "Toute autre clé est signalée (« clé inconnue, ignorée — vouliez-vous dire … ? »). "
+        "« incompressible seulement » / « compressible seulement » : clé lue par un seul "
+        "des deux solveurs (`[physics] compressible = true`) ; « maillage … » : types de "
+        "maillage qui l'utilisent. Les valeurs par défaut de `[solver]` sont lues dans le "
+        "code (`Settings`, `CompressibleSettings`).",
+        "",
+        "Exemples complets : `microrans examples` ; tutoriel : `docs/tutoriel.md`.",
+    ]
+
+    def table(t: Table, path: str, level: int):
+        rows, subs = [], []
+        for k, v in t.keys.items():
+            if isinstance(v, Table):
+                subs.append((k, v))
+            else:
+                rows.append((k, v))
+        if rows:
+            lines.append("")
+            lines.append("| Clé | Signification | S'applique à |")
+            lines.append("|---|---|---|")
+            for k, v in rows:
+                lines.append(f"| `{k}` | {_cell(v.doc)} | {_applies(v)} |")
+        for k, v in subs:
+            name = f"{path}.<nom>" if k == "*" else f"{path}.{k}"
+            head = f"[[{name}]]" if v.many else f"[{name}]"
+            lines.append("")
+            doc = v.doc or ("une section par nom (frontière, scalaire…)" if k == "*" else "")
+            lines.append(f"{'#' * level} `{head}` — {doc}"
+                         + (f" ({_applies(v)})" if _applies(v) else ""))
+            if v.free:
+                lines.append("")
+                lines.append("Contenu libre, sous la forme `nom = valeur`.")
+            table(v, name, min(level + 1, 6))
+
+    for sec, t in SCHEMA.keys.items():
+        lines.append("")
+        head = f"[[{sec}]]" if t.many else f"[{sec}]"
+        lines.append(f"## `{head}` — {t.doc}" + (f" ({_applies(t)})" if _applies(t) else ""))
+        if sec == "solver":
+            lines.append("")
+            lines.append("| Clé | Signification | Défaut (incompressible) | "
+                         "Défaut (compressible) | S'applique à |")
+            lines.append("|---|---|---|---|---|")
+            for k, v in sorted(_solver_table().keys.items()):
+                di, dc = defaults.get(k, (MISSING, MISSING))
+                fi = "" if di is MISSING else _fmt_default(di)
+                fc = "" if dc is MISSING else _fmt_default(dc)
+                lines.append(f"| `{k}` | {_cell(v.doc)} | {fi} | {fc} | {_applies(v)} |")
+            continue
+        table(t, sec, 3)
+    return "\n".join(lines) + "\n"
+
+
+if __name__ == "__main__":
+    import sys
+    sys.stdout.reconfigure(encoding="utf-8")
+    sys.stdout.write(reference_markdown())

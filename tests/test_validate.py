@@ -283,3 +283,16 @@ def test_wall_function_in_laminar_warned():
     c["solver"]["wall_treatment"] = "wall_function"
     assert check_case(c) == ["[solver] wall_treatment = \"wall_function\" : loi de paroi "
                              "turbulente, sans objet en laminaire (garder \"resolved\")."]
+
+
+def test_reference_document_up_to_date():
+    """Audit D4 : docs/reference_cas.md est généré à partir de SCHEMA ; il doit être
+    régénéré (python -m microrans.fv2d.validate > docs/reference_cas.md) quand une clé
+    change, sinon la documentation ment."""
+    from microrans.fv2d.validate import reference_markdown
+    doc = Path(__file__).resolve().parent.parent / "docs" / "reference_cas.md"
+    assert doc.read_text(encoding="utf-8") == reference_markdown()
+    text = reference_markdown()
+    for key in ("sst_gamma", "linearUpwindLimited", "`max_iter` | itérations maximales "
+                "(stationnaire) | 3000 | 5000"):
+        assert key in text

@@ -111,7 +111,7 @@ class Settings:
     # conseillé sur maillages très fins et étirés, voir README)
     pseudo_dt: float | None = None
     pseudo_cfl: float | None = None
-    convection_U: str = "linearUpwind"    # upwind | linearUpwind
+    convection_U: str = "linearUpwind"    # upwind | linearUpwind | linearUpwindLimited
     convection_turb: str = "upwind"
     convection_T: str = "linearUpwind"
     # température. 1 converge 3 à 5 fois plus vite en convection naturelle (de Vahl Davis,
@@ -1100,10 +1100,14 @@ class Solver2D:
         gam_i = fvm.interp(a_eff)
         gam_b = xp.where(self.is_wall, alpha, a_eff[fvm.Pb])
         bc = self.temperature_bc()
-        grad = fvm.grad(self.T, bc[0] * self.T[fvm.Pb] + bc[1])
+        Tb = bc[0] * self.T[fvm.Pb] + bc[1]
+        grad = fvm.grad(self.T, Tb)
+        gconv = (fvm.limit_grad(self.T, grad, Tb) if s.convection_T == "linearUpwindLimited"
+                 else None)
         diag, up, lo, rhs = fvm.assemble(self.F_i, self.F_b, gam_i, gam_b, bc, grad_phi=grad,
                                          scheme=s.convection_T, bounded=self.steady,
-                                         phi=self.T, nonorth_limit=s.nonorth_limit)
+                                         phi=self.T, nonorth_limit=s.nonorth_limit,
+                                         grad_conv=gconv)
         if e.get("source"):
             rhs = rhs + float(e["source"]) * fvm.V
         if _active(a0):
@@ -1185,9 +1189,11 @@ class Solver2D:
         bc = self.scalar_bc_coeffs("U_theta")
         Wb = bc[0] * W[fvm.Pb] + bc[1]
         grad = fvm.grad(W, Wb)
+        gconv = (fvm.limit_grad(W, grad, Wb) if s.convection_U == "linearUpwindLimited"
+                 else None)
         diag, up, lo, rhs = fvm.assemble(self.F_i, self.F_b, gam_i, gam_b, bc, grad_phi=grad,
                                          scheme=s.convection_U, bounded=self.steady, phi=W,
-                                         nonorth_limit=s.nonorth_limit)
+                                         nonorth_limit=s.nonorth_limit, grad_conv=gconv)
         r = fvm.radius
         dnu = fvm.grad(nu_eff, nu_eff[fvm.Pb])[:, 1] if self.model.variables else 0.0
         c = nu_eff / r ** 2 + dnu / r + self.U[:, 1] / r
@@ -1288,13 +1294,18 @@ class Solver2D:
         V = fvm.V
         Kp = self.porous_coefficients() if self.porous is not None else None
         eqs = []
+        limited = self.settings.convection_U == "linearUpwindLimited"
         for c in range(2):
             bc = self.vector_bc(c, U)
+            # gradient limité transmis (avant : linearUpwindLimited = linearUpwind en silence)
+            gconv = (fvm.limit_grad(U[:, c], gradU[:, c, :], bc[0] * U[fvm.Pb, c] + bc[1])
+                     if limited else None)
             diag, up, lo, rhs = fvm.assemble(self.F_i, self.F_b, gam_i, gam_b, bc,
                                              grad_phi=gradU[:, c, :],
                                              scheme=self.settings.convection_U,
                                              bounded=self.steady, phi=U[:, c],
-                                             nonorth_limit=self.settings.nonorth_limit)
+                                             nonorth_limit=self.settings.nonorth_limit,
+                                             grad_conv=gconv)
             # terme ∇·(ν_eff (∇U)ᵀ) explicite
             tf_i = gam_i * (gUf[:, 0, c] * fvm.Si[:, 0] + gUf[:, 1, c] * fvm.Si[:, 1])
             gb = gradU[fvm.Pb]

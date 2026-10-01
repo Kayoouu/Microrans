@@ -48,6 +48,7 @@ Statut : **à faire** / **corrigé** (avec le test qui le vérifie).
 | C4 | **Clés et sections mal orthographiées ignorées sans avertissement** (ligne de commande et onglet TOML). `max_iters = 5` → calcul complet ; `[solveur]` ignoré. | fichier modifié | **corrigé** : avertissement avec suggestion (« vouliez-vous dire « max_iter » ? », noms français reconnus), clé hors section, clé sans effet pour le solveur ou le type de maillage, `[bodies]` au lieu de `[[bodies]]` ; ligne de commande, interface (onglet TOML, avant maillage, calcul et balayage) ; aucun avertissement sur les 22 exemples ni sur les cas des tests (`tests/test_validate.py`, `test_toml_typo_reported`) |
 | C5 | **Valeurs impossibles acceptées sans avertissement** : ν < 0, x1 < x0, rayon < 0, tolérance < 0, Mach < 0, vitesse à 3 composantes, condition pour une frontière inexistante, `nu` et `reynolds` donnés ensemble (l'un est ignoré). | fichier modifié | **corrigé** : erreurs claires avant le maillage, toutes signalées en une fois (ν ≤ 0, x1 ≤ x0, nx non entier ou < 1, tolérance < 0, relaxation hors de ]0, 1], Mach < 0, dt ≤ 0, vitesse ≠ 2 composantes, `nu` et `reynolds` ensemble, algorithme ou schéma de convection inconnus — `linearupwind` en minuscules dégradait en silence au 1er ordre) ; condition pour une frontière absente : avertissement avec suggestion (`tests/test_validate.py`) |
 | C6 | **Balayage du nombre de Reynolds sans effet sur un cas donné en ν** (trouvé en écrivant la vérification des clés) : `nu` étant prioritaire, tous les points étaient calculés avec le même ν (cavité, Re = 100 et 1000 : Cd identiques à 6 chiffres), sans message. Touchait l'interface (page Balayage) et `microrans sweep`. | balayage `physics.reynolds` de `cavite_re100` | **corrigé** : balayer `reynolds` retire `nu` du point (et inversement) (`test_reynolds_sweep_on_case_given_in_nu`) |
+| C7 | **`linearUpwindLimited` sans effet pour la vitesse, la température et u_θ** (trouvé en écrivant la référence des clés, lot 4) : accepté pour `convection_U` et `convection_T`, mais le gradient limité n'était transmis que pour la turbulence et les scalaires ; vitesse identique au bit près à `linearUpwind` (cavité 24 × 24 : écart 0). L'option qu'on essaie justement sur un maillage déformé ne faisait rien. | écart mesuré entre les deux schémas | **corrigé** : gradient limité transmis pour U, T et u_θ (écart désormais 1.2·10⁻², entre linearUpwind et upwind) ; schéma par défaut inchangé (`test_limited_scheme_acts_on_velocity_and_temperature`). Sur `mesh_naca_multi` il retarde la divergence (itération 40 au lieu de 28) sans l'empêcher : voir « Observations » |
 
 ## M. Messages d'erreur
 
@@ -101,7 +102,7 @@ reprise introuvable ; TOML mal formé (ligne et colonne).
 | D1 | Pas de tutoriel pas à pas pour un premier calcul. | à faire |
 | D2 | Pas de section dépannage (divergence, « non convergé », y⁺, qualité du maillage). | à faire |
 | D3 | Pas de glossaire (RANS, SIMPLE, y⁺, Cp, Cf, patch, O-grid…). | à faire |
-| D4 | Pas de référence complète des clés du fichier de cas ; l'extrait du README oublie `sst_gamma`. | à faire |
+| D4 | Pas de référence complète des clés du fichier de cas ; l'extrait du README oublie `sst_gamma`. | **corrigé** : [`docs/reference_cas.md`](reference_cas.md), générée à partir des clés que le logiciel vérifie (toutes les sections, signification, solveur et types de maillage concernés ; défauts de `[solver]` lus dans le code) ; un test échoue si elle n'est pas régénérée après un changement de clé ; défauts écrits à la main vérifiés un par un contre le code (tous exacts ; la liste des schémas des scalaires omettait `linearUpwindLimited`, qui est le défaut) ; README : `sst_gamma` ajouté et lien vers la référence |
 
 ## Corps superposés ou trop proches (mesuré pendant le lot 3, corrigé)
 
@@ -131,9 +132,11 @@ décrits par un fichier de contour : non vérifiés.
   Le seuil ou le réglage de l'AMG est peut-être mal placé ; à mesurer avant de conclure.
 - **Robustesse sur maillage déformé** : sur le maillage de `mesh_naca_multi` (asymétrie max
   19, non-orthogonalité 63°, fente entre les deux éléments), le cas laminaire Re = 100 diverge
-  vers l'itération 28 avec `convection_U = "linearUpwind"` (défaut), reste stable en `upwind`.
-  Une limitation de la correction linearUpwind dans les cellules très asymétriques (comme le
-  `cellLimited` d'OpenFOAM) rendrait le défaut plus robuste ; non fait.
+  à l'itération 28 avec `convection_U = "linearUpwind"` (défaut), reste stable en `upwind`
+  (non convergé à 10⁻⁵ en 600 itérations). Le gradient limité (`linearUpwindLimited`, actif
+  pour la vitesse depuis C7) retarde seulement la divergence (itération 40) : la cause n'est
+  donc pas (seulement) le dépassement de la reconstruction ; à chercher (correction non
+  orthogonale à 63°, couches de paroi très aplaties). Non fait.
 
 ## Ce qui fonctionne (vérifié)
 
