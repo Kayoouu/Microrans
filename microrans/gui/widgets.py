@@ -70,10 +70,17 @@ class Vec2(QWidget):
 
 
 def combo(options, parent=None) -> QComboBox:
-    """options : [(valeur, libellé), ...]"""
+    """options : [(valeur, libellé), ...]. La liste fermée ne prend pas la largeur du plus
+    long libellé (sinon la colonne des réglages déborde) ; la liste ouverte les montre en
+    entier."""
     c = QComboBox(parent)
     for val, label in options:
         c.addItem(label, val)
+    c.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)
+    c.setMinimumContentsLength(14)
+    fm = c.fontMetrics()
+    c.view().setMinimumWidth(max((fm.horizontalAdvance(lab) for _, lab in options),
+                                 default=0) + 40)
     return c
 
 

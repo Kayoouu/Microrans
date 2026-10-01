@@ -267,3 +267,50 @@ def test_toml_incomplete_case_still_loads(win, monkeypatch):
     assert win.cfg["solver"]["max_iter"] == 7               # chargé
     assert len(shown) == 1 and shown[0][0] == "À vérifier"
     assert "À corriger avant de lancer : [physics] : donner la viscosité" in shown[0][1]
+
+
+def test_pages_fit_a_narrow_settings_panel(win):
+    """Audit U2 : pages de 492 à 852 px de large minimum, tableau et formulaires coupés."""
+    for i in range(win.pages.count()):
+        page = win.pages.widget(i).widget()
+        assert page.minimumSizeHint().width() <= 480, win.nav.item(i).text()
+
+
+def test_bc_table_shows_only_useful_cells(win):
+    """Audit U1 : dix colonnes toujours affichées, valeurs sans effet modifiables en silence
+    (p d'une paroi, U d'une sortie…), colonne Type trop étroite pour son libellé."""
+    import copy
+
+    from PySide6.QtCore import Qt
+    cfg = {"mesh": {"type": "rectangle", "x0": 0, "x1": 2, "y0": 0, "y1": 1, "nx": 8, "ny": 4,
+                    "names": {"left": "inlet", "right": "outlet", "bottom": "wall",
+                              "top": "wall"}},
+           "physics": {"nu": 0.01},
+           "boundary": {"inlet": {"type": "inlet", "U": [1.0, 0.0]},
+                        "outlet": {"type": "outlet"}, "wall": {"type": "wall"}}}
+    win.load_cfg(copy.deepcopy(cfg))
+    t = win.bc_table
+
+    def shown():
+        return [t.horizontalHeaderItem(c).text() for c in range(t.columnCount())
+                if not t.isColumnHidden(c)]
+    rows = {t.item(r, 0).text(): r for r in range(t.rowCount())}
+
+    def editable(name, col):
+        return bool(t.item(rows[name], col).flags() & Qt.ItemIsEditable)
+    assert shown() == ["Frontière", "Type", "Ux", "Uy", "p", "débit Q"]
+    assert not editable("wall", 4) and editable("outlet", 4) and not editable("outlet", 2)
+    # type changé : cellules réévaluées, colonne Type élargie au nouveau libellé
+    cb = t.cellWidget(rows["inlet"], 1)
+    cb.setCurrentIndex(cb.findData("pressure_inlet"))      # comme un clic (signal émis)
+    assert editable("inlet", 4) and not editable("inlet", 2)
+    assert win.cfg["boundary"]["inlet"] == {"type": "pressure_inlet", "p0": 0.0}
+    assert "débit Q" not in shown()                 # plus aucune entrée en vitesse
+    fm = t.fontMetrics()
+    assert t.columnWidth(1) >= fm.horizontalAdvance(cb.currentText()) + 30
+    # virgule décimale acceptée dans les cellules
+    t.item(rows["outlet"], 4).setText("1,5")
+    assert win.cfg["boundary"]["outlet"]["p"] == 1.5
+    # thermique activée : colonnes T et q affichées
+    win.load_cfg({**cfg, "energy": {"Pr": 0.7}})
+    assert shown() == ["Frontière", "Type", "Ux", "Uy", "p", "T", "flux q", "débit Q"]

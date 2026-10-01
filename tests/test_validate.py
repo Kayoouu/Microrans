@@ -163,6 +163,8 @@ _BAD = [
     (_set(("solver", "convection_U"), "linearupwind"), "vouliez-vous dire « linearUpwind » ?"),
     (_set(("physics", "model_options"), {"ft3": True}), "option inconnue pour le modèle"),
     (_pop(("boundary", "lid", "type")), "[boundary.lid] type manquant"),
+    (_set(("boundary", "lid", "omega"), "abc"), "[boundary.lid] omega = 'abc' : nombre attendu"),
+    (_set(("boundary", "lid", "q"), "1,5"), "[boundary.lid] q = '1,5' : nombre attendu"),
 ]
 
 

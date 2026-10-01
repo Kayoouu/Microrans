@@ -16,8 +16,9 @@ from pathlib import Path
 
 import numpy as np
 from PySide6.QtCore import Qt, QThread, QUrl
-from PySide6.QtGui import QAction, QDesktopServices, QFont, QKeySequence
-from PySide6.QtWidgets import (QApplication, QCheckBox, QFileDialog, QFormLayout, QGroupBox, QHBoxLayout,
+from PySide6.QtGui import QAction, QColor, QDesktopServices, QFont, QKeySequence
+from PySide6.QtWidgets import (QApplication, QCheckBox, QFileDialog, QFormLayout, QGridLayout,
+                               QGroupBox, QHBoxLayout,
                                QHeaderView, QLabel, QListWidget, QListWidgetItem, QMainWindow,
                                QMessageBox, QPlainTextEdit, QProgressBar, QPushButton,
                                QScrollArea, QSpinBox, QSplitter, QStackedWidget, QTableWidget,
@@ -28,7 +29,6 @@ from ..cli import examples_dir
 from ..fv2d.compressible import COMP_BC_TYPES
 from ..fv2d.solver import BC_TYPES, TIME_SCHEMES
 from ..linalg import SOLVERS
-from ..models import MODELS
 from ..solver import TIME_SCHEMES_1D
 from ..tomlio import dumps, loads
 from .widgets import (Binder, PlotCanvas, SciEdit, Vec2, Worker, apply_plot_style, combo,
@@ -50,6 +50,23 @@ COMP_BC_LABELS = {"farfield": "Champ lointain (invariants de Riemann)",
                   "supersonic_outlet": "Sortie supersonique (extrapolation)",
                   "slip_wall": "Paroi glissante (Euler)", "symmetry": "Symétrie",
                   "wall": "Paroi adhérente (T : isotherme)"}
+# tableau des conditions aux limites : (en-tête, info-bulle) ; colonnes utilisées par type
+BC_COLUMNS = [
+    ("Frontière", "Nom de la frontière (patch) dans le maillage"),
+    ("Type", "Type de condition aux limites"),
+    ("Ux", "Vitesse imposée, composante x (nombre ou formule en x, y) ; paroi : paroi mobile"),
+    ("Uy", "Vitesse imposée, composante y (nombre ou formule en x, y)"),
+    ("p", "Pression : sortie, champ lointain ; entrée en pression totale : p0"),
+    ("T", "Température imposée (thermique) ; compressible : T paroi ou T0 d'entrée"),
+    ("flux q", "Paroi : flux de chaleur imposé (si T vide)"),
+    ("débit Q", "Entrée : débit (remplace U ; vitesse normale uniforme)"),
+    ("scalaires", "Valeurs des scalaires, ex. c=1; age=0"),
+    ("u_θ ou Ω=…", "Rotation propre : u_θ en entrée, Ω=… (rad/s) pour une paroi tournante"),
+]
+BC_USED = {"wall": {2, 3, 5, 6, 8, 9}, "inlet": {2, 3, 5, 7, 8, 9},
+           "pressure_inlet": {4, 5, 8, 9}, "outlet": {4, 8}, "farfield": {2, 3, 4, 5, 8},
+           "symmetry": set(), "axis": set()}
+COMP_BC_USED = {"outlet": {4}, "inlet": {4, 5}, "wall": {2, 3, 5}}
 # clés des formulaires conservées pour un cas compressible (le reste est dans [flow],
 # [initial], [boundary] et [solver] : onglet « Fichier de cas »)
 COMP_FORM_KEYS = {("solver", "mode"), ("solver", "max_iter"), ("solver", "tol"),
@@ -129,6 +146,7 @@ def _form(parent=None):
         box.setTitle(parent)
     lay = QFormLayout(box)
     lay.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
+    lay.setRowWrapPolicy(QFormLayout.WrapLongRows)       # champ sous le libellé si étroit
     return box, lay
 
 
@@ -182,7 +200,9 @@ class MainWindow(QMainWindow):
             sc.setWidget(w)
             self.pages.addWidget(sc)
         self.nav.currentRowChanged.connect(self.pages.setCurrentIndex)
-        self.pages.setMinimumWidth(430)
+        # thermique, scalaires ou rotation activés ailleurs : colonnes du tableau à jour
+        self.nav.currentRowChanged.connect(lambda r: r == 4 and self._style_bc_table())
+        self.pages.setMinimumWidth(480)
 
         self.canvas = PlotCanvas()
         self.toml_edit = QPlainTextEdit()
@@ -213,8 +233,9 @@ class MainWindow(QMainWindow):
         split.addWidget(self.nav)
         split.addWidget(self.pages)
         split.addWidget(self.tabs)
-        split.setStretchFactor(2, 1)
-        split.setSizes([170, 460, 800])
+        split.setStretchFactor(1, 2)                       # réglages : 2/5 de l'espace
+        split.setStretchFactor(2, 3)                       # en plus, tracé : 3/5
+        split.setSizes([150, 640, 610])
         self.setCentralWidget(split)
         self.progress = QProgressBar()
         self.progress.setMaximumWidth(260)
@@ -294,12 +315,12 @@ class MainWindow(QMainWindow):
                             "comparer les modèles de turbulence."))
         box, f = _form("Modèles")
         self.c1d_models = {}
-        row = QHBoxLayout()
-        for key, label in MODEL_LABELS[1:]:
+        grid = QGridLayout()                               # 2 colonnes (pas de débordement)
+        for i, (key, label) in enumerate(MODEL_LABELS[1:]):
             cb = self._check(label, key == "sa")
             self.c1d_models[key] = cb
-            row.addWidget(cb)
-        f.addRow(row)
+            grid.addWidget(cb, i // 2, i % 2)
+        f.addRow(grid)
         lay.addWidget(box)
         box, f = _form("Écoulement et maillage")
         self.c1d_retau = SciEdit(395.0)
@@ -424,9 +445,10 @@ class MainWindow(QMainWindow):
             wdg.textChanged.connect(self._body_changed)
         self.b_type.currentIndexChanged.connect(self._body_changed)
         lay.addWidget(self.box_bodies)
-        lay.addWidget(self.binder.check(
-            ("mesh", "cut_axis"), False,
-            "Couper à l'axe y = 0 (axisymétrique : ne garder que y > 0, frontière « axis »)"))
+        cut = self.binder.check(("mesh", "cut_axis"), False, "Couper à l'axe y = 0")
+        cut.setToolTip("Axisymétrique : ne garder que la moitié y > 0 du maillage ; la coupe "
+                       "devient la frontière « axis ».")
+        lay.addWidget(cut)
         row = QHBoxLayout()
         b = QPushButton("Générer le maillage")
         b.clicked.connect(self.generate_mesh)
@@ -459,10 +481,13 @@ class MainWindow(QMainWindow):
         f.addRow("Vitesse de référence U", B.sci(("physics", "reference_velocity"), 1.0))
         f.addRow("Longueur de référence L", B.sci(("physics", "reference_length"), 1.0))
         f.addRow("Incidence α (°)", B.sci(("physics", "angle_of_attack"), None, True, "0"))
-        f.addRow(B.check(("physics", "axisymmetric"), False,
-                         "Axisymétrique : x = axe de révolution, y = rayon (tuyau, jet, sphère…)"))
-        f.addRow(B.check(("physics", "swirl"), False,
-                         "Rotation propre u_θ (axisymétrique : jet tournant, cyclone, rotor)"))
+        axi = B.check(("physics", "axisymmetric"), False, "Axisymétrique (x = axe, y = rayon)")
+        axi.setToolTip("Écoulement de révolution autour de l'axe x : tuyau, jet, sphère… Le "
+                       "maillage doit être dans le demi-plan y ≥ 0.")
+        f.addRow(axi)
+        swirl = B.check(("physics", "swirl"), False, "Rotation propre u_θ (axisymétrique)")
+        swirl.setToolTip("Jet tournant, cyclone, rotor : vitesse azimutale transportée.")
+        f.addRow(swirl)
         f.addRow(_note("Incidence : l'écoulement amont (entrées, champ lointain, vitesse "
                        "initiale) est tourné de α ; Cd et Cl sont donnés dans les axes de "
                        "l'écoulement."))
@@ -594,10 +619,17 @@ class MainWindow(QMainWindow):
                             "p = p0 ; Sortie : p imposée ; Champ lointain : U∞ en entrée, p∞ en "
                             "sortie selon le signe de U∞·n. Les composantes de U acceptent des "
                             "expressions en x, y (ex. 6*y*(1-y))."))
-        self.bc_table = QTableWidget(0, 10)
-        self.bc_table.setHorizontalHeaderLabels(["Patch", "Type", "Ux", "Uy", "p", "T", "flux q",
-                                                 "débit Q", "scalaires", "u_θ ou Ω=…"])
-        self.bc_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        self.bc_table = QTableWidget(0, len(BC_COLUMNS))
+        self.bc_table.setHorizontalHeaderLabels([c[0] for c in BC_COLUMNS])
+        for i, (_, tip) in enumerate(BC_COLUMNS):
+            self.bc_table.horizontalHeaderItem(i).setToolTip(tip)
+        h = self.bc_table.horizontalHeader()
+        h.setSectionResizeMode(QHeaderView.Interactive)
+        h.setSectionResizeMode(0, QHeaderView.ResizeToContents)
+        h.setDefaultSectionSize(58)
+        h.setStretchLastSection(True)
+        self.bc_table.verticalHeader().setVisible(False)
+        self.bc_table.setWordWrap(False)                 # formule longue : info-bulle
         self.bc_table.itemChanged.connect(lambda *_: self._bc_changed())
         lay.addWidget(self.bc_table, 1)
         return w
@@ -1548,7 +1580,10 @@ class MainWindow(QMainWindow):
             rot = (f"Ω={spec['omega']}" if "omega" in spec
                    else str(spec.get("U_theta", "")))
             self.bc_table.setItem(r, 9, QTableWidgetItem(rot))
+        for r in range(self.bc_table.rowCount()):
+            self.bc_table.cellWidget(r, 1).setMinimumContentsLength(4)
         self._bc_sync = False
+        self._style_bc_table()
 
     def _bc_changed(self):
         if getattr(self, "_bc_sync", False):
@@ -1559,6 +1594,8 @@ class MainWindow(QMainWindow):
             txt = txt.strip()
             if not txt:
                 return None
+            if re.fullmatch(r"[+-]?\d+,\d+([eE][+-]?\d+)?", txt):
+                txt = txt.replace(",", ".")         # 1,5 : virgule décimale
             try:
                 return float(txt)
             except ValueError:
@@ -1602,12 +1639,55 @@ class MainWindow(QMainWindow):
                 spec["scalars"] = vals
             rot = self.bc_table.item(r, 9).text().strip() if self.bc_table.item(r, 9) else ""
             if rot.lower().startswith(("ω=", "omega=", "Ω=".lower())) or rot.startswith("Ω="):
-                spec["omega"] = float(rot.split("=", 1)[1])
+                spec["omega"] = num(rot.split("=", 1)[1])
             elif rot:
                 spec["U_theta"] = num(rot)
             bnd[name] = spec
         self.cfg["boundary"] = bnd
+        self._style_bc_table()
         self._toml_timer.start()
+
+    def _style_bc_table(self):
+        """Colonnes sans objet pour le cas masquées ; cellules sans effet pour le type de la
+        ligne grisées et non modifiables (avant : valeurs ignorées en silence)."""
+        comp = self._compressible()
+        ph = self.cfg.get("physics", {})
+        energy = self.cfg.get("energy") is not None
+        types = {self.bc_table.cellWidget(r, 1).currentData()
+                 for r in range(self.bc_table.rowCount()) if self.bc_table.cellWidget(r, 1)}
+        hidden = ({6, 7, 8, 9} if comp else
+                  ({5, 6} - ({5, 6} if energy else set()))
+                  | (set() if "inlet" in types else {7})
+                  | (set() if self.cfg.get("scalars") else {8})
+                  | (set() if ph.get("swirl") else {9}))
+        for c in range(2, len(BC_COLUMNS)):
+            self.bc_table.setColumnHidden(c, c in hidden)
+        # colonne Type : largeur du plus long libellé affiché (pas de tous les choix)
+        cbs = [self.bc_table.cellWidget(r, 1) for r in range(self.bc_table.rowCount())]
+        fm = self.bc_table.fontMetrics()
+        width = max((fm.horizontalAdvance(c.currentText()) for c in cbs if c), default=80)
+        self.bc_table.horizontalHeader().resizeSection(1, width + 40)
+        used = COMP_BC_USED if comp else BC_USED
+        self._bc_sync = True
+        grey = QColor("#e9e8e4")
+        for r in range(self.bc_table.rowCount()):
+            cb = self.bc_table.cellWidget(r, 1)
+            ok = used.get(cb.currentData() if cb else "", set())
+            for c in range(2, len(BC_COLUMNS)):
+                it = self.bc_table.item(r, c)
+                if it is None:
+                    it = QTableWidgetItem("")
+                    self.bc_table.setItem(r, c, it)
+                flags = it.flags() | Qt.ItemIsEditable
+                if c in ok:
+                    it.setFlags(flags)
+                    it.setData(Qt.BackgroundRole, None)
+                    it.setToolTip(it.text() if len(it.text()) > 8 else "")
+                else:
+                    it.setFlags(flags & ~Qt.ItemIsEditable)
+                    it.setBackground(grey)
+                    it.setToolTip("Sans effet pour ce type de condition.")
+        self._bc_sync = False
 
     def _bc_changed_compressible(self, old, num):
         """Cas compressible : le tableau change le type et les valeurs usuelles (p de sortie,
@@ -1639,6 +1719,7 @@ class MainWindow(QMainWindow):
                     spec["U"] = [ux or 0.0, uy or 0.0]
             bnd[name] = spec
         self.cfg["boundary"] = bnd
+        self._style_bc_table()
         self._toml_timer.start()
 
     # ================================================================== exécution

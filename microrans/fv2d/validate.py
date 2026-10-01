@@ -645,6 +645,8 @@ def _check_values(cfg: dict, kind: str, mesh_type: str, mesh_only: bool, errors:
             continue
         for k in ("U", "velocity", "direction"):
             V.vec2(sec, spec, k)
+        for k in (("q", "omega", "flow_rate") if kind == INC else ("angle",)):
+            V.num(sec, spec, k)                     # pas de formule pour ces valeurs
         t = str(spec["type"]).lower()
         if kind == INC and t == "inlet" and "U" not in spec and "flow_rate" not in spec:
             errors.append(f"[{sec}] (inlet) : donner la vitesse U = [ux, uy] ou le débit "

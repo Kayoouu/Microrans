@@ -57,8 +57,8 @@ reprise introuvable ; TOML mal formé (ligne et colonne).
 
 | # | Constat | Statut |
 |---|---|---|
-| U1 | **Tableau des conditions limites illisible** : colonnes écrasées (« cyli… », type « Pa », « Ch »). | à faire |
-| U2 | **Colonne centrale trop étroite** : champs et notes coupés, défilement horizontal sur toutes les pages. | à faire |
+| U1 | **Tableau des conditions limites illisible** : colonnes écrasées (« cyli… », type « Pa », « Ch »). | corrigé : colonnes sans objet pour le cas masquées (T et q sans thermique, débit sans entrée en vitesse, scalaires, u_θ) ; cases sans effet pour le type de la ligne grisées et non modifiables ; colonne Type à la largeur du libellé ; bulles d'aide sur les en-têtes ; virgule décimale acceptée (« 1,5 ») ; « Ω=abc » ne bloque plus la mise à jour, q, omega et débit non numériques refusés avant calcul |
+| U2 | **Colonne centrale trop étroite** : champs et notes coupés, défilement horizontal sur toutes les pages. | corrigé : largeur minimale des pages ramenée sous 480 px (avant : 852, 785, 505, 492 px), libellé au-dessus du champ si la place manque, listes déroulantes compactes ; panneau de réglages élargi (640 px à l'ouverture) |
 | U3 | Mode « Nombre de Reynolds » : le champ ν grisé affiche une valeur périmée (0.01 au lieu de 0.05 pour Re = 20). | à faire |
 | U4 | Non newtonien : 9 paramètres affichés « défaut » alors qu'aucun défaut n'existe → erreur « paramètres manquants » au lancement. | à faire |
 | U5 | Maillage en O : « Ajouter » crée un 2e corps interdit ; tout corps ajouté est posé exactement sur le premier. | à faire |
