@@ -155,7 +155,8 @@ def test_case_checks_extrude():
     cfg["mesh"]["nx"] = 500
     cfg["physics"]["body_force"] = [1, 0, 0]
     w = [w for w in check_case(cfg) if "4 000 000 cellules (3D)" in w]
-    assert w and "~10.7 Go de mémoire, ~34 s par itération" in w[0] and "~13 min" in w[0]
+    assert w and "~11.9 Go de mémoire, ~34 à 56 s par itération" in w[0]
+    assert "~13 à 21 min" in w[0]
 
 
 def _cyl_cfg(dim, alpha=0.0, nz=1, **extra):

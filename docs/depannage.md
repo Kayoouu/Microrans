@@ -228,8 +228,8 @@ Ce sont des règles usuelles en CFD, valables pour tout logiciel :
 - **Ordre de grandeur** : ~15 µs par cellule et par itération, ce qui donne ~15 s par
   itération pour 1 million de cellules. Ce chiffre est variable selon la machine.
   L'avertissement apparaît au-delà de 500 000 cellules.
-- **3D** : ~8.5 s par itération et 2.9 Go pour 10⁶ hexaèdres en laminaire (SST : ~40 %
-  de plus), ~3.5 min de préparation (maillage, distance à la paroi). Avertissement au-delà
+- **3D** : ~8.5 à 14 s par itération et ~3 Go pour 10⁶ hexaèdres en laminaire (SST : ~40 %
+  de plus), ~3.5 à 5.5 min de préparation (maillage, distance à la paroi). Avertissement au-delà
   de 500 000 cellules (README § 7).
 - **Algorithme couplé** : voir § 3. La mémoire mesurée va de 0.3 Go (16 000 cellules) à
   1.65 Go (160 000 cellules).

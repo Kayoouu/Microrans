@@ -714,8 +714,12 @@ l'arrondi près (~1e-13), et identiques quel que soit le nombre de fils.
 | 262 144 (64³) | 6.1 s | 30 s | 1.5 s (5.7 µs/cellule) | 2.1 s | 0.9 Go | 47 Mo |
 | 1 000 000 (100³) | 31 s | 172 s | 8.5 s (8.5 µs/cellule) | — | 2.9 Go | 169 Mo |
 
-Un calcul stationnaire demande quelques centaines d'itérations : ~1 h pour 10⁶ cellules en
-laminaire. La distance à la paroi est exacte (distance aux faces de paroi, pas aux
+Ces durées varient de plus de 50 % d'un jour à l'autre sur la même machine virtuelle :
+10⁶ cellules remesurées plus tard, exécutable Linux et Python côte à côte, dans les mêmes
+conditions : 13.8 s et 13.6 s par itération, pic 3.09 et 3.18 Go, 461 s et 456 s au total
+(préparation, 10 itérations, VTK) — **l'exécutable va aussi vite que Python**, c'est la
+machine qui était plus lente. Un calcul stationnaire demande quelques centaines
+d'itérations : ~1 à 1.5 h pour 10⁶ cellules en laminaire. La distance à la paroi est exacte (distance aux faces de paroi, pas aux
 centres) : elle domine la préparation et sert aussi aux sorties en laminaire. Deux défauts
 de coût corrigés pendant ces mesures : la distance à la paroi était calculée deux fois
 (le solveur réimposait les types de frontières et vidait le cache : +30 s à 64³, aussi en
@@ -809,8 +813,8 @@ de coût corrigés pendant ces mesures : la distance à la paroi était calculé
      z = constante seulement (coupes x ou y, isosurfaces : ParaView) ;
    - non disponibles : axisymétrique (sans objet), swirl, zones poreuses, disques
      actuateurs, solveur couplé, animations, compressible, profil de débit parabolique ;
-   - coût (§ 7) : ~8.5 s par itération et 2.9 Go pour 10⁶ cellules en laminaire, plus
-     ~3.5 min de préparation (maillage, distance à la paroi exacte) ; fichiers VTK ASCII
+   - coût (§ 7) : ~8.5 à 14 s par itération et ~3 Go pour 10⁶ cellules en laminaire, plus
+     ~3.5 à 5.5 min de préparation (maillage, distance à la paroi exacte) ; fichiers VTK ASCII
      volumineux (169 Mo pour 10⁶ cellules) ;
    - un écoulement plan calculé sur **plusieurs couches** en z n'est pas identique au 2D :
      la diffusion à travers les faces z intérieures entre dans a_P, donc dans

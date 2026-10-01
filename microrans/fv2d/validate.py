@@ -811,12 +811,14 @@ def _size_warning(m: dict, mesh_type: str) -> str | None:
         return None
     count = f"{n:,}".replace(",", " ")
     if mesh_type == BOX or isinstance(m.get("extrude"), dict):
-        # 3D mesuré (cavité cubique, 4 cœurs) : 10⁶ hexaèdres → pic 2.9 Go, 8.5 s par
-        # itération en laminaire (SST : +40 %), préparation 31 s (maillage) + 172 s
-        # (distance à la paroi exacte)
-        gb, it, prep = 0.3 + n * 2.6e-6, n * 8.5e-6, n * 2e-4
-        return (f"[mesh] {count} cellules (3D) : prévoir ~{gb:.1f} Go de mémoire, ~{it:.0f} s "
-                f"par itération en laminaire (turbulent : ~40 % de plus) et ~{prep / 60:.0f} "
+        # 3D mesuré (cavité cubique, 4 cœurs, machine virtuelle de charge variable) :
+        # 10⁶ hexaèdres → pic 2.9 à 3.2 Go, 8.5 à 13.8 s par itération en laminaire (SST :
+        # +40 %), préparation 3.4 à 5.3 min (maillage + distance à la paroi exacte) ;
+        # exécutable et Python identiques à la mesure près
+        gb, lo, hi = 0.3 + n * 2.9e-6, n * 8.5e-6, n * 14e-6
+        prep = f"{n * 2e-4 / 60:.0f} à {n * 3.2e-4 / 60:.0f}"
+        return (f"[mesh] {count} cellules (3D) : prévoir ~{gb:.1f} Go de mémoire, ~{lo:.0f} à "
+                f"{hi:.0f} s par itération en laminaire (turbulent : ~40 % de plus) et ~{prep} "
                 "min de préparation (maillage et distance à la paroi) — ordre de grandeur "
                 "mesuré, variable selon la machine ; plusieurs centaines d'itérations sont "
                 "nécessaires. Régler d'abord le cas sur un maillage plus grossier.")
