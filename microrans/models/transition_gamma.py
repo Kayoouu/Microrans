@@ -110,6 +110,9 @@ class MenterSSTGamma(MenterSST):
         if g is None or self._normal_host is None:
             return self.d * 0.0                     # 1D (canal) : V = 0
         n = self._wall_normal()
+        if n.shape[1] == 3:
+            xp = array_module(self.d)
+            return xp.einsum("ci,cij,cj->c", n, g, n)
         nx, ny = n[:, 0], n[:, 1]
         return nx * nx * g[:, 0, 0] + nx * ny * (g[:, 0, 1] + g[:, 1, 0]) + ny * ny * g[:, 1, 1]
 

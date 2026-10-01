@@ -1,4 +1,7 @@
-"""Solveur incompressible 2D RANS / URANS, volumes finis colocalisés.
+"""Solveur incompressible RANS / URANS, volumes finis colocalisés, 2D et 3D (le nombre de
+composantes de la vitesse est la dimension du maillage : mesh2d ou mesh3d). En 3D :
+axisymétrique, rotation propre, disques actuateurs, zones poreuses et solveur couplé
+indisponibles (refus explicite).
 
 Algorithmes (à la manière d'OpenFOAM) :
 - stationnaire : SIMPLE ou SIMPLEC (« consistent »), sous-relaxations U, p, turbulence ;
@@ -168,11 +171,28 @@ def _diverged(when: str, steady: bool = True) -> str:
             f"Pistes : {tips}.")
 
 
-def _eval_expr(expr, x, y):
-    """Formule en x, y (texte du fichier de cas) évaluée sans risque : voir safe_expr.py."""
+def _eval_expr(expr, x, y, z=None):
+    """Formule en x, y (et z en 3D) du fichier de cas, évaluée sans risque : safe_expr.py."""
     from ..safe_expr import evaluate
-    val = evaluate(expr, {"x": x, "y": y})
+    val = evaluate(expr, {"x": x, "y": y} if z is None else {"x": x, "y": y, "z": z})
     return np.broadcast_to(np.asarray(val, dtype=float), x.shape).copy()
+
+
+def _xyz(points):
+    """Coordonnées (x, y) ou (x, y, z) d'un tableau de points, pour _eval_expr."""
+    return tuple(points[:, k] for k in range(points.shape[1]))
+
+
+def _vector(v, dim, what):
+    """Vecteur à `dim` composantes ; un vecteur nul plus court est complété (valeurs par
+    défaut (0, 0) du 2D)."""
+    a = np.asarray(v, dtype=float).ravel()
+    if len(a) == dim:
+        return a
+    if len(a) < dim and not np.any(a):
+        return np.zeros(dim)
+    raise ValueError(f"{what} = {list(a)} : {dim} composantes attendues (maillage "
+                     f"{dim}D).")
 
 
 def _active(a0) -> bool:
@@ -204,7 +224,10 @@ class FlowField2D:
     def strain(self):
         xp = self.solver.xp
         g = self.gradU
-        s2 = 2 * g[:, 0, 0] ** 2 + 2 * g[:, 1, 1] ** 2 + (g[:, 0, 1] + g[:, 1, 0]) ** 2
+        if g.shape[1] == 2:
+            s2 = 2 * g[:, 0, 0] ** 2 + 2 * g[:, 1, 1] ** 2 + (g[:, 0, 1] + g[:, 1, 0]) ** 2
+        else:                                     # 2 S_ij S_ij = ½ Σ (g_ij + g_ji)²
+            s2 = 0.5 * xp.sum((g + xp.swapaxes(g, 1, 2)) ** 2, axis=(1, 2))
         fvm = self.solver.fvm
         if fvm.axisymmetric:
             s2 = s2 + 2 * (self.U[:, 1] / fvm.radius) ** 2      # S_θθ = u_r / r
@@ -228,6 +251,9 @@ class FlowField2D:
     def vorticity(self):
         xp = self.solver.xp
         g = self.gradU
+        if g.shape[1] == 3:                       # |ω| = √(½ Σ (g_ij − g_ji)²)
+            return self._wall_override(xp.sqrt(0.5 * xp.sum((g - xp.swapaxes(g, 1, 2)) ** 2,
+                                                            axis=(1, 2))))
         wz = g[:, 1, 0] - g[:, 0, 1]
         gw = self._swirl_grad()
         if gw is not None:
@@ -243,8 +269,8 @@ class FlowField2D:
         if self._d2 is None:
             s = self.solver
             tot = xp.zeros(s.fvm.nc)
-            for i in range(2):
-                for j in range(2):
+            for i in range(s.dim):
+                for j in range(s.dim):
                     comp = self.gradU[:, i, j]
                     gg = s.fvm.grad(comp, comp[s.fvm.Pb])
                     tot += xp.sum(gg ** 2, axis=1)
@@ -338,11 +364,24 @@ class Solver2D:
                  viscosity: dict | None = None, scalars: dict | None = None,
                  porous: list | None = None, swirl=False, actuator_disks: list | None = None):
         self.mesh = mesh
+        self.dim = dim = int(getattr(mesh, "dim", 2))
         self.axisymmetric = bool(axisymmetric)
+        if dim == 3:
+            unavailable = [lab for lab, on in (
+                ("axisymétrique", axisymmetric), ("rotation propre (swirl)", swirl),
+                ("zones poreuses", porous), ("disques actuateurs", actuator_disks),
+                ("solveur couplé (algorithm = \"coupled\")",
+                 (settings or Settings()).algorithm.upper() == "COUPLED")) if on]
+            if unavailable:
+                raise ValueError("Maillage 3D : " + ", ".join(unavailable) + " disponible(s) "
+                                 "en 2D seulement.")
         # thermique (optionnelle) : Pr, Pr_t, beta (Boussinesq), T_ref, gravity, T0, source
         self.energy = None if energy is None else {
-            "Pr": 0.71, "Pr_t": 0.85, "beta": 0.0, "T_ref": 0.0, "gravity": (0.0, -9.81),
-            **energy}
+            "Pr": 0.71, "Pr_t": 0.85, "beta": 0.0, "T_ref": 0.0,
+            "gravity": (0.0, -9.81) if dim == 2 else (0.0, -9.81, 0.0), **energy}
+        if self.energy is not None:
+            self.energy["gravity"] = tuple(_vector(self.energy["gravity"], dim,
+                                                   "[energy] gravity"))
         self.nu = float(nu)
         self.nu_lam = self.nu                 # viscosité moléculaire (champ si non newtonien)
         self.rheology = None
@@ -359,7 +398,9 @@ class Solver2D:
                                             "diffusivity": 0.0, "Sc_t": 1.0,
                                             "scheme": self.settings.convection_U}
         # force volumique : constante (fx, fy) ou fonction du temps t -> (fx, fy)
-        self.body_force = body_force if callable(body_force) else np.asarray(body_force, float)
+        self.body_force = (body_force if callable(body_force)
+                           else _vector(body_force, dim, "[physics] body_force"))
+        initial_U = _vector(initial_U, dim, "[initial] U")
         self._t_eval = 0.0
         names = [p.name for p in mesh.patches]
         periodic = {q for pair in getattr(mesh, "periodic_pairs", []) for q in pair[:2]}
@@ -456,9 +497,9 @@ class Solver2D:
         if self.energy is not None:
             self.T = xp.full(nc, float(self.energy.get("T0", self.energy["T_ref"])))
         C = mesh.cell_centers
-        self.scalars = {k: xp.asarray(_eval_expr(sp["initial"], C[:, 0], C[:, 1]))
+        self.scalars = {k: xp.asarray(_eval_expr(sp["initial"], *_xyz(C)))
                         for k, sp in self.scalar_specs.items()}
-        self.scalar_source = {k: xp.asarray(_eval_expr(sp["source"], C[:, 0], C[:, 1]))
+        self.scalar_source = {k: xp.asarray(_eval_expr(sp["source"], *_xyz(C)))
                               for k, sp in self.scalar_specs.items()}
         self.porous = self._porous_setup(porous) if porous else None
         self.disks = self._disk_setup(actuator_disks) if actuator_disks else None
@@ -471,7 +512,7 @@ class Solver2D:
             gref = spec.pop("gamma_ref", None)
             if gref is None:
                 bb = mesh.bbox()
-                gref = uref / max(bb[2] - bb[0], bb[3] - bb[1], 1e-300)
+                gref = uref / max(max(bb[dim + k] - bb[k] for k in range(dim)), 1e-300)
             self.rheology = Rheology(spec, float(gref))
             self.nu_lam = xp.full(nc, self.rheology.nu_ref)
             self.nu_wall = xp.where(self.backend.asarray(self.is_wall), self.rheology.nu_ref,
@@ -498,8 +539,9 @@ class Solver2D:
         nb = fvm.nb
         Cb = m.face_centers[m.n_internal:]
         nhat = m.nf[m.n_internal:]
+        dim = self.dim
         self.kindU = np.ones(nb, dtype=int)          # 0 fixe, 1 gradient nul, 2 glissement
-        self.U_fixed = np.zeros((nb, 2))
+        self.U_fixed = np.zeros((nb, dim))
         self.kindP = np.ones(nb, dtype=int)          # 0 fixe, 1 gradient nul
         self.p_fixed = np.zeros(nb)
         self.kindT = np.ones(nb, dtype=int)          # 0 amont, 1 gradient nul, 2 paroi
@@ -511,12 +553,17 @@ class Solver2D:
             spec = self.boundaries[p.name]
             sl = slice(p.start - m.n_internal, p.start - m.n_internal + p.size)
             self.patch_slices[p.name] = sl
-            x, y = Cb[sl, 0], Cb[sl, 1]
+            xyz = _xyz(Cb[sl])
+
+            def vec(u, what):
+                if isinstance(u, str) or len(u) != dim:
+                    raise ValueError(f"[boundary.{p.name}] {what} = {u} : {dim} composantes "
+                                     f"attendues (maillage {dim}D).")
+                return np.column_stack([_eval_expr(c, *xyz) for c in u])
             kind = spec["type"]
             if kind == "wall":
                 self.kindU[sl] = 0
-                uw = spec.get("U", [0.0, 0.0])
-                self.U_fixed[sl] = np.column_stack([_eval_expr(uw[0], x, y), _eval_expr(uw[1], x, y)])
+                self.U_fixed[sl] = vec(spec.get("U", [0.0] * dim), "U")
                 self.kindT[sl] = 2
                 self.is_wall[sl] = True
             elif kind == "inlet":
@@ -524,9 +571,7 @@ class Solver2D:
                 if "flow_rate" in spec:
                     self.U_fixed[sl] = self._flow_rate_velocity(p, spec, sl)
                 else:
-                    u = spec["U"]
-                    self.U_fixed[sl] = np.column_stack([_eval_expr(u[0], x, y),
-                                                        _eval_expr(u[1], x, y)])
+                    self.U_fixed[sl] = vec(spec["U"], "U")
                 self.kindT[sl] = 0
             elif kind == "pressure_inlet":
                 self.kindP[sl] = 0
@@ -539,7 +584,7 @@ class Solver2D:
             elif kind in ("symmetry", "axis"):
                 self.kindU[sl] = 2
             elif kind == "farfield":
-                uinf = np.asarray(spec["U"], dtype=float)
+                uinf = vec(spec["U"], "U")[0] if len(xyz[0]) else np.zeros(dim)
                 inflow = nhat[sl] @ uinf < 0.0
                 self.kindU[sl] = np.where(inflow, 0, 1)
                 self.U_fixed[sl] = uinf
@@ -579,18 +624,18 @@ class Solver2D:
                 continue
             for p in m.patches:
                 spec, sl = self.boundaries[p.name], self.patch_slices[p.name]
-                x, y = Cb[sl, 0], Cb[sl, 1]
+                xyz = _xyz(Cb[sl])
                 vals, flux = spec.get("scalars", {}), spec.get("scalar_flux", {})
                 kind_p = spec["type"]
                 if name in vals or kind_p in ("inlet", "pressure_inlet", "farfield"):
-                    v = _eval_expr(vals.get(name, 0.0), x, y)
+                    v = _eval_expr(vals.get(name, 0.0), *xyz)
                     inflow = (nhat[sl] @ np.asarray(spec["U"], dtype=float) < 0.0
-                              if kind_p == "farfield" else np.ones(len(x), dtype=bool))
+                              if kind_p == "farfield" else np.ones(len(xyz[0]), dtype=bool))
                     kind[sl] = np.where(inflow, 0, 1)
                     fixed[sl] = v
                 elif name in flux:
                     # flux entrant q = D ∂c/∂n (n sortante)
-                    grad[sl] = _eval_expr(flux[name], x, y) / sp["diffusivity"]
+                    grad[sl] = _eval_expr(flux[name], *xyz) / sp["diffusivity"]
             self.scalar_bcs[name] = (kind, fixed, grad)
         host = (self.kindU.copy(), self.U_fixed.copy(), self.kindP.copy())
         A = self.backend.asarray
@@ -829,6 +874,10 @@ class Solver2D:
         if self.axisymmetric:
             area = area * np.maximum(fc[:, 1], 0.0)
         shape = spec.get("profile", "uniform")
+        if shape == "parabolic" and self.dim == 3:
+            raise ValueError(f"[boundary.{patch.name}] profile = \"parabolic\" : en 2D "
+                             "seulement ; en 3D, profile = \"uniform\" ou une vitesse U "
+                             "donnée par une formule en x, y, z.")
         nodes = m.points[np.unique(m.face_nodes[patch.start:patch.start + patch.size])]
         if shape == "parabolic":
             if self.axisymmetric and nodes[:, 1].min() <= 1e-9 * max(nodes[:, 1].max(), 1e-300):
@@ -871,20 +920,21 @@ class Solver2D:
         a[zg] = 1.0
         sl = self.kindU == 2
         if xp.any(sl):
+            # U_b = U_P − (U_P·n) n : composante c implicite, les autres explicites
             n = fvm.nb_hat[sl]
-            o = 1 - c
-            uo = U[fvm.Pb[sl], o]
+            UP = U[fvm.Pb[sl]]
+            t = sum(-n[:, c] * n[:, o] * UP[:, o] for o in range(self.dim) if o != c)
             a[sl] = 1.0 - n[:, c] ** 2
-            b[sl] = -n[:, c] * n[:, o] * uo
+            b[sl] = t
             g[sl] = -n[:, c] ** 2 / dp[sl]
-            d[sl] = -n[:, c] * n[:, o] * uo / dp[sl]
+            d[sl] = t / dp[sl]
         return a, b, g, d
 
     def boundary_U(self, U):
         xp = self.xp
         Pb = self.fvm.Pb
-        out = xp.empty((self.fvm.nb, 2))
-        for c in range(2):
+        out = xp.empty((self.fvm.nb, self.dim))
+        for c in range(self.dim):
             a, b, _, _ = self.vector_bc(c, U)
             out[:, c] = a * U[Pb, c] + b
         return out
@@ -910,7 +960,7 @@ class Solver2D:
         d'une paroi de symétrie traversant une zone anisotrope tournée crée une vitesse
         normale parasite dans les cellules pariétales)."""
         xp = self.xp
-        f = xp.zeros((self.fvm.nb, 2)) + self.body_force_at(self._t_eval)[None, :]
+        f = xp.zeros((self.fvm.nb, self.dim)) + self.body_force_at(self._t_eval)[None, :]
         e = self.energy
         if e is not None and e["beta"]:
             g = xp.asarray(np.asarray(e["gravity"], dtype=float))
@@ -964,8 +1014,7 @@ class Solver2D:
     def grad_U(self, U):
         xp = self.xp
         Ub = self.boundary_U(U)
-        return xp.stack([self.fvm.grad(U[:, 0], Ub[:, 0]), self.fvm.grad(U[:, 1], Ub[:, 1])],
-                        axis=1)
+        return xp.stack([self.fvm.grad(U[:, c], Ub[:, c]) for c in range(self.dim)], axis=1)
 
     def flow(self):
         return FlowField2D(self, self.U, self.grad_U(self.U))
@@ -1028,13 +1077,20 @@ class Solver2D:
         w = self.is_wall
         n = fvm.nb_hat
         du = self.U[fvm.Pb] - self.U_fixed
-        ut = xp.abs(du[:, 0] * n[:, 1] - du[:, 1] * n[:, 0])            # |U_t| relative
+        ut = self._tangential(du, n)                                    # |U_t| relative
         y = fvm.dperp
         u_tau = self._spalding_u_tau(xp.maximum(ut, 1e-30), y)
         nu_w = xp.where(ut > 1e-12 * self.U_ref, u_tau ** 2 * y / xp.maximum(ut, 1e-30),
                         self.nu)
         self.nu_wall = xp.where(w, xp.maximum(nu_w, self.nu), self.nu)
         self.u_tau_wall = xp.where(w, u_tau, 0.0)
+
+    def _tangential(self, du, n):
+        """|du − (du·n) n| (2D : |du × n|)."""
+        xp = self.xp
+        if self.dim == 2:
+            return xp.abs(du[:, 0] * n[:, 1] - du[:, 1] * n[:, 0])
+        return xp.linalg.norm(du - xp.sum(du * n, axis=1)[:, None] * n, axis=1)
 
     def _wall_cell_shear(self):
         xp, fvm = self.xp, self.fvm
@@ -1065,7 +1121,7 @@ class Solver2D:
         force imposée + flottabilité de Boussinesq −β(T − T_ref) g."""
         xp = self.xp
         n = self.fvm.ni if face else self.fvm.nc
-        f = xp.zeros((n, 2)) + self.body_force_at(self._t_eval)[None, :]
+        f = xp.zeros((n, self.dim)) + self.body_force_at(self._t_eval)[None, :]
         e = self.energy
         if e is not None and e["beta"]:
             T = self.fvm.interp(self.T) if face else self.T
@@ -1270,13 +1326,13 @@ class Solver2D:
         self.nu_lam = new if r >= 1.0 else self.nu_lam + r * (new - self.nu_lam)
         n = fvm.nb_hat
         du = self.U[fvm.Pb] - self.U_fixed
-        gw = xp.abs(du[:, 0] * n[:, 1] - du[:, 1] * n[:, 0]) / fvm.dperp
+        gw = self._tangential(du, n) / fvm.dperp
         nw = rh(gw, xp)
         nw = nw if r >= 1.0 else self.nu_wall + r * (nw - self.nu_wall)
         self.nu_wall = xp.where(self.is_wall, nw, self.nu_wall)
 
     def _momentum(self, a0=0.0, hist=None, relax=1.0, theta=1.0, explicit=None):
-        """Équations de U (composantes x, y) : (diag, upper, lower, rhs) sans gradient de p.
+        """Équations de U (composantes x, y[, z]) : (diag, upper, lower, rhs) sans ∇p.
 
         theta < 1 (Crank-Nicolson) : opérateur spatial pondéré par θ, plus la partie
         explicite `explicit` (= (1−θ)·R(Uⁿ)·V, tableau (nc, 2)).
@@ -1295,8 +1351,10 @@ class Solver2D:
         V = fvm.V
         Kp = self.porous_coefficients() if self.porous is not None else None
         eqs = []
-        limited = self.settings.convection_U == "linearUpwindLimited"
-        for c in range(2):
+        self._slip_diag = []          # part du glissement dans chaque diagonale (3D, voir
+        limited = self.settings.convection_U == "linearUpwindLimited"    # _common_diagonal)
+        slip = self.kindU == 2
+        for c in range(self.dim):
             bc = self.vector_bc(c, U)
             # gradient limité transmis (avant : linearUpwindLimited = linearUpwind en silence)
             gconv = (fvm.limit_grad(U[:, c], gradU[:, c, :], bc[0] * U[fvm.Pb, c] + bc[1])
@@ -1307,10 +1365,12 @@ class Solver2D:
                                              bounded=self.steady, phi=U[:, c],
                                              nonorth_limit=self.settings.nonorth_limit,
                                              grad_conv=gconv)
+            sd = (fvm._sum_b(xp.where(slip, -gam_b * fvm.magSb * bc[2], 0.0))
+                  if self.dim == 3 else None)
             # terme ∇·(ν_eff (∇U)ᵀ) explicite
-            tf_i = gam_i * (gUf[:, 0, c] * fvm.Si[:, 0] + gUf[:, 1, c] * fvm.Si[:, 1])
+            tf_i = gam_i * xp.sum(gUf[:, :, c] * fvm.Si, axis=1)
             gb = gradU[fvm.Pb]
-            tf_b = gam_b * (gb[:, 0, c] * fvm.Sb[:, 0] + gb[:, 1, c] * fvm.Sb[:, 1])
+            tf_b = gam_b * xp.sum(gb[:, :, c] * fvm.Sb, axis=1)
             rhs += fvm.sum_faces(tf_i, tf_b)
             rhs += force[:, c] * V
             if c == 1 and fvm.axisymmetric:
@@ -1324,9 +1384,10 @@ class Solver2D:
                 # milieu poreux : terme diagonal implicite, couplage entre composantes
                 # (zone tournée, anisotrope) explicite
                 diag = diag + Kp[:, c, c] * V
-                rhs = rhs - Kp[:, c, 1 - c] * U[:, 1 - c] * V
+                rhs = rhs - sum(Kp[:, c, o] * U[:, o] for o in range(self.dim) if o != c) * V
             if theta != 1.0:
                 diag, up, lo, rhs = theta * diag, theta * up, theta * lo, theta * rhs
+                sd = None if sd is None else theta * sd
             if explicit is not None:
                 rhs = rhs + explicit[:, c]
             if _active(a0):
@@ -1335,8 +1396,21 @@ class Solver2D:
             if relax < 1.0:
                 rhs += (1.0 - relax) / relax * diag * U[:, c]
                 diag = diag / relax
+                sd = None if sd is None else sd / relax
             eqs.append((diag, up, lo, rhs))
+            self._slip_diag.append(sd)
         return eqs
+
+    def _common_diagonal(self, eqs):
+        """Diagonale commune a_P des composantes de U (moyenne, cmptAv d'OpenFOAM). En 3D,
+        sans la diffusion normale des faces de glissement : elle ne porte que sur la
+        composante normale à la face et, pour des cellules minces contre un plan de
+        symétrie, dominait la moyenne (cylindre extrudé sur une épaisseur 0.1 : divergence à
+        la 4e itération) ; elle reste dans H (explicite, sur une vitesse normale ≈ 0)."""
+        sd = getattr(self, "_slip_diag", None)
+        if self.dim == 2 or not sd or sd[0] is None or len(sd) != len(eqs):
+            return sum(e[0] for e in eqs) / len(eqs)
+        return sum(e[0] - d for e, d in zip(eqs, sd)) / len(eqs)
 
     # ------------------------------------------------------------------ pression
     def _pressure_correction(self, eqs, ddt_corr=None, relax_p=1.0, rtol=1e-6):
@@ -1345,14 +1419,13 @@ class Solver2D:
         V = fvm.V
         H = xp.column_stack([rhs - self._offdiag_mult(up, lo, self.U[:, c])
                              for c, (diag, up, lo, rhs) in enumerate(eqs)])
-        diag_u, diag_v = eqs[0][0], eqs[1][0]
-        aP = 0.5 * (diag_u + diag_v)
+        aP = self._common_diagonal(eqs)
         rAU = V / aP
         # diagonale commune a_P (moyenne des composantes, cmptAv d'OpenFOAM) ; l'écart propre
         # à chaque composante (symétrie, terme circonférentiel) passe dans H, pour que
         # U = HbyA − rAU ∇p vérifie exactement l'équation de quantité de mouvement
         HbyA = xp.column_stack([(H[:, c] - (eqs[c][0] - aP) * self.U[:, c]) / aP
-                                for c in range(2)])
+                                for c in range(len(eqs))])
         pb = self.boundary_p(self.p)
         gradp = fvm.grad(self.p, pb)
         HbyA_b = self.boundary_U(HbyA)
@@ -1370,8 +1443,10 @@ class Solver2D:
             phiHbyA_b = phiHbyA_b + xp.where(self.kindP == 1, rAU[fvm.Pb] * fb, 0.0)
         rAtU = rAU
         if s.algorithm.upper() == "SIMPLEC" and self.steady:
-            H1 = -0.5 * (fvm._sum(fvm.P, eqs[0][1]) + fvm._sum(fvm.N, eqs[0][2])
-                         + fvm._sum(fvm.P, eqs[1][1]) + fvm._sum(fvm.N, eqs[1][2]))
+            acc = 0.0
+            for e in eqs:
+                acc = acc + fvm._sum(fvm.P, e[1]) + fvm._sum(fvm.N, e[2])
+            H1 = -acc / len(eqs)
             rAtU = V / xp.maximum(aP - H1, 1e-3 * aP)
             # (rAtU − rAU) ∂p/∂n |S| avec le MÊME gradient normal (partie non orthogonale
             # comprise) que l'équation de pression, faces internes et frontières.
@@ -1463,7 +1538,7 @@ class Solver2D:
                 A = self.fvm.matrix(diag, up, lo)
                 gp = self.fvm.grad(self.p, self.boundary_p(self.p))[:, c] * self.fvm.V
                 b = rhs - gp
-                self.residuals_now["Ux" if c == 0 else "Uy"] = normalized_residual(
+                self.residuals_now[("Ux", "Uy", "Uz")[c]] = normalized_residual(
                     A, self.U[:, c], b, self.u_scale)
                 if not coupled:
                     self.U[:, c] = self.fvm.lin.solve(A, b, self.U[:, c], s.solver_U,
@@ -1541,7 +1616,7 @@ class Solver2D:
             # résistance poreuse : valeur propre réelle négative, comme la diffusion (Dn
             # compte les deux pour la stabilité des schémas explicites)
             K = self.porous_coefficients()
-            diff = diff + xp.maximum(K[:, 0, 0], K[:, 1, 1])
+            diff = diff + xp.max(xp.diagonal(K, axis1=1, axis2=2), axis=1)
         aF = xp.abs(self.F_i)
         conv = 0.5 * (fvm._sum(fvm.P, aF) + fvm._sum(fvm.N, aF)
                       + fvm._sum(fvm.Pb, xp.abs(self.F_b))) / fvm.V
@@ -1714,7 +1789,7 @@ class Solver2D:
             for c, (diag, up, lo, rhs) in enumerate(eqs):
                 A = fvm.matrix(diag, up, lo)
                 b = rhs - gp[:, c]
-                self.residuals_now["Ux" if c == 0 else "Uy"] = normalized_residual(
+                self.residuals_now[("Ux", "Uy", "Uz")[c]] = normalized_residual(
                     A, self.U[:, c], b, self.u_scale)
                 self.U[:, c] = fvm.lin.solve(A, b, self.U[:, c], s.solver_U, rtol=1e-4,
                                              tag="U")
@@ -1942,9 +2017,12 @@ class Solver2D:
         sl = self.patch_slices[patch]
         Pb = fvm.Pb[sl]
         n = fvm.nb_hat[sl]
-        t = xp.column_stack([-n[:, 1], n[:, 0]])
         du = self.U[Pb] - self.U_fixed[sl]
-        ut = xp.sum(du * t, axis=1)
+        if self.dim == 2:
+            t = xp.column_stack([-n[:, 1], n[:, 0]])
+            ut = xp.sum(du * t, axis=1)
+        else:                                     # 3D : norme de la vitesse tangentielle
+            ut = self._tangential(du, n)
         tau = self.nu_wall[sl] * ut / fvm.dperp[sl]
         yplus = fvm.dperp[sl] * xp.sqrt(xp.abs(tau)) / self.nu
         xf = self.mesh.face_centers[self.mesh.n_internal:][sl]
