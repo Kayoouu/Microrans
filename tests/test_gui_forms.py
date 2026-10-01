@@ -399,3 +399,51 @@ def test_added_body_does_not_overlap(win):
     with pytest.raises(ValueError, match="le maillage en O entoure exactement un corps "
                                          r"\(3 donné\(s\)\)"):
         check_case(win.cfg)
+
+
+def test_home_examples_grouped(win):
+    """Audit U6 : accueil classé, description et bouton d'ouverture (le double-clic seul
+    n'était pas découvrable)."""
+    from PySide6.QtCore import Qt
+    tree = win.examples
+    first = tree.topLevelItem(0)
+    assert first.text(0) == "Commencer ici" and not first.flags() & Qt.ItemIsSelectable
+    assert tree.topLevelItem(tree.topLevelItemCount() - 1).text(0).startswith("Maillage seul")
+    assert not win.example_open.isEnabled()
+    tree.setCurrentItem(first.child(0))
+    assert win.example_open.isEnabled()
+    assert "cavite_re100.toml" in win.example_info.text()
+    assert "microrans run2d" not in win.example_info.text()
+
+
+def test_turbulence_settings_follow_model(win):
+    """Audit U9 : lois de paroi proposées avec k-ε et transition (refus au lancement) ;
+    réglages de turbulence actifs en laminaire."""
+    import tomllib
+
+    from microrans.cli import examples_dir
+    cfg = tomllib.loads((examples_dir() / "cavite_re100.toml").read_text(encoding="utf-8"))
+    win.load_cfg(cfg)
+    wf = win.wall_treat_combo.model().item(win.wall_treat_combo.findData("wall_function"))
+    assert not win.wall_treat_combo.isEnabled() and not win.turb_fields[0].isEnabled()
+    win.model_combo.setCurrentIndex(win.model_combo.findData("sst"))
+    assert win.wall_treat_combo.isEnabled() and wf.isEnabled()
+    assert win.cfg["physics"]["model"] == "sst"
+    win.model_combo.setCurrentIndex(win.model_combo.findData("ke"))
+    assert not wf.isEnabled() and "y⁺ ≈ 1" in wf.toolTip()
+
+
+def test_sweep_section_loaded(win):
+    """Audit U13 : [sweep] du cas ignorée par l'interface (exemple de polaire : « Lancer »
+    ne calculait qu'un point, balayage avec les valeurs par défaut -4:12:2)."""
+    import tomllib
+
+    from microrans.cli import examples_dir
+    cfg = tomllib.loads((examples_dir() / "naca0012_polaire.toml").read_text(encoding="utf-8"))
+    win.load_cfg(cfg)
+    assert win.sweep_param.currentData() == "physics.angle_of_attack"
+    assert win.sweep_values.text() == "-4:14:2" and win.sweep_cont.isChecked()
+    assert "Lancer le balayage" in win.run_info.text()
+    win.load_cfg(tomllib.loads((examples_dir() / "cavite_re100.toml").read_text(
+        encoding="utf-8")))
+    assert win.run_info.text() == ""

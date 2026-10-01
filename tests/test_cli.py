@@ -63,3 +63,18 @@ def test_version(capsys):
     with pytest.raises(SystemExit):
         main(["--version"])
     assert capsys.readouterr().out.startswith("microrans ")
+
+
+def test_examples_catalog_is_complete(capsys):
+    """Audit U6 : chaque exemple fourni est classé (titre, durée) ; un nouvel exemple non
+    catalogué apparaîtrait dans « Autres », ce test le signale."""
+    from microrans.catalog import GROUPS, OTHERS, catalog
+    from microrans.cli import examples_dir
+    groups = catalog(examples_dir())
+    assert OTHERS not in [g for g, _ in groups]
+    listed = [stem for _, items in GROUPS for stem, *_ in items]
+    assert len(listed) == len(set(listed)) == len(list(examples_dir().glob("*.toml")))
+    assert all(stem.startswith("mesh_") for stem, *_ in GROUPS[-1][1])
+    assert main(["examples"]) == 0
+    out = capsys.readouterr().out
+    assert "Commencer ici" in out and "cavite_re100" in out

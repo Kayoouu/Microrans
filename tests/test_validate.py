@@ -169,6 +169,10 @@ _BAD = [
     (_set(("physics", "viscosity"), {"model": "power_law", "K": 0.1, "n": -1.0}),
      "[physics.viscosity] n = -1.0 : doit être > 0"),
     (_set(("physics", "viscosity"), {"model": "carreaux"}), "vouliez-vous dire « carreau » ?"),
+    (lambda c: (c["physics"].update(model="ke"), c["solver"].update(
+        wall_treatment="wall_function")), "lois de paroi incompatibles avec le modèle ke"),
+    (lambda c: (c["physics"].update(model="sst_gamma"), c["solver"].update(
+        wall_treatment="wall_function")), "incompatibles avec le modèle sst_gamma"),
     (_set(("boundary", "lid", "omega"), "abc"), "[boundary.lid] omega = 'abc' : nombre attendu"),
     (_set(("boundary", "lid", "q"), "1,5"), "[boundary.lid] q = '1,5' : nombre attendu"),
 ]
@@ -272,3 +276,10 @@ def test_body_at_domain_edge():
     w = check_case(_two_bodies("unstructured", 20.0), mesh_only=True)
     assert w == ["[[bodies]] « b2 » est entièrement hors du domaine de calcul [domain] : il "
                  "sera ignoré."]
+
+
+def test_wall_function_in_laminar_warned():
+    c = _ex("cavite_re100")
+    c["solver"]["wall_treatment"] = "wall_function"
+    assert check_case(c) == ["[solver] wall_treatment = \"wall_function\" : loi de paroi "
+                             "turbulente, sans objet en laminaire (garder \"resolved\")."]

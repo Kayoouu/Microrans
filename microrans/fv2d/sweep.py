@@ -36,6 +36,7 @@ import csv
 import json
 import multiprocessing
 import os
+import re
 from pathlib import Path
 
 import numpy as np
@@ -46,20 +47,49 @@ ALPHA = "physics.angle_of_attack"
 _MESH_KEYS = ("mesh.", "domain.", "bodies")
 
 
+_HOW = ("Écrire début:fin:pas (fin incluse, ex. -4:12:2) ou une liste (ex. 0.5, 1, 2 ; "
+        "avec des virgules décimales : 0,5; 1; 2).")
+
+
+def _value(text: str, spec: str, comma: bool) -> float:
+    t = text.strip().replace(",", ".") if comma else text.strip()
+    try:
+        return float(t)
+    except ValueError:
+        raise ValueError(f"Valeurs « {spec} » : « {text.strip()} » n'est pas un nombre. "
+                         + _HOW) from None
+
+
 def parse_values(spec) -> list[float]:
-    """Liste, « début:fin:pas » (fin incluse) ou « a, b, c »."""
+    """Liste, « début:fin:pas » (fin incluse), « a, b, c » ou « a; b; c » (virgules
+    décimales permises) ; erreurs expliquées (avant : message Python en anglais)."""
     if isinstance(spec, (list, tuple)):
-        return [float(v) for v in spec]
+        return [_value(str(v), str(list(spec)), False) for v in spec]
     spec = str(spec).strip()
+    if not spec:
+        raise ValueError("Aucune valeur. " + _HOW)
     if ":" in spec:
-        a, b, h = (float(x) for x in spec.split(":"))
-        if h == 0 or (b - a) * h < 0:
-            raise ValueError(f"Plage invalide : {spec}")
+        parts = spec.split(":")
+        if len(parts) != 3:
+            raise ValueError(f"Plage « {spec} » : trois nombres attendus, début:fin:pas. "
+                             + _HOW)
+        a, b, h = (_value(x, spec, True) for x in parts)
+        if h == 0:
+            raise ValueError(f"Plage « {spec} » : pas nul.")
+        if (b - a) * h < 0:
+            raise ValueError(f"Plage « {spec} » : le pas {h:g} ne mène pas de {a:g} à {b:g} "
+                             "(plage décroissante : pas négatif).")
         n = int(np.floor((b - a) / h + 1e-9)) + 1
         if n > 10000:
-            raise ValueError(f"Plage {spec} : {n} points (maximum 10 000).")
+            raise ValueError(f"Plage « {spec} » : {n} points (maximum 10 000).")
         return [round(a + i * h, 12) for i in range(n)]
-    return [float(x) for x in spec.replace(";", ",").split(",") if x.strip()]
+    out = []
+    for part in spec.split(";"):
+        if ";" in spec and re.fullmatch(r"\s*[+-]?\d+,\d+([eE][+-]?\d+)?\s*", part):
+            out.append(_value(part, spec, True))      # « 0,5; 1 » : virgule décimale
+        else:
+            out += [_value(x, spec, False) for x in part.split(",") if x.strip()]
+    return out
 
 
 def set_key(cfg: dict, key: str, value):

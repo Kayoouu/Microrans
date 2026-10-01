@@ -508,7 +508,8 @@ _MODE = {"unsteady": "transient", "instationnaire": "transient", "transitoire": 
          "urans": "transient", "stationnaire": "steady", "rans": "steady"}
 
 
-def _check_values(cfg: dict, kind: str, mesh_type: str, mesh_only: bool, errors: list):
+def _check_values(cfg: dict, kind: str, mesh_type: str, mesh_only: bool, errors: list,
+                  warns: list | None = None):
     V = _Values(errors)
     m = cfg.get("mesh")
     if m is None:
@@ -583,11 +584,13 @@ def _check_values(cfg: dict, kind: str, mesh_type: str, mesh_only: bool, errors:
                 V.num("physics.viscosity", visc, k, ge=0)
         for k in ("reference_velocity", "reference_length", "reference_area"):
             V.num("physics", ph, k, gt=0)
+        model = "laminar"
         if ph.get("model") is not None:
             from ..models import MODELS, canonical_name
             try:
                 model = canonical_name(str(ph["model"]))
             except ValueError as exc:
+                model = None
                 errors.append(f"[physics] model : {exc}")
             else:
                 import inspect
@@ -600,6 +603,16 @@ def _check_values(cfg: dict, kind: str, mesh_type: str, mesh_only: bool, errors:
                             errors.append(f"[physics.model_options] {k} : option inconnue "
                                           f"pour le modèle {model} (options : "
                                           f"{', '.join(ok) or 'aucune'}).")
+        if sc.get("wall_treatment") == "wall_function":   # avant : refus au lancement
+            if model in ("ke", "sst_gamma"):
+                errors.append(f"[solver] wall_treatment = \"wall_function\" : lois de paroi "
+                              f"incompatibles avec le modèle {model} (" + (
+                                  "k-ε bas-Reynolds" if model == "ke" else
+                                  "la couche limite laminaire doit être résolue")
+                              + ", y⁺ ≈ 1) : garder \"resolved\", ou SA, k-ω, SST.")
+            elif model == "laminar" and warns is not None:
+                warns.append("[solver] wall_treatment = \"wall_function\" : loi de paroi "
+                             "turbulente, sans objet en laminaire (garder \"resolved\").")
         V.vec2("physics", ph, "body_force")
     else:
         fl = cfg.get("flow") if isinstance(cfg.get("flow"), dict) else {}
@@ -824,7 +837,7 @@ def check_case(cfg: dict, mesh_only: bool = False, values: bool = True) -> list[
             if not (k in ("domain", "bodies") and mesh_type
                     and mesh_type not in schema.keys[k].types)}, schema, [])
     if values and not c.errors:                   # structure lisible : valeurs
-        _check_values(cfg, kind, mesh_type, mesh_only, c.errors)
+        _check_values(cfg, kind, mesh_type, mesh_only, c.errors, c.warnings)
         big = _size_warning(cfg.get("mesh"), mesh_type) if isinstance(cfg.get("mesh"),
                                                                       dict) else None
         if big:

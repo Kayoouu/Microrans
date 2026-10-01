@@ -334,12 +334,14 @@ def cmd_bench(args) -> int:
 
 
 def cmd_examples(args) -> int:
+    from .catalog import catalog
     d = examples_dir()
-    print(f"Exemples fournis ({d}) :")
-    for f in sorted(d.glob("*.toml")):
-        first = f.read_text(encoding="utf-8").splitlines()[0].lstrip("# ").strip()
-        print(f"  {f.stem:28s} {first}")
-    print("Lancer : microrans run2d <nom>   (ou microrans mesh <nom> pour mesh_*)")
+    print(f"Exemples fournis ({d}) ; durée : ordre de grandeur, variable selon la machine.")
+    for group, rows in catalog(d):
+        print(f"\n{group}")
+        for f, title, dur in rows:
+            print(f"  {f.stem:36s} {dur:>8s}  {title}")
+    print("\nLancer : microrans run2d <nom>   (maillage seul : microrans mesh <nom>)")
     return 0
 
 

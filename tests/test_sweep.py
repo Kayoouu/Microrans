@@ -173,3 +173,21 @@ def test_pitching_moment_sign_nose_up_positive(tmp_path):
     cl, cm = s["airfoil"]["Cl"], s["airfoil"]["Cm"]
     assert cl > 0.1
     assert cm == pytest.approx(-cl / 4, rel=0.15)
+
+
+@pytest.mark.parametrize("text,expected", [
+    ("0 à 4", "« 0 à 4 » n'est pas un nombre. Écrire début:fin:pas"),
+    ("0:4", "trois nombres attendus, début:fin:pas"),
+    ("0:10:-1", "le pas -1 ne mène pas de 0 à 10"),
+    ("0:4:0", "pas nul"),
+    ("", "Aucune valeur"),
+])
+def test_parse_values_errors_explained(text, expected):
+    """Audit U10 : « could not convert string to float » en anglais."""
+    with pytest.raises(ValueError, match=expected):
+        parse_values(text)
+
+
+def test_parse_values_decimal_comma():
+    assert parse_values("0,5; 1; 1,5") == [0.5, 1.0, 1.5]
+    assert parse_values("0:1:0,5") == [0.0, 0.5, 1.0]

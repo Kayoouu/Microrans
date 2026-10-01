@@ -8,6 +8,7 @@ permet d'éditer ce TOML (fonctions avancées : maillage multi-blocs, raffinemen
 from __future__ import annotations
 
 import copy
+import html
 import json
 import os
 import re
@@ -22,9 +23,11 @@ from PySide6.QtWidgets import (QApplication, QCheckBox, QFileDialog, QFormLayout
                                QHeaderView, QLabel, QListWidget, QListWidgetItem, QMainWindow,
                                QMessageBox, QPlainTextEdit, QProgressBar, QPushButton,
                                QScrollArea, QSpinBox, QSplitter, QStackedWidget, QTableWidget,
-                               QTableWidgetItem, QTabWidget, QVBoxLayout, QWidget)
+                               QTableWidgetItem, QTabWidget, QTreeWidget, QTreeWidgetItem,
+                               QVBoxLayout, QWidget)
 
 from .. import __version__
+from ..catalog import catalog, header
 from ..cli import examples_dir
 from ..fv2d.compressible import COMP_BC_TYPES
 from ..fv2d.solver import BC_TYPES, TIME_SCHEMES
@@ -168,7 +171,7 @@ def _note(text):
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle(f"{APP_NAME} {__version__} — RANS/URANS 1D-2D")
+        self.setWindowTitle(f"{APP_NAME} {__version__} — écoulements 2D et canal 1D")
         self.resize(1400, 860)
         apply_plot_style()
         self.cfg = copy.deepcopy(DEFAULT_CASE)
@@ -279,34 +282,67 @@ class MainWindow(QMainWindow):
         h.addAction(a)
         a = QAction("À propos", self)
         a.triggered.connect(lambda: QMessageBox.about(
-            self, "À propos", f"<b>{APP_NAME} {__version__}</b><br>Solveur RANS/URANS 1D et 2D "
-            "(volumes finis) avec mailleur intégré.<br>Modèles : Spalart-Allmaras, k-ε, k-ω, "
-            "k-ω SST.<br>Code libre, résultats vérifiés : voir le README."))
+            self, "À propos", f"<b>{APP_NAME} {__version__}</b> — écoulements 2D en volumes "
+            "finis, mailleur intégré, et canal turbulent 1D.<br><br>"
+            "<b>Incompressible</b> : laminaire ou turbulent (Spalart-Allmaras, k-ε, k-ω, k-ω "
+            "SST, transition SST-γ), stationnaire (SIMPLE, SIMPLEC, couplé) ou instationnaire ; "
+            "lois de paroi, thermique (Boussinesq), scalaires transportés, fluides non "
+            "newtoniens, zones poreuses, disques actuateurs, axisymétrique avec rotation.<br>"
+            "<b>Compressible</b> : Euler et Navier-Stokes laminaire (flux de Roe ou HLLC, "
+            "ordre 2), réglé dans l'onglet « Fichier de cas ».<br><br>"
+            "Code libre (licence MIT). Écarts mesurés aux références : voir le README."))
         h.addAction(a)
 
     # ------------------------------------------------------------------ pages
     def _page_home(self):
         w = QWidget()
         lay = QVBoxLayout(w)
-        title = QLabel(f"<h2>{APP_NAME}</h2><p>Simulation d'écoulements turbulents "
-                       "RANS / URANS en 1D (canal) et 2D (volumes finis, maillages "
-                       "structurés, non structurés ou hybrides).</p>")
+        title = QLabel(f"<h2>{APP_NAME}</h2><p>Simulation d'écoulements en 2D (volumes "
+                       "finis) : laminaires ou turbulents (RANS / URANS), thermique, "
+                       "scalaires, fluides non newtoniens, compressible ; et canal turbulent "
+                       "1D pour comparer les modèles.</p>")
         title.setWordWrap(True)
         lay.addWidget(title)
-        lay.addWidget(_note("Pour débuter : double-cliquez sur un exemple, puis suivez les "
-                            "étapes 2 à 7 dans la colonne de gauche. « 6. Calcul » lance la "
-                            "simulation ; « 7. Résultats » affiche les champs et les efforts."))
-        self.examples = QListWidget()
-        for f in sorted(examples_dir().glob("*.toml")):
-            first = f.read_text(encoding="utf-8").splitlines()[0].lstrip("# ").strip()
-            it = QListWidgetItem(f"{f.stem}\n    {first}")
-            it.setData(Qt.UserRole, str(f))
-            self.examples.addItem(it)
-        self.examples.itemDoubleClicked.connect(
-            lambda it: self.open_case(Path(it.data(Qt.UserRole))))
-        lay.addWidget(QLabel("<b>Exemples</b> (double-clic pour ouvrir)"))
+        lay.addWidget(_note("Pour débuter : ouvrez un exemple de « Commencer ici », puis "
+                            "suivez les étapes de la colonne de gauche : « 2. Maillage » "
+                            "(Générer le maillage), « 6. Calcul » (Lancer), « 7. Résultats »."))
+        # exemples classés, durée indiquée (avant : 22 noms de fichiers en vrac, maillages
+        # seuls mélangés aux calculs)
+        self.examples = QTreeWidget()
+        self.examples.setColumnCount(2)
+        self.examples.setHeaderLabels(["Exemple", "Durée"])
+        self.examples.headerItem().setToolTip(1, "Ordre de grandeur mesuré (maillage compris) ; "
+                                                 "variable selon la machine.")
+        self.examples.setRootIsDecorated(False)
+        h = self.examples.header()
+        h.setSectionResizeMode(0, QHeaderView.Stretch)
+        h.setSectionResizeMode(1, QHeaderView.ResizeToContents)
+        h.setStretchLastSection(False)
+        bold = QFont()
+        bold.setBold(True)
+        for group, rows in catalog(examples_dir()):
+            g = QTreeWidgetItem([group])
+            g.setFont(0, bold)
+            g.setFlags(Qt.ItemIsEnabled)                     # titre de groupe : pas un cas
+            self.examples.addTopLevelItem(g)
+            for f, text, dur in rows:
+                it = QTreeWidgetItem([text, dur])
+                it.setData(0, Qt.UserRole, str(f))
+                it.setToolTip(0, f.name)
+                it.setTextAlignment(1, Qt.AlignRight | Qt.AlignVCenter)
+                g.addChild(it)
+            g.setExpanded(True)
+        self.examples.itemDoubleClicked.connect(lambda it, _c: self._open_example(it))
+        self.examples.currentItemChanged.connect(self._example_selected)
+        lay.addWidget(QLabel("<b>Exemples</b>"))
         lay.addWidget(self.examples, 1)
+        self.example_info = _note("Sélectionnez un exemple pour voir sa description.")
+        lay.addWidget(self.example_info)
         row = QHBoxLayout()
+        self.example_open = QPushButton("Ouvrir l'exemple")
+        self.example_open.setEnabled(False)
+        self.example_open.clicked.connect(lambda: self._open_example(self.examples.currentItem()))
+        row.addWidget(self.example_open)
         for text, fn in [("Nouveau cas 2D", self.new_case), ("Ouvrir un cas…", self.open_case),
                          ("Canal 1D", lambda: self.nav.setCurrentRow(1))]:
             b = QPushButton(text)
@@ -314,6 +350,22 @@ class MainWindow(QMainWindow):
             row.addWidget(b)
         lay.addLayout(row)
         return w
+
+    def _example_selected(self, it, _prev=None):
+        path = it.data(0, Qt.UserRole) if it is not None else None
+        self.example_open.setEnabled(bool(path))
+        if path:
+            text = header(Path(path), commands=False)
+            if len(text) > 500:                     # suite : onglet « Fichier de cas »
+                cut = text.rfind(". ", 0, 500)
+                text = text[:cut + 1 if cut > 0 else 500] + " […]"
+            self.example_info.setText(f"<b>{html.escape(Path(path).name)}</b> — "
+                                      f"{html.escape(text)}")
+
+    def _open_example(self, it):
+        path = it.data(0, Qt.UserRole) if it is not None else None
+        if path:
+            self.open_case(Path(path))
 
     def _page_1d(self):
         w = QWidget()
@@ -533,15 +585,19 @@ class MainWindow(QMainWindow):
         lay.addWidget(box)
         box, f = _form("Turbulence")
         self.model_combo = B.combo(("physics", "model"), MODEL_LABELS, "laminar")
+        self.model_combo.currentIndexChanged.connect(self._turb_model_changed)
         f.addRow("Modèle", self.model_combo)
-        f.addRow("Intensité turbulente amont", B.sci(("turbulence", "intensity"), 0.001))
-        f.addRow("Rapport ν_t/ν amont", B.sci(("turbulence", "viscosity_ratio"), 0.1))
-        f.addRow("Traitement pariétal", B.combo(("solver", "wall_treatment"), [
+        self.turb_fields = [B.sci(("turbulence", "intensity"), 0.001),
+                            B.sci(("turbulence", "viscosity_ratio"), 0.1)]
+        f.addRow("Intensité turbulente amont", self.turb_fields[0])
+        f.addRow("Rapport ν_t/ν amont", self.turb_fields[1])
+        self.wall_treat_combo = B.combo(("solver", "wall_treatment"), [
             ("resolved", "Résolu jusqu'à la paroi (y⁺ ≈ 1)"),
-            ("wall_function", "Lois de paroi, Spalding (y⁺ ≈ 30 à 300)")], "resolved"))
+            ("wall_function", "Lois de paroi, Spalding (y⁺ ≈ 30 à 300)")], "resolved")
+        f.addRow("Traitement pariétal", self.wall_treat_combo)
         f.addRow(_note("SA : ν̃ = 3ν en amont (recommandation NASA TMR). Lois de paroi : SA, "
-                       "k-ω, SST (pas le k-ε bas-Reynolds) ; maillages 3 à 10× plus légers "
-                       "près des parois, précision ~2-5 % (voir README)."))
+                       "k-ω, SST (ni le k-ε bas-Reynolds, ni la transition) ; maillages 3 à "
+                       "10× plus légers près des parois, précision ~2-5 % (voir README)."))
         lay.addWidget(box)
         self.box_energy, f = _form("Thermique (équation de l'énergie, Boussinesq)")
         self.energy_on = self._check("Résoudre la température", False)
@@ -664,9 +720,12 @@ class MainWindow(QMainWindow):
         lay = QVBoxLayout(w)
         B = self.binder
         box, f = _form("Type de calcul")
-        self.mode_combo = B.combo(("solver", "mode"), [("steady", "Stationnaire (RANS)"),
-                                                       ("transient", "Instationnaire (URANS)")],
+        self.mode_combo = B.combo(("solver", "mode"), [("steady", "Stationnaire"),
+                                                       ("transient", "Instationnaire")],
                                   "steady")
+        self.mode_combo.setToolTip("En turbulent : stationnaire = RANS, instationnaire = URANS. "
+                                   "Instationnaire : sillage oscillant, démarrage, écoulement "
+                                   "pulsé…")
         self.mode_combo.currentIndexChanged.connect(self._mode_changed)
         f.addRow(self.mode_combo)
         lay.addWidget(box)
@@ -786,7 +845,8 @@ class MainWindow(QMainWindow):
                                   ("physics.reynolds", "Nombre de Reynolds"),
                                   ("physics.nu", "Viscosité ν")])
         self.sweep_values = QLineEdit_("-4:12:2")
-        self.sweep_values.setToolTip("début:fin:pas (fin incluse) ou liste a, b, c")
+        self.sweep_values.setToolTip("début:fin:pas (fin incluse, ex. -4:12:2) ou liste "
+                                     "a, b, c (virgules décimales : a; b; c)")
         self.sweep_cont = QCheckBox("Continuation : chaque point part du précédent")
         self.sweep_cont.setChecked(True)
         self.sweep_jobs = QSpinBox()
@@ -856,6 +916,8 @@ class MainWindow(QMainWindow):
         lay.addWidget(b)
         self.summary_view = QPlainTextEdit()
         self.summary_view.setReadOnly(True)
+        self.summary_view.setFont(QFont("Monospace"))         # tableau des efforts aligné
+        self.summary_view.setLineWrapMode(QPlainTextEdit.WidgetWidth)
         self.summary_view.setMinimumHeight(180)
         lay.addWidget(QLabel("<b>Résumé</b>"))
         lay.addWidget(self.summary_view)
@@ -910,13 +972,43 @@ class MainWindow(QMainWindow):
         for _, wdg in self.energy_fields:
             wdg.setEnabled("energy" in cfg)
         self._visc_changed()
+        self._turb_model_changed()
         self._fill_scalar_table()
         self._fill_porous_table()
         self._fill_disk_table()
         self._fill_bc_table()
         self._show_compressible()
+        self._load_sweep()
         self._syncing = False
         self._refresh_toml()
+
+    def _load_sweep(self):
+        """[sweep] du cas → page Calcul (avant : ignorée ; l'exemple de polaire ne lançait
+        qu'un point avec « Lancer », et le balayage gardait les valeurs par défaut)."""
+        sw = self.cfg.get("sweep")
+        if not isinstance(sw, dict):
+            self.run_info.setText("")
+            return
+        key = sw.get("parameter")
+        if key:
+            if self.sweep_param.findData(key) < 0:
+                self.sweep_param.addItem(str(key), key)
+            set_combo(self.sweep_param, key)
+        vals = sw.get("values", sw.get("range"))
+
+        def fmt(v):
+            return f"{v:g}" if isinstance(v, (int, float)) else str(v)
+        if isinstance(vals, (list, tuple)):
+            sep = ":" if "values" not in sw and len(vals) == 3 else ", "
+            self.sweep_values.setText(sep.join(fmt(v) for v in vals))
+        elif vals is not None:
+            self.sweep_values.setText(str(vals))
+        if "continuation" in sw:
+            self.sweep_cont.setChecked(bool(sw["continuation"]))
+        if isinstance(sw.get("jobs"), int):
+            self.sweep_jobs.setValue(sw["jobs"])
+        self.run_info.setText("Ce cas définit un balayage ([sweep]) : « Lancer le balayage » "
+                              "pour l'ensemble des points ; « Lancer » ne calcule qu'un point.")
 
     def _compressible(self) -> bool:
         return bool(self.cfg.get("physics", {}).get("compressible", False))
@@ -1333,6 +1425,20 @@ class MainWindow(QMainWindow):
         else:
             self.cfg.pop("energy", None)
         self._toml_timer.start()
+
+    def _turb_model_changed(self, *_):
+        """Laminaire : réglages de turbulence sans objet, grisés ; k-ε bas-Reynolds et
+        transition : lois de paroi impossibles (avant : refus au lancement seulement)."""
+        model = self.model_combo.currentData() or "laminar"
+        for w in self.turb_fields + [self.wall_treat_combo]:
+            w.setEnabled(model != "laminar")
+        item = self.wall_treat_combo.model().item(self.wall_treat_combo.findData("wall_function"))
+        no_wf = model in ("ke", "sst_gamma")
+        item.setEnabled(not no_wf)
+        item.setToolTip("Impossible avec ce modèle : la couche limite doit être résolue "
+                        "(y⁺ ≈ 1)." if no_wf else "")
+        if not self._syncing:
+            self._form_changed()
 
     def _visc_changed(self, *_):
         model = self.visc_combo.currentData() or "newtonian"
@@ -1866,10 +1972,16 @@ class MainWindow(QMainWindow):
         try:
             values = parse_values(self.sweep_values.text())
         except ValueError as exc:
-            QMessageBox.warning(self, "Valeurs", f"Valeurs invalides : {exc}")
+            QMessageBox.warning(self, "Valeurs du balayage à corriger", str(exc))
             return
         if not values:
             return
+        text = self.sweep_values.text().strip()
+        sw = {"parameter": key, "continuation": self.sweep_cont.isChecked()}
+        sw.update({"range": text} if ":" in text else {"values": values})
+        if self.sweep_jobs.value() > 1:
+            sw["jobs"] = self.sweep_jobs.value()
+        self.cfg["sweep"] = sw                      # réglages gardés avec le cas
         self._store_forms()
         cfg = copy.deepcopy(self.cfg)
         cfg.setdefault("output", {})["directory"] = str(self.out_dir())
@@ -2061,8 +2173,8 @@ class MainWindow(QMainWindow):
         summary, solver = res
         self.summary, self.solver = summary, solver
         self.mesh = solver.mesh
-        text = json.dumps(summary, indent=2, ensure_ascii=False)
-        self.summary_view.setPlainText(text)
+        from ..fv2d.report import summary_text
+        self.summary_view.setPlainText(summary_text(summary))   # avant : JSON brut
         fields = solver.fields()
         self.field_combo.clear()
         first = ["U_mag", "Ux", "Uy", "p", "vorticity"]

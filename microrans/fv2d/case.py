@@ -318,6 +318,8 @@ def run_case(cfg: dict, base_dir=".", out_dir=None, verbose=True, plot=True, cal
         hist = solver.series_restart + solver.run_transient(
             sc["dt"], sc["t_end"], verbose=verbose, log_every=sc.get("log_every", 100),
             probes=probes, callback=cb)
+        summary["time"] = float(solver.time)       # temps simulé (arrêt anticipé compris)
+        summary["steps"] = len(hist)
         t = np.array([h["time"] for h in hist])
         for name in (force_patches if len(hist) > 2 else []):
             cd = np.array([h[f"Cd_{name}"] for h in hist])

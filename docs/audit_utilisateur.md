@@ -17,6 +17,15 @@ brute (13 avant), 4 acceptées (17 avant), toutes légitimes, 44 erreurs claires
 avertissements ; combinaisons de l'interface : 26 / 115 en erreur (41 avant), toutes des
 fautes volontaires désormais expliquées.
 
+Lot 3 (interface) : U1 à U10 corrigés, plus trois défauts trouvés en chemin (U11 :
+l'interface écrivait ν = 0.01 dans un cas non newtonien qui n'en donnait pas ; U12 :
+valeurs arrondies à 6 chiffres réécrites dans le cas ; U13 : section [sweep] ignorée) et
+un défaut du mailleur hybride (corps superposés ou trop proches : maillage faux sans
+erreur, voir « Corps superposés »). Vérifié sur les 22 exemples : chargés puis
+enregistrés par l'interface, ils ne reçoivent plus que des valeurs égales aux défauts du
+solveur. Durées des exemples remesurées un calcul à la fois (les campagnes 1 et 2
+lançaient 4 calculs en parallèle sur 4 cœurs : durées 2 à 6 fois trop longues).
+
 L'interface est pilotée hors écran en simulant les actions de l'utilisateur (choix dans
 les listes, frappe dans les champs) ; les boîtes de dialogue sont interceptées et
 enregistrées.
@@ -62,13 +71,14 @@ reprise introuvable ; TOML mal formé (ligne et colonne).
 | U3 | Mode « Nombre de Reynolds » : le champ ν grisé affiche une valeur périmée (0.01 au lieu de 0.05 pour Re = 20). | corrigé : le champ grisé affiche la valeur déduite (ν = U L / Re, ou Re = U L / ν dans l'autre mode) et suit les modifications ; changer de mode garde la même viscosité |
 | U4 | Non newtonien : 9 paramètres affichés « défaut » alors qu'aucun défaut n'existe → erreur « paramètres manquants » au lancement. | corrigé : seuls les paramètres de la loi choisie sont affichés, marqués « obligatoire » (ν min / ν max : « auto », défaut expliqué en bulle d'aide), formule de la loi sous la liste ; paramètres manquants ou négatifs et loi mal orthographiée signalés avant le lancement (aussi en ligne de commande) |
 | U5 | Maillage en O : « Ajouter » crée un 2e corps interdit ; tout corps ajouté est posé exactement sur le premier. | corrigé : « Ajouter » grisé en maillage en O (bulle d'aide : choisir non structuré ou hybride) ; nouveau cercle placé à droite des corps existants, de taille comparable (maillage hybride réel vérifié : 3 corps, frontières propres) ; vérification avant maillage, en interface et en ligne de commande, voir « Corps superposés » ci-dessous |
-| U6 | Accueil : 22 exemples non classés (noms de fichiers, descriptions coupées), exemples de maillage seul mélangés aux calculs, rien pour dire par où commencer. | à faire |
-| U7 | Résumé des résultats en JSON brut (16 chiffres). | à faire |
-| U8 | Textes périmés : accueil et « À propos » (« RANS/URANS », 4 modèles ; ni compressible, ni couplé, ni transition) ; « Stationnaire (RANS) » même en laminaire. | à faire |
-| U9 | Lois de paroi proposées avec k-ε et transition : refus seulement au lancement. | à faire |
-| U10 | Balayage : valeurs mal saisies (« 0 à 4 ») → message Python en anglais (« could not convert string to float »). | à faire |
+| U6 | Accueil : 22 exemples non classés (noms de fichiers, descriptions coupées), exemples de maillage seul mélangés aux calculs, rien pour dire par où commencer. | corrigé : exemples classés (« Commencer ici », laminaire, turbulence, thermique, fluides particuliers, compressible, maillage seul), titre lisible et durée mesurée (un calcul à la fois) ; description complète de l'exemple choisi ; bouton « Ouvrir l'exemple » (le double-clic seul n'était pas découvrable) ; même classement dans `microrans examples` ; un test signale tout nouvel exemple non classé |
+| U7 | Résumé des résultats en JSON brut (16 chiffres). | corrigé : résumé en phrases (convergence, Re, tableau Cd / Cl / Cm / y⁺ par paroi, part pression / frottement, Strouhal, Nusselt, viscosité, zones poreuses, disques, scalaires, sondes), 4 chiffres, bruit d'arrondi affiché 0 ; toute clé non prévue reste listée ; le temps simulé est maintenant écrit dans summary.json en instationnaire |
+| U8 | Textes périmés : accueil et « À propos » (« RANS/URANS », 4 modèles ; ni compressible, ni couplé, ni transition) ; « Stationnaire (RANS) » même en laminaire. | corrigé : accueil, titre de fenêtre et « À propos » décrivent l'ensemble (modèles, algorithmes, thermique, scalaires, non newtonien, poreux, disques, axisymétrique, compressible Euler / Navier-Stokes laminaire) ; « Stationnaire » / « Instationnaire » (RANS / URANS expliqués en bulle d'aide) |
+| U9 | Lois de paroi proposées avec k-ε et transition : refus seulement au lancement. | corrigé : option grisée avec k-ε et transition (raison en bulle d'aide) ; en laminaire, réglages de turbulence grisés ; combinaison refusée avant le lancement (aussi en ligne de commande) ; lois de paroi en laminaire signalées (sans objet : écart mesuré 4.5·10⁻⁵ sur la cavité) |
+| U10 | Balayage : valeurs mal saisies (« 0 à 4 ») → message Python en anglais (« could not convert string to float »). | corrigé : message en français avec la syntaxe attendue (plage, pas nul, pas de mauvais signe, liste vide) ; virgules décimales permises (« 0:1:0,5 », « 0,5; 1; 1,5 ») |
 | U11 | *(trouvé pendant le lot 3)* Fluide non newtonien sans ν dans le cas (ν de référence tiré de la loi, ex. sang ≈ 3.6·10⁻⁵ m²/s) : l'interface affichait ν = 0.01 et l'**écrivait dans le cas** à la première modification, ~280 × la valeur de la loi (Re affiché, diffusivité thermique α = ν/Pr). | corrigé : champ ν vide permis, « auto : ν de la loi à γ̇ = U/L » ; vérifié sur les 22 exemples que l'interface n'écrit plus que des valeurs égales aux défauts du solveur |
 | U12 | *(trouvé pendant le lot 3)* Champs numériques arrondis à 6 chiffres (ν = 1/550 → 0.00181818, t_end = 0.000632455532 → 0.000632456) puis réécrits dans le cas. Écart ~10⁻⁶, sans effet visible, mais valeur modifiée sans action de l'utilisateur. | corrigé : affichage court quand il est exact (3000, 0.1), sinon tous les chiffres |
+| U13 | *(trouvé pendant le lot 3)* Section [sweep] du cas ignorée par l'interface : l'exemple de polaire ouvert puis « Lancer » ne calculait qu'un point ; le balayage gardait ses valeurs par défaut (-4:12:2 au lieu de -4:14:2). | corrigé : [sweep] chargé dans la page Calcul (paramètre, valeurs, continuation, calculs en parallèle) avec une note « Lancer le balayage » ; réglages du balayage réécrits dans le cas au lancement |
 
 ## L. Ligne de commande
 
