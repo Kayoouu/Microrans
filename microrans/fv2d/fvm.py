@@ -1,4 +1,5 @@
-"""Opérateurs volumes finis 2D colocalisés (maillages non structurés polygonaux).
+"""Opérateurs volumes finis colocalisés, 2D (polygones) et 3D (polyèdres : mesh3d), écrits
+face par face : la dimension n'intervient que par le nombre de composantes des vecteurs.
 
 Conventions (proches d'OpenFOAM) :
 - équation d'une cellule P :  Σ_f F_f φ_f − Σ_f Γ_f (∇φ)_f·S_f = S_exp V − D_imp V φ_P (+ temps)
@@ -27,7 +28,10 @@ class FVM:
         from ..backend import get_backend
         m = mesh
         self.mesh = m
+        self.dim = int(getattr(m, "dim", m.Sf.shape[1]))
         self.axisymmetric = bool(axisymmetric)
+        if self.axisymmetric and self.dim != 2:
+            raise ValueError("Axisymétrique : maillage 2D seulement (le maillage est en 3D).")
         self.backend = be = get_backend(backend)
         self.xp = xp = be.xp
         self.nc, self.ni, self.nf = m.n_cells, m.n_internal, m.n_faces
@@ -58,7 +62,9 @@ class FVM:
             g, kvec = g * rf[:ni], kvec * rf[:ni, None]
         self.total_area = float(np.sum(magSf))
         # solveurs linéaires (hiérarchie AMG bâtie sur le graphe CPU, poids |S|²/(d·S))
-        self.lin = LinearSolver(self.nc, P, N, g)
+        # LU creuse : remplissage bien plus fort en 3D (mesuré, laplacien, rtol 1e-6 : LU
+        # 0.12 s contre AMG 0.004 s à 4 096 cellules, 7 s contre 0.04 s à 32 768)
+        self.lin = LinearSolver(self.nc, P, N, g, direct_max=20000 if self.dim == 2 else 2000)
         # tableaux transférés sur le matériel de calcul (CPU : aucune copie)
         A = be.asarray
         self.P, self.N, self.Pb = A(P), A(N), A(m.owner[ni:])
@@ -140,7 +146,7 @@ class FVM:
     def grad(self, phi, phi_b):
         """Gradient de Green-Gauss (interpolation linéaire, valeurs frontières imposées)."""
         if self.fast and phi.dtype == np.float64:
-            g = np.empty((self.nc, 2))
+            g = np.empty((self.nc, self.dim))
             ptr, fac, sgn = self._k_all
             self._k.green_gauss(ptr, fac, sgn, self.w, self.P, self.N,
                                 np.ascontiguousarray(phi), np.ascontiguousarray(phi_b, dtype=float),
@@ -149,9 +155,8 @@ class FVM:
                 g = g - phi[:, None] * self._side
             return g
         pf = self.interp(phi)
-        gx = self.sum_faces(pf * self.Si[:, 0], phi_b * self.Sb[:, 0])
-        gy = self.sum_faces(pf * self.Si[:, 1], phi_b * self.Sb[:, 1])
-        g = self.xp.stack([gx, gy], axis=1) / self.V[:, None]
+        g = self.xp.stack([self.sum_faces(pf * self.Si[:, k], phi_b * self.Sb[:, k])
+                           for k in range(self.dim)], axis=1) / self.V[:, None]
         if self.axisymmetric:
             g = g - phi[:, None] * self._side
         return g
@@ -190,7 +195,7 @@ class FVM:
         pos = np.arange(len(cs)) - start[cs]
         k = int(counts.max()) + 1                                # + la cellule elle-même
         idx = np.tile(np.arange(nc)[:, None], (1, k))
-        Rk = np.zeros((nc, k, 2))
+        Rk = np.zeros((nc, k, self.dim))
         idx[cs, pos] = other[order]
         Rk[cs, pos] = R[order]
         A = self.backend.asarray

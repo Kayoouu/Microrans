@@ -102,23 +102,24 @@ def facesum(ptr, faces, sign, fi, fb, ni, out):
 
 @njit(parallel=True, cache=True)
 def green_gauss(ptr, faces, sign, w, P, N, phi, phib, Si, Sb, V, ni, out):
-    """Gradient de Green-Gauss fusionné (interpolation linéaire aux faces internes)."""
+    """Gradient de Green-Gauss fusionné (interpolation linéaire aux faces internes), 2D ou
+    3D (nombre de colonnes de out)."""
+    nd = out.shape[1]
     for c in prange(ptr.shape[0] - 1):
-        gx = 0.0
-        gy = 0.0
+        for j in range(nd):
+            out[c, j] = 0.0
         for k in range(ptr[c], ptr[c + 1]):
             f = faces[k]
             if f < ni:
-                pf = w[f] * phi[P[f]] + (1.0 - w[f]) * phi[N[f]]
-                s = sign[k] * pf
-                gx += s * Si[f, 0]
-                gy += s * Si[f, 1]
+                s = sign[k] * (w[f] * phi[P[f]] + (1.0 - w[f]) * phi[N[f]])
+                for j in range(nd):
+                    out[c, j] += s * Si[f, j]
             else:
                 b = f - ni
-                gx += phib[b] * Sb[b, 0]
-                gy += phib[b] * Sb[b, 1]
-        out[c, 0] = gx / V[c]
-        out[c, 1] = gy / V[c]
+                for j in range(nd):
+                    out[c, j] += phib[b] * Sb[b, j]
+        for j in range(nd):
+            out[c, j] /= V[c]
 
 
 @njit(parallel=True, cache=True)
