@@ -1,24 +1,24 @@
 """Vérification du fichier de cas (fv2d/validate.py) : fautes de frappe signalées avec une
 suggestion, aucun faux avertissement sur les exemples fournis (audit utilisateur C4)."""
 import copy
-import tomllib
 from dataclasses import fields
 from pathlib import Path
 
 import pytest
 
 from microrans.fv2d.validate import Key, Table, _solver_table, check_case
+from microrans.tomlio import loads as toml_loads
 
 EX = Path(__file__).resolve().parent.parent / "microrans" / "examples"
 
 
 def _ex(name):
-    return tomllib.loads((EX / f"{name}.toml").read_text(encoding="utf-8"))
+    return toml_loads((EX / f"{name}.toml").read_text(encoding="utf-8"))
 
 
 @pytest.mark.parametrize("path", sorted(EX.glob("*.toml")), ids=lambda p: p.stem)
 def test_examples_have_no_warning(path):
-    cfg = tomllib.loads(path.read_text(encoding="utf-8"))
+    cfg = toml_loads(path.read_text(encoding="utf-8"))
     assert check_case(cfg, mesh_only=True) == []
     if path.stem.startswith("mesh_"):               # audit M4 : message immédiat
         with pytest.raises(ValueError, match="seulement un maillage"):

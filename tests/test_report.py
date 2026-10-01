@@ -77,12 +77,12 @@ def test_mesh_quality_shown_at_run_start():
 def test_yplus_too_high_for_resolved_wall_flagged(tmp_path):
     # audit D2 : plaque plane SST, 1re maille à y⁺ ≈ 50 en traitement résolu : Cd 0.00144 au
     # lieu de 0.0055, affiché « convergé » sans autre signe
-    import tomllib
+    from microrans.tomlio import loads as toml_loads
     from pathlib import Path
 
     from microrans.fv2d.case import run_case
     ex = Path(__file__).parents[1] / "microrans" / "examples"
-    cfg = tomllib.loads((ex / "plaque_plane_loi_de_paroi.toml").read_text(encoding="utf-8"))
+    cfg = toml_loads((ex / "plaque_plane_loi_de_paroi.toml").read_text(encoding="utf-8"))
     cfg["solver"].update(wall_treatment="resolved", max_iter=60)
     s = run_case(cfg, base_dir=ex, out_dir=tmp_path, verbose=False, plot=False)
     assert len(s["warnings"]) == 1 and "sur « plate » avec le traitement résolu" in s["warnings"][0]

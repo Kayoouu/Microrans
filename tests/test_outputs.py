@@ -134,12 +134,12 @@ def test_summary_is_strict_json_when_strouhal_undefined(tmp_path):
     """Audit M8 : calcul instationnaire trop court -> "strouhal": NaN dans summary.json
     (JSON invalide pour d'autres outils). Attendu : null."""
     import json
-    import tomllib
+    from microrans.tomlio import loads as toml_loads
     from pathlib import Path
 
     from microrans.fv2d.case import run_case
     ex = Path(__file__).resolve().parent.parent / "microrans" / "examples" / "cavite_re100.toml"
-    cfg = tomllib.loads(ex.read_text(encoding="utf-8"))
+    cfg = toml_loads(ex.read_text(encoding="utf-8"))
     cfg["mesh"].update(nx=6, ny=6)
     cfg["solver"].update(mode="transient", dt=0.01, t_end=0.05)
     cfg["output"] = {"plots": False, "vtk": False}

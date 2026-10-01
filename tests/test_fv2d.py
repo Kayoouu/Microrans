@@ -216,12 +216,12 @@ def test_pseudo_transient_fine_stretched_channel():
 def test_divergence_reported_with_tips(tmp_path):
     """Audit : une divergence finissait en « Factor is exactly singular » (matrice de
     pression) ; les vitesses démesurées mais finies (~1e50) n'étaient pas détectées."""
-    import tomllib
+    from microrans.tomlio import loads as toml_loads
     from pathlib import Path
 
     from microrans.fv2d.case import run_case
     ex = Path(__file__).resolve().parent.parent / "microrans" / "examples" / "cavite_re100.toml"
-    cfg = tomllib.loads(ex.read_text(encoding="utf-8"))
+    cfg = toml_loads(ex.read_text(encoding="utf-8"))
     cfg["mesh"].update(nx=12, ny=12)
     cfg["physics"]["nu"] = 1e-6
     cfg["solver"].update(max_iter=200, algorithm="SIMPLE", relax_U=1.0, relax_p=1.0)
@@ -234,13 +234,13 @@ def test_divergence_reported_with_tips(tmp_path):
 def test_limited_scheme_acts_on_velocity_and_temperature():
     """linearUpwindLimited était accepté pour U, T et u_θ mais donnait exactement
     linearUpwind (gradient limité non transmis) : écart nul, mesuré sur la cavité."""
-    import tomllib
+    from microrans.tomlio import loads as toml_loads
 
     from microrans.cli import examples_dir
     from microrans.fv2d.case import build_solver
     out = {}
     for sch in ("linearUpwind", "linearUpwindLimited"):
-        c = tomllib.loads((examples_dir() / "convection_naturelle_ra1e5.toml").read_text(
+        c = toml_loads((examples_dir() / "convection_naturelle_ra1e5.toml").read_text(
             encoding="utf-8"))
         c["mesh"].update(nx=16, ny=16)
         c["solver"].update(max_iter=60, convection_U=sch, convection_T=sch)

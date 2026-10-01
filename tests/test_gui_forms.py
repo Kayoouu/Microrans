@@ -327,10 +327,10 @@ def test_bc_table_shows_only_useful_cells(win):
 def test_derived_viscosity_shown(win):
     """Audit U3 : en mode « Nombre de Reynolds », le champ ν grisé affichait 0.01 (valeur
     par défaut) pour Re = 20 ; changer de mode doit garder la même viscosité."""
-    import tomllib
+    from microrans.tomlio import loads as toml_loads
 
     from microrans.cli import examples_dir
-    cfg = tomllib.loads((examples_dir() / "cylindre_re20.toml").read_text(encoding="utf-8"))
+    cfg = toml_loads((examples_dir() / "cylindre_re20.toml").read_text(encoding="utf-8"))
     ph = cfg["physics"]
     assert "reynolds" in ph and "nu" not in ph
     win.load_cfg(cfg)
@@ -348,10 +348,10 @@ def test_derived_viscosity_shown(win):
 def test_non_newtonian_case_keeps_its_reference_viscosity(win):
     """Audit U11 : sans ν dans le cas (loi non newtonienne : ν de référence tiré de la loi),
     l'interface affichait 0.01 et l'écrivait dans le cas à la première modification."""
-    import tomllib
+    from microrans.tomlio import loads as toml_loads
 
     from microrans.cli import examples_dir
-    cfg = tomllib.loads((examples_dir() / "sang_carreau_artere.toml").read_text(
+    cfg = toml_loads((examples_dir() / "sang_carreau_artere.toml").read_text(
         encoding="utf-8"))
     assert "nu" not in cfg["physics"]
     win.load_cfg(cfg)
@@ -374,12 +374,12 @@ def test_form_values_not_rounded(win):
 def test_added_body_does_not_overlap(win):
     """Audit U5 : « Ajouter » posait un cercle de rayon 0.5 en (0, 0), exactement sur le
     cylindre ; en maillage en O, il créait un second corps refusé au maillage."""
-    import tomllib
+    from microrans.tomlio import loads as toml_loads
 
     from microrans.cli import examples_dir
     from microrans.fv2d.validate import check_case
     from microrans.gui.widgets import set_combo
-    cfg = tomllib.loads((examples_dir() / "cylindre_re20.toml").read_text(encoding="utf-8"))
+    cfg = toml_loads((examples_dir() / "cylindre_re20.toml").read_text(encoding="utf-8"))
     win.load_cfg(cfg)
     assert win.cfg["mesh"]["type"] == "ogrid" and not win.body_buttons[0].isEnabled()
     set_combo(win.mesh_type, "hybrid")
@@ -425,10 +425,10 @@ def test_home_examples_grouped(win):
 def test_turbulence_settings_follow_model(win):
     """Audit U9 : lois de paroi proposées avec k-ε et transition (refus au lancement) ;
     réglages de turbulence actifs en laminaire."""
-    import tomllib
+    from microrans.tomlio import loads as toml_loads
 
     from microrans.cli import examples_dir
-    cfg = tomllib.loads((examples_dir() / "cavite_re100.toml").read_text(encoding="utf-8"))
+    cfg = toml_loads((examples_dir() / "cavite_re100.toml").read_text(encoding="utf-8"))
     win.load_cfg(cfg)
     wf = win.wall_treat_combo.model().item(win.wall_treat_combo.findData("wall_function"))
     assert not win.wall_treat_combo.isEnabled() and not win.turb_fields[0].isEnabled()
@@ -442,15 +442,15 @@ def test_turbulence_settings_follow_model(win):
 def test_sweep_section_loaded(win):
     """Audit U13 : [sweep] du cas ignorée par l'interface (exemple de polaire : « Lancer »
     ne calculait qu'un point, balayage avec les valeurs par défaut -4:12:2)."""
-    import tomllib
+    from microrans.tomlio import loads as toml_loads
 
     from microrans.cli import examples_dir
-    cfg = tomllib.loads((examples_dir() / "naca0012_polaire.toml").read_text(encoding="utf-8"))
+    cfg = toml_loads((examples_dir() / "naca0012_polaire.toml").read_text(encoding="utf-8"))
     win.load_cfg(cfg)
     assert win.sweep_param.currentData() == "physics.angle_of_attack"
     assert win.sweep_values.text() == "-4:14:2" and win.sweep_cont.isChecked()
     assert "Lancer le balayage" in win.run_info.text()
-    win.load_cfg(tomllib.loads((examples_dir() / "cavite_re100.toml").read_text(
+    win.load_cfg(toml_loads((examples_dir() / "cavite_re100.toml").read_text(
         encoding="utf-8")))
     assert win.run_info.text() == ""
 
@@ -498,10 +498,10 @@ def test_out_of_list_values_kept(win):
     # avant : convection_U = "linearUpwindLimited" (absent de la liste) devenait linearUpwind
     # en silence ; une valeur hors liste est désormais gardée (et vérifiée avant le calcul)
     import copy
-    import tomllib
+    from microrans.tomlio import loads as toml_loads
 
     from microrans.cli import examples_dir
-    cfg = tomllib.loads((examples_dir() / "cavite_re100.toml").read_text(encoding="utf-8"))
+    cfg = toml_loads((examples_dir() / "cavite_re100.toml").read_text(encoding="utf-8"))
     cfg["solver"].update(convection_U="linearUpwindLimited", solver_p="mon_solveur")
     win.load_cfg(copy.deepcopy(cfg))
     win._store_forms()

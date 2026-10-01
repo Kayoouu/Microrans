@@ -389,12 +389,12 @@ def test_implicit_cfl_cap_kept_during_transonic_startup():
 def test_unphysical_state_gives_measured_tips(tmp_path):
     # audit D2 : rampe Mach 2 en RK3 à cfl = 4 → arrêt à la 9e itération ; l'arrêt
     # propose le schéma implicite (même solution à cfl 8, 6 fois plus rapide)
-    import tomllib
+    from microrans.tomlio import loads as toml_loads
     from pathlib import Path
 
     from microrans.fv2d.compressible_case import run_compressible_case
     ex = Path(__file__).parents[1] / "microrans" / "examples"
-    cfg = tomllib.loads((ex / "compressible_rampe_mach2.toml").read_text(encoding="utf-8"))
+    cfg = toml_loads((ex / "compressible_rampe_mach2.toml").read_text(encoding="utf-8"))
     cfg["solver"].update(cfl=4.0, max_iter=50)
     with pytest.raises(FloatingPointError) as exc:
         run_compressible_case(cfg, base_dir=ex, out_dir=tmp_path, verbose=False, plot=False)
