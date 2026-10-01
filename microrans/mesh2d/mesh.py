@@ -65,6 +65,8 @@ class Mesh2D:
         translation (A -> B) est déduite des centres si elle n'est pas donnée.
     """
 
+    dim = 2
+
     def __init__(self, points, cells, boundary: dict | None = None,
                  patch_types: dict | None = None, periodic=None,
                  default_patch: str = "defaultFaces"):
