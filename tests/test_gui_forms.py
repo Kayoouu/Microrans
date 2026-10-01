@@ -392,6 +392,12 @@ def test_added_body_does_not_overlap(win):
     assert new[0]["center"][0] - new[0]["radius"] > 0.5      # à droite du cylindre
     win._store_forms()
     check_case(win.cfg)                                     # ni recouvrement ni collision
+    # type changé : même place, même taille (avant : valeurs par défaut, sur le cylindre)
+    win.body_list.setCurrentRow(1)
+    for kind in ("rectangle", "ellipse", "naca", "circle"):
+        win.b_type.setCurrentIndex(win.b_type.findData(kind))
+        assert win.cfg["bodies"][1]["type"] == kind
+        check_case(win.cfg)
     set_combo(win.mesh_type, "ogrid")
     win._mesh_type_changed()
     win._store_forms()

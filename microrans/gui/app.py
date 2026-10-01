@@ -1247,6 +1247,8 @@ class MainWindow(QMainWindow):
         if not 0 <= row < len(bodies):
             return
         t = self.b_type.currentData()
+        if bodies[row].get("type") != t and t != "file":
+            self._place_like(bodies[row], t)
         b = {"type": t, "name": self.b_name.text().strip() or t}
         if t == "circle":
             b.update(center=self.b_center.value(), radius=self.b_radius.value() or 0.5)
@@ -1267,6 +1269,37 @@ class MainWindow(QMainWindow):
         bodies[row] = b
         self.body_list.item(row).setText(f"{b['name']} ({t})")
         self._toml_timer.start()
+
+    def _place_like(self, old: dict, t: str):
+        """Changement de type d'un corps : nouvelle forme au même endroit et de même taille
+        (avant : valeurs par défaut des champs, souvent posées sur le premier corps)."""
+        from ..mesh2d.geometry import shape_from_dict
+        try:
+            x0, y0, x1, y1 = shape_from_dict(dict(old)).bbox()
+        except Exception:
+            return                                  # ancienne forme incomplète
+        cx, cy, h = 0.5 * (x0 + x1), 0.5 * (y0 + y1), 0.5 * max(x1 - x0, y1 - y0)
+
+        def r(v):
+            return float(f"{v:.6g}")
+        self._body_sync = True
+        try:
+            self.b_inc.set_value(0.0)               # rotation autour de l'origine : déplacerait
+            self.b_translate.set_value((0.0, 0.0))
+            if t == "circle":
+                self.b_center.set_value((r(cx), r(cy)))
+                self.b_radius.set_value(r(h))
+            elif t == "rectangle":
+                self.b_corners.set_value((r(cx - h), r(cy - h)))
+                self.b_corners2.set_value((r(cx + h), r(cy + h)))
+            elif t == "ellipse":
+                self.b_center.set_value((r(cx), r(cy)))
+                self.b_ab.set_value((r(h), r(h / 2)))
+            elif t == "naca":                       # bord d'attaque en (0, 0) avant translation
+                self.b_chord.set_value(r(2 * h))
+                self.b_translate.set_value((r(cx - h), r(cy)))
+        finally:
+            self._body_sync = False
 
     def _body_add(self):
         """Nouveau cercle à droite des corps existants, de taille comparable (avant : posé
