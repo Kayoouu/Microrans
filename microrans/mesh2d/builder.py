@@ -7,6 +7,11 @@ préréglage. Le type de maillage se choisit avec `mesh.type` :
   unstructured  triangles (DistMesh), raffinement autour des corps
   hybrid        couches de quadrilatères aux parois + triangles
   file          lecture d'un fichier .msh (Gmsh) ou .su2
+  box           pavé 3D d'hexaèdres (x0…z1, nx, ny, nz, grading, names, periodic)
+
+3D : [mesh.extrude] z0, z1, nz (, grading, names = {back, front}, patch_types, periodic)
+extrude n'importe quel maillage 2D ci-dessus selon z (quadrilatères → hexaèdres,
+triangles → prismes ; voir mesh3d.extrude).
 """
 from __future__ import annotations
 
@@ -21,7 +26,7 @@ from .mesh import Mesh2D
 from .ogrid import o_grid
 from .unstructured import hybrid_mesh, triangulate
 
-MESH_TYPES = ("blocks", "rectangle", "ogrid", "unstructured", "hybrid", "file")
+MESH_TYPES = ("blocks", "rectangle", "ogrid", "unstructured", "hybrid", "file", "box")
 
 
 def load_config(path) -> dict:
@@ -54,11 +59,26 @@ def _bodies(cfg, base_dir="."):
 
 def build_mesh(cfg: dict, base_dir=".", verbose: bool = False) -> Mesh2D:
     """Maillage décrit par la section [mesh] ; [mesh] cut_axis = true garde la moitié y > 0
-    (calcul axisymétrique d'un corps de révolution, patch « axis »)."""
+    (calcul axisymétrique d'un corps de révolution, patch « axis ») ; [mesh.extrude] :
+    maillage 3D extrudé selon z."""
     mesh = _build_mesh(cfg, base_dir, verbose)
     if cfg.get("mesh", cfg).get("cut_axis"):
         mesh = mesh.cut_at_axis()
-    return mesh
+    return extrude_from(mesh, cfg.get("mesh", cfg))
+
+
+def extrude_from(mesh, m: dict):
+    """Applique [mesh.extrude] (si présente) à un maillage 2D."""
+    e = m.get("extrude")
+    if not e:
+        return mesh
+    if getattr(mesh, "dim", 2) == 3:
+        raise ValueError("[mesh.extrude] : le maillage est déjà en 3D (type « box »).")
+    from ..mesh3d import extrude
+    per = e.get("periodic")
+    return extrude(mesh, e.get("z0", 0.0), e.get("z1", 1.0), e.get("nz", 1),
+                   e.get("grading", 1.0), e.get("names"), e.get("patch_types"),
+                   [tuple(p) for p in per] if per else None)
 
 
 def _build_mesh(cfg: dict, base_dir=".", verbose: bool = False) -> Mesh2D:
@@ -77,6 +97,12 @@ def _build_mesh(cfg: dict, base_dir=".", verbose: bool = False) -> Mesh2D:
     if kind == "blocks":
         return block_mesh(m["vertices"], m["blocks"], m.get("edges"), m.get("patches"),
                           m.get("periodic"))
+    if kind == "box":
+        from ..mesh3d import box_mesh
+        return box_mesh(m["x0"], m["x1"], m["y0"], m["y1"], m["z0"], m["z1"], m["nx"],
+                        m["ny"], m["nz"], tuple(m.get("grading", (1.0, 1.0, 1.0))),
+                        m.get("names"), m.get("patch_types"),
+                        [tuple(p) for p in m["periodic"]] if m.get("periodic") else None)
     if kind == "rectangle":
         return rectangle_mesh(m["x0"], m["x1"], m["y0"], m["y1"], m["nx"], m["ny"],
                               tuple(m.get("grading", (1.0, 1.0))), m.get("names"),

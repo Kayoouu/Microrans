@@ -53,7 +53,7 @@ from pathlib import Path
 
 import numpy as np
 
-from ..mesh2d.builder import PRESETS, build_mesh
+from ..mesh2d.builder import PRESETS, build_mesh, extrude_from
 from ..mesh2d.io import write_vtk
 from .report import MODES, quality_text
 from .restart import load_checkpoint, save_checkpoint
@@ -123,7 +123,7 @@ def _apply_incidence(cfg: dict) -> tuple[dict, list]:
 def case_mesh(cfg: dict, base_dir=".", verbose=False):
     mcfg = cfg.get("mesh", {})
     if "preset" in mcfg:
-        return PRESETS[mcfg["preset"]]()
+        return extrude_from(PRESETS[mcfg["preset"]](), mcfg)
     return build_mesh(cfg, base_dir=base_dir, verbose=verbose)
 
 

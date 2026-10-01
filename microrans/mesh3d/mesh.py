@@ -324,6 +324,16 @@ class Mesh3D:
         return out
 
     @property
+    def cell_nodes(self) -> np.ndarray:
+        """Sommets des cellules (Nc, 8), complétés par −1 (comme Mesh2D.cell_nodes)."""
+        if getattr(self, "_cell_nodes", None) is None:
+            cn = -np.ones((self.n_cells, 8), dtype=np.int64)
+            for idx, arr in self._cells:
+                cn[idx, :arr.shape[1]] = arr
+            self._cell_nodes = cn
+        return self._cell_nodes
+
+    @property
     def cell_nv(self) -> np.ndarray:
         nv = np.empty(self.n_cells, dtype=np.int64)
         for idx, arr in self._cells:

@@ -279,9 +279,13 @@ def read_mesh(path, patch_types: dict | None = None) -> Mesh2D:
 
 
 def write_mesh(mesh: Mesh2D, path, cell_data: dict | None = None):
-    """Écrit selon l'extension : .msh, .su2, .vtk ; un dossier (ou 'foam') -> polyMesh OpenFOAM."""
+    """Écrit selon l'extension : .msh, .su2, .vtk ; un dossier (ou 'foam') -> polyMesh OpenFOAM.
+    Maillage 3D : .vtk seulement."""
     path = Path(path)
     ext = path.suffix.lower()
+    if getattr(mesh, "dim", 2) == 3 and ext != ".vtk":
+        raise ValueError(f"Maillage 3D : export {ext or 'OpenFOAM'} non disponible, seulement "
+                         ".vtk (ParaView).")
     if ext == ".msh":
         write_gmsh(mesh, path)
     elif ext == ".su2":
@@ -457,16 +461,25 @@ def read_su2(path, patch_types: dict | None = None) -> Mesh2D:
 
 # --- VTK ---------------------------------------------------------------------------------
 def write_vtk(mesh: Mesh2D, path, cell_data: dict | None = None, title: str = "microrans"):
-    """VTK legacy ASCII (UNSTRUCTURED_GRID), lisible par ParaView."""
+    """VTK legacy ASCII (UNSTRUCTURED_GRID), lisible par ParaView ; maillage 2D (z = 0) ou
+    3D (hexaèdres, prismes, pyramides, tétraèdres)."""
+    dim = getattr(mesh, "dim", 2)
+    pts = mesh.points if dim == 3 else np.column_stack([mesh.points, np.zeros(mesh.n_points)])
     lines = ["# vtk DataFile Version 3.0", title, "ASCII", "DATASET UNSTRUCTURED_GRID",
              f"POINTS {mesh.n_points} double"]
-    lines += [f"{x:.10g} {y:.10g} 0" for x, y in mesh.points]
-    total = int(np.sum(mesh.cell_nv + 1))
+    lines += [f"{x:.10g} {y:.10g} {z:.10g}" for x, y, z in pts]
+    nv_all = mesh.cell_nv
+    total = int(np.sum(nv_all + 1))
     lines.append(f"CELLS {mesh.n_cells} {total}")
-    lines += [f"{nv} " + " ".join(str(v) for v in row[:nv])
-              for row, nv in zip(mesh.cell_nodes, mesh.cell_nv)]
+    if dim == 3:
+        from ..mesh3d.mesh import VTK_TYPES as types
+        rows = mesh.cells_as_lists()
+    else:
+        rows = [row[:nv] for row, nv in zip(mesh.cell_nodes, nv_all)]
+        types = {3: 5, 4: 9}                         # triangle, quadrilatère ; sinon polygone
+    lines += [f"{len(row)} " + " ".join(str(v) for v in row) for row in rows]
     lines.append(f"CELL_TYPES {mesh.n_cells}")
-    lines += [str({3: 5, 4: 9}.get(int(nv), 7)) for nv in mesh.cell_nv]
+    lines += [str(types.get(int(nv), 7)) for nv in nv_all]
     if cell_data:
         lines.append(f"CELL_DATA {mesh.n_cells}")
         for name, arr in cell_data.items():
@@ -477,7 +490,9 @@ def write_vtk(mesh: Mesh2D, path, cell_data: dict | None = None, title: str = "m
                 lines += [f"{v:.10g}" for v in arr]
             else:
                 lines.append(f"VECTORS {safe} double")
-                lines += [f"{a:.10g} {b:.10g} 0" for a, b in arr[:, :2]]
+                v3 = arr[:, :3] if arr.shape[1] >= 3 else np.column_stack(
+                    [arr, np.zeros((len(arr), 3 - arr.shape[1]))])
+                lines += [f"{a:.10g} {b:.10g} {c:.10g}" for a, b, c in v3]
     Path(path).write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 

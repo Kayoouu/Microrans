@@ -11,18 +11,21 @@ Exemples complets : `microrans examples` ; tutoriel : `docs/tutoriel.md`.
 
 | Clé | Signification | S'applique à |
 |---|---|---|
-| `type` | rectangle \| blocks \| ogrid \| unstructured \| hybrid \| file (défaut unstructured) |  |
+| `type` | rectangle \| blocks \| ogrid \| unstructured \| hybrid \| file \| box (défaut unstructured ; box : pavé 3D) |  |
 | `preset` | maillage prédéfini (cavity, channel, cylinder-ogrid…) : remplace type |  |
 | `cut_axis` | garde la moitié y > 0 (axisymétrique autour d'un corps) |  |
-| `x0` | x min | maillage rectangle |
-| `x1` | x max | maillage rectangle |
-| `y0` | y min | maillage rectangle |
-| `y1` | y max | maillage rectangle |
-| `nx` | nombre de mailles selon x | maillage rectangle |
-| `ny` | nombre de mailles selon y | maillage rectangle |
-| `grading` | resserrement [gx, gy] (rapport dernière / première maille) | maillage rectangle |
-| `patch_types` | types des frontières {nom = "wall" \| "patch" \| …} | maillage rectangle, file |
-| `periodic` | paires de frontières périodiques [["a", "b"], …] | maillage rectangle, blocks |
+| `x0` | x min | maillage rectangle, box |
+| `x1` | x max | maillage rectangle, box |
+| `y0` | y min | maillage rectangle, box |
+| `y1` | y max | maillage rectangle, box |
+| `z0` | z min | maillage box |
+| `z1` | z max | maillage box |
+| `nx` | nombre de mailles selon x | maillage rectangle, box |
+| `ny` | nombre de mailles selon y | maillage rectangle, box |
+| `nz` | nombre de mailles selon z | maillage box |
+| `grading` | resserrement [gx, gy] (box : [gx, gy, gz] ; rapport dernière / première maille) | maillage rectangle, box |
+| `patch_types` | types des frontières {nom = "wall" \| "patch" \| …} | maillage rectangle, file, box |
+| `periodic` | paires de frontières périodiques [["a", "b"], …] | maillage rectangle, blocks, box |
 | `vertices` | sommets [[x, y], …] | maillage blocks |
 | `n_around` | mailles autour du corps (défaut 128) | maillage ogrid |
 | `n_radial` | mailles dans la direction radiale (défaut 64) | maillage ogrid |
@@ -35,7 +38,7 @@ Exemples complets : `microrans examples` ; tutoriel : `docs/tutoriel.md`.
 | `max_iter` | itérations du mailleur DistMesh (défaut 300) | maillage unstructured, hybrid |
 | `path` | fichier .msh (Gmsh) ou .su2 | maillage file |
 
-### `[mesh.names]` — noms des frontières du rectangle (maillage rectangle)
+### `[mesh.names]` — noms des frontières du rectangle (du pavé : + back, front) (maillage rectangle, box)
 
 | Clé | Signification | S'applique à |
 |---|---|---|
@@ -43,6 +46,26 @@ Exemples complets : `microrans examples` ; tutoriel : `docs/tutoriel.md`.
 | `right` | nom du côté x = x1 |  |
 | `bottom` | nom du côté y = y0 |  |
 | `top` | nom du côté y = y1 |  |
+| `back` | box : nom du côté z = z0 |  |
+| `front` | box : nom du côté z = z1 |  |
+
+### `[mesh.extrude]` — 3D : extrusion du maillage 2D selon z (quadrilatères → hexaèdres, triangles → prismes)
+
+| Clé | Signification | S'applique à |
+|---|---|---|
+| `z0` | z de départ (défaut 0) |  |
+| `z1` | z d'arrivée (défaut 1) |  |
+| `nz` | nombre de couches (défaut 1) |  |
+| `grading` | resserrement selon z (rapport dernière / première couche) |  |
+| `patch_types` | types des frontières {nom = "wall" \| "symmetry" \| …} (défaut : type 2D ; patch pour back et front) |  |
+| `periodic` | paires périodiques supplémentaires [["back", "front"]] |  |
+
+#### `[mesh.extrude.names]` — noms des faces d'extrémité
+
+| Clé | Signification | S'applique à |
+|---|---|---|
+| `back` | nom de la face z = z0 (défaut back) |  |
+| `front` | nom de la face z = z1 (défaut front) |  |
 
 ### `[[mesh.blocks]]` — blocs (maillage blocks)
 
@@ -207,7 +230,7 @@ Exemples complets : `microrans examples` ; tutoriel : `docs/tutoriel.md`.
 | `reference_length` | longueur de référence L_ref (défaut 1) |  |
 | `reference_area` | axisymétrique : aire de référence de Cd (défaut π L²/4) | incompressible seulement |
 | `model` | laminar \| sa \| ke \| kw \| sst \| sst_gamma (défaut laminar) | incompressible seulement |
-| `body_force` | force volumique [fx, fy] (conduite périodique) | incompressible seulement |
+| `body_force` | force volumique [fx, fy] (3D : [fx, fy, fz] ; conduite périodique) | incompressible seulement |
 | `angle_of_attack` | incidence (°) de l'écoulement amont |  |
 | `axisymmetric` | true : axisymétrique (x = axe, y = rayon) |  |
 | `swirl` | true : rotation propre (axisymétrique) | incompressible seulement |
@@ -256,7 +279,7 @@ Contenu libre, sous la forme `nom = valeur`.
 
 | Clé | Signification | S'applique à |
 |---|---|---|
-| `U` | vitesse initiale [ux, uy] (valeurs ou formules en x, y) |  |
+| `U` | vitesse initiale [ux, uy] (3D : [ux, uy, uz] ; valeurs ou formules en x, y, z) |  |
 | `perturbation` | amplitude d'un tourbillon initial (déclenche le lâcher) | incompressible seulement |
 | `perturbation_center` | centre du tourbillon initial (défaut [1.5, 0]) | incompressible seulement |
 | `restart` | fichier checkpoint.npz de reprise |  |
@@ -286,7 +309,7 @@ Contenu libre, sous la forme `nom = valeur`.
 | `Pr_t` | Prandtl turbulent (défaut 0.85) |  |
 | `beta` | dilatation thermique (Boussinesq) |  |
 | `T_ref` | température de référence |  |
-| `gravity` | gravité [gx, gy] |  |
+| `gravity` | gravité [gx, gy] (3D : [gx, gy, gz]) |  |
 | `T0` | température initiale |  |
 | `delta_T` | écart de température de référence (nombre de Nusselt) |  |
 | `source` | source de chaleur (valeur ou formule) |  |
@@ -345,7 +368,7 @@ Contenu libre, sous la forme `nom = valeur`.
 | Clé | Signification | S'applique à |
 |---|---|---|
 | `type` | type de condition (incompressible : wall, inlet, outlet, symmetry, farfield, axis, pressure_inlet ; compressible : farfield, inlet, outlet, supersonic_inlet, supersonic_outlet, slip_wall, symmetry, wall) |  |
-| `U` | vitesse [ux, uy] (valeurs ou formules en x, y) |  |
+| `U` | vitesse [ux, uy] (3D : [ux, uy, uz] ; valeurs ou formules en x, y, z) |  |
 | `p` | pression |  |
 | `p0` | pression totale |  |
 | `T` | température |  |
@@ -442,9 +465,9 @@ Contenu libre, sous la forme `nom = valeur`.
 | Clé | Signification | S'applique à |
 |---|---|---|
 | `directory` | dossier des résultats |  |
-| `probes` | sondes [[x, y], …] |  |
+| `probes` | sondes [[x, y], …] (3D : [[x, y, z], …]) |  |
 | `forces` | frontières où calculer les efforts (défaut : parois) |  |
-| `moment_center` | centre des moments (défaut [0, 0]) |  |
+| `moment_center` | centre des moments (défaut [0, 0] ; 3D : [x, y, z], moment autour de l'axe z) |  |
 | `checkpoint` | écrit checkpoint.npz (défaut true) |  |
 | `checkpoint_minutes` | sauvegarde périodique (min, défaut 5) |  |
 | `vtk` | écrit fields.vtk (défaut true) |  |
@@ -461,8 +484,8 @@ Contenu libre, sous la forme `nom = valeur`.
 | Clé | Signification | S'applique à |
 |---|---|---|
 | `name` | nom |  |
-| `start` | [x, y] |  |
-| `end` | [x, y] |  |
+| `start` | [x, y] (3D : [x, y, z]) |  |
+| `end` | [x, y] (3D : [x, y, z]) |  |
 | `n` | nombre de points |  |
 
 ## `[sweep]` — balayage

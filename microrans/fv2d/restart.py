@@ -1,4 +1,4 @@
-"""Sauvegarde et reprise d'un calcul 2D (fichier `checkpoint.npz`).
+"""Sauvegarde et reprise d'un calcul 2D ou 3D (fichier `checkpoint.npz`).
 
 - Même maillage : reprise EXACTE (champs, flux aux faces, temps, niveaux de temps
   précédents pour BDF2 / AB2, historique des résidus ou des efforts) — comme les
@@ -123,6 +123,10 @@ def load_checkpoint(solver, path, fields_only=False, shift_U=None) -> dict:
     (continuation en incidence : variation de U∞ entre deux points)."""
     d = read_checkpoint(path)
     meta = d["meta"]
+    dim = solver.U.shape[1]
+    if d["cell_centers"].shape[1] != dim:
+        raise ValueError(f"{path} : reprise d'un calcul {d['cell_centers'].shape[1]}D sur un "
+                         f"maillage {dim}D impossible (même dimension attendue).")
     xp = solver.xp
     A = solver.backend.asarray
     same = same_mesh(solver, d)
@@ -134,7 +138,7 @@ def load_checkpoint(solver, path, fields_only=False, shift_U=None) -> dict:
         conv = lambda v: v                                               # noqa: E731
     else:
         conv = _interpolator(d["cell_centers"], np.asarray(solver.mesh.cell_centers))
-    U = conv(d["U"]).reshape(-1, 2).copy()
+    U = conv(d["U"]).reshape(-1, dim).copy()
     if shift_U is not None:
         U += np.asarray(shift_U, float)
     solver.U = A(U)

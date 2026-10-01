@@ -379,6 +379,9 @@ class CompressibleSolver2D:
 
     def __init__(self, mesh: Mesh2D, gas: Gas, freestream: State, boundaries: dict,
                  settings: CompressibleSettings | None = None, initial=None):
+        if getattr(mesh, "dim", 2) != 2:
+            raise ValueError("Solveur compressible : maillage 2D seulement (le maillage est en "
+                             "3D) ; le 3D est disponible en incompressible.")
         self.mesh = mesh
         self.gas = gas
         self.fs = freestream

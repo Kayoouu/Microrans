@@ -31,8 +31,13 @@ def coarsen_config(cfg: dict, level: int) -> dict | None:
     if "preset" in m or kind == "file":
         return None
     for _ in range(level):
+        if isinstance(m.get("extrude"), dict):            # 3D extrudé : couches ÷ 2 aussi
+            m["extrude"]["nz"] = _half(m["extrude"].get("nz", 1))
         if kind == "rectangle":
             m["nx"], m["ny"] = _half(m["nx"], 2), _half(m["ny"], 2)
+        elif kind == "box":
+            m["nx"], m["ny"], m["nz"] = (_half(m["nx"], 2), _half(m["ny"], 2),
+                                         _half(m["nz"], 2))
         elif kind == "blocks":
             for b in m["blocks"]:
                 b["cells"] = [_half(n) for n in b["cells"]]

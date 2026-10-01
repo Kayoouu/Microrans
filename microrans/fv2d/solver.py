@@ -400,6 +400,15 @@ class Solver2D:
         # force volumique : constante (fx, fy) ou fonction du temps t -> (fx, fy)
         self.body_force = (body_force if callable(body_force)
                            else _vector(body_force, dim, "[physics] body_force"))
+        U_init = None                       # champ initial par cellule (formules en x, y, z)
+        if not np.isscalar(initial_U) and any(isinstance(c, str) for c in initial_U):
+            if len(initial_U) != dim:
+                raise ValueError(f"[initial] U = {list(initial_U)} : {dim} composantes "
+                                 f"attendues (maillage {dim}D).")
+            xyz = _xyz(mesh.cell_centers)
+            U_init = np.column_stack([_eval_expr(c, *xyz) if isinstance(c, str)
+                                      else np.full(len(xyz[0]), float(c)) for c in initial_U])
+            initial_U = np.zeros(dim)
         initial_U = _vector(initial_U, dim, "[initial] U")
         self._t_eval = 0.0
         names = [p.name for p in mesh.patches]
@@ -463,7 +472,8 @@ class Solver2D:
         if uref is None:
             uref = max([float(np.max(np.linalg.norm(U_fixed_h[kindU_h == 0], axis=1)))
                         if np.any(kindU_h == 0) else 0.0, 1e-30])
-            uref = max(uref, float(np.linalg.norm(initial_U)), 1e-12)
+            uref = max(uref, float(np.linalg.norm(initial_U)) if U_init is None
+                       else float(np.max(np.linalg.norm(U_init, axis=1))), 1e-12)
         self.U_ref = uref
         self.model_name = canonical_name(model)
         self.model = get_model(self.model_name, mesh, self.nu, **(model_options or {}))
@@ -487,7 +497,8 @@ class Solver2D:
                                                        ti["viscosity_ratio"])
         # champs
         nc = fvm.nc
-        self.U = xp.tile(xp.asarray(np.asarray(initial_U, dtype=float)), (nc, 1))
+        self.U = (xp.tile(xp.asarray(np.asarray(initial_U, dtype=float)), (nc, 1))
+                  if U_init is None else xp.asarray(U_init))
         self.p = xp.zeros(nc)
         self.state = {k: xp.full(nc, float(v)) for k, v in self.freestream.items()}
         Ub = self.boundary_U(self.U)
@@ -1032,7 +1043,6 @@ class Solver2D:
         return not np.isfinite(umax) or umax > 1e6 * max(float(self.U_ref), 1.0)
 
     def _offdiag_mult(self, up, lo, x):
-        xp = self.xp
         fvm = self.fvm
         return (fvm._sum(fvm.P, up * x[fvm.N]) + fvm._sum(fvm.N, lo * x[fvm.P]))
 

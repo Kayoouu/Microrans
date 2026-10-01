@@ -11,24 +11,26 @@ from __future__ import annotations
 import numpy as np
 
 
-def parse_points(spec) -> np.ndarray:
-    """[[x, y], ...] ou « x y ; x y » / « x, y ; x, y »."""
+def parse_points(spec, dim: int = 2) -> np.ndarray:
+    """[[x, y], ...] ou « x y ; x y » / « x, y ; x, y » (3D : x y z)."""
     if spec is None:
-        return np.zeros((0, 2))
+        return np.zeros((0, dim))
     if isinstance(spec, str):
         pts = [[float(v) for v in p.replace(",", " ").split()] for p in spec.split(";")
                if p.strip()]
     else:
         pts = [[float(v) for v in p] for p in spec]
-    if any(len(p) != 2 for p in pts):
-        raise ValueError(f"Points invalides : {spec!r} (attendu : x y ; x y …)")
-    return np.asarray(pts, float).reshape(-1, 2)
+    if any(len(p) != dim for p in pts):
+        raise ValueError(f"Points invalides : {spec!r} (attendu : "
+                         + ("x y ; x y …)" if dim == 2 else "x y z ; x y z … en 3D)"))
+    return np.asarray(pts, float).reshape(-1, dim)
 
 
 def locate(mesh, pts, k: int = 12) -> np.ndarray:
     """Indice de la cellule contenant chaque point (−1 si aucune)."""
     from scipy.spatial import cKDTree
-    pts = np.asarray(pts, float).reshape(-1, 2)
+    dim = getattr(mesh, "dim", 2)
+    pts = np.asarray(pts, float).reshape(-1, dim)
     if not len(pts):
         return np.zeros(0, dtype=int)
     k = min(k, mesh.n_cells)
@@ -42,10 +44,34 @@ def locate(mesh, pts, k: int = 12) -> np.ndarray:
         if not todo.any():
             break
         c = cand[todo, j]
-        inside = _inside(P, cn[c], nv[c], pts[todo])
+        inside = (_inside(P, cn[c], nv[c], pts[todo]) if dim == 2
+                  else _inside3d(P, cn[c], nv[c], pts[todo]))
         idx = np.nonzero(todo)[0][inside]
         out[idx] = c[inside]
     return out
+
+
+def _inside3d(P, cn, nv, x):
+    """Point dans la cellule 3D : du côté intérieur de chacune de ses faces (plan moyen de
+    la face, normale sortante), tolérance relative 1e-9 (point sur une face : accepté)."""
+    from ..mesh3d.mesh import CELL_FACES, face_geometry
+    ok = np.zeros(len(cn), dtype=bool)
+    for k, faces in CELL_FACES.items():
+        sel = np.nonzero(nv == k)[0]
+        if not len(sel):
+            continue
+        arr = cn[sel, :k]
+        cc = P[arr].mean(axis=1)
+        good = np.ones(len(sel), dtype=bool)
+        for f in faces:
+            fn = -np.ones((len(sel), 4), dtype=np.int64)
+            fn[:, :len(f)] = arr[:, list(f)]
+            fc, S = face_geometry(P, fn)
+            S = S * np.sign(np.sum(S * (fc - cc), axis=1))[:, None]        # sortante
+            magS = np.linalg.norm(S, axis=1)
+            good &= np.sum((x[sel] - fc) * S, axis=1) <= 1e-9 * magS ** 1.5
+        ok[sel] = good
+    return ok
 
 
 def _inside(P, cn, nv, x):
@@ -75,7 +101,8 @@ class Sampler:
 
     def __init__(self, solver, pts):
         self.solver = solver
-        self.pts = np.asarray(pts, float).reshape(-1, 2)
+        self.dim = getattr(solver.mesh, "dim", 2)
+        self.pts = np.asarray(pts, float).reshape(-1, self.dim)
         self.cell = locate(solver.mesh, self.pts)
         self.ok = self.cell >= 0
         c = np.where(self.ok, self.cell, 0)
@@ -89,17 +116,18 @@ class Sampler:
         return np.where(self.ok, v, np.nan)
 
     def sample(self, fields=None) -> dict:
-        """{nom: valeurs aux points} : Ux, Uy, U_mag, p, variables de turbulence, T,
+        """{nom: valeurs aux points} : Ux, Uy (, Uz), U_mag, p, variables de turbulence, T,
         moyennes temporelles si elles existent (fields : sous-ensemble à calculer)."""
         s = self.solver
         fvm = s.fvm
         want = (lambda k: True) if fields is None else (lambda k: k in fields)
         out = {}
-        if want("Ux") or want("Uy") or want("U_mag"):
+        comps = ("Ux", "Uy", "Uz")[:self.dim]
+        if any(want(k) for k in comps) or want("U_mag"):
             gU = s.grad_U(s.U)
-            out["Ux"] = self._rec(s.U[:, 0], gU[:, 0, :])
-            out["Uy"] = self._rec(s.U[:, 1], gU[:, 1, :])
-            out["U_mag"] = np.hypot(out["Ux"], out["Uy"])
+            for c, k in enumerate(comps):
+                out[k] = self._rec(s.U[:, c], gU[:, c, :])
+            out["U_mag"] = np.sqrt(sum(out[k] ** 2 for k in comps))
         if want("p"):
             out["p"] = self._rec(s.p, fvm.grad(s.p, s.boundary_p(s.p)))
         for k, v in s.state.items():
@@ -143,8 +171,11 @@ def write_lines(solver, lines, out_dir, plot=True):
             raise ValueError(f"[[output.lines]] name = {name!r} : lettres, chiffres, _ ou - "
                              f"seulement (nom de fichier).")
         s, pts = line_points(ln["start"], ln["end"], ln.get("n", 200))
+        if pts.shape[1] != getattr(solver.mesh, "dim", 2):
+            raise ValueError(f"[[output.lines]] « {name} » : start et end à "
+                             f"{getattr(solver.mesh, 'dim', 2)} composantes attendus.")
         vals = Sampler(solver, pts).sample()
-        cols = {"s": s, "x": pts[:, 0], "y": pts[:, 1], **vals}
+        cols = {"s": s, **dict(zip("xyz", pts.T)), **vals}
         path = out_dir / f"line_{name}.csv"
         np.savetxt(path, np.column_stack(list(cols.values())), delimiter=",",
                    header=",".join(cols), comments="", encoding="utf-8")
@@ -156,7 +187,7 @@ def write_lines(solver, lines, out_dir, plot=True):
 
 def _plot_line(cols, path, name):
     from matplotlib.figure import Figure
-    keys = [k for k in cols if k not in ("s", "x", "y", "U_mag") and "_mean" not in k
+    keys = [k for k in cols if k not in ("s", "x", "y", "z", "U_mag") and "_mean" not in k
             and "_rms" not in k and k not in ("k", "omega", "epsilon", "nu_tilde")][:6]
     fig = Figure(figsize=(4.0 * len(keys), 3.4), layout="constrained")
     axes = np.atleast_1d(fig.subplots(1, len(keys)))
@@ -180,7 +211,8 @@ class TimeAverage:
 
     def _values(self):
         s = self.solver
-        v = {"Ux": s.U[:, 0], "Uy": s.U[:, 1], "p": s.p}
+        v = {k: s.U[:, c] for c, k in enumerate(("Ux", "Uy", "Uz")[:s.U.shape[1]])}
+        v["p"] = s.p
         if s.energy is not None:
             v["T"] = s.T
         v.update(s.scalars)

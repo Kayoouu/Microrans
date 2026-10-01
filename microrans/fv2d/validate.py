@@ -39,11 +39,15 @@ class Table:
 
 
 K = Key
-RECT, BLOCKS, OGRID, TRI, HYB, FILE = ("rectangle", "blocks", "ogrid", "unstructured",
-                                       "hybrid", "file")
+RECT, BLOCKS, OGRID, TRI, HYB, FILE, BOX = ("rectangle", "blocks", "ogrid", "unstructured",
+                                            "hybrid", "file", "box")
 _NAMES = Table({"left": K("nom du côté x = x0"), "right": K("nom du côté x = x1"),
                 "bottom": K("nom du côté y = y0"), "top": K("nom du côté y = y1")},
                "noms des frontières du rectangle")
+_NAMES3 = Table({**_NAMES.keys, "back": K("box : nom du côté z = z0"),
+                 "front": K("box : nom du côté z = z1")},
+                "noms des frontières du rectangle (du pavé : + back, front)", types=(RECT, BOX))
+_RB = (RECT, BOX)
 # géométries : [domain], [[bodies]], [[mesh.refinements]] shape (geometry.shape_from_dict)
 _SHAPE = {
     "type": K("circle | rectangle | ellipse | polygon | naca | spline | file"),
@@ -72,21 +76,35 @@ _TRI_HYB = (TRI, HYB)
 
 SCHEMA = Table({
     "mesh": Table({
-        "type": K("rectangle | blocks | ogrid | unstructured | hybrid | file "
-                  "(défaut unstructured)"),
+        "type": K("rectangle | blocks | ogrid | unstructured | hybrid | file | box "
+                  "(défaut unstructured ; box : pavé 3D)"),
         "preset": K("maillage prédéfini (cavity, channel, cylinder-ogrid…) : remplace type"),
         "cut_axis": K("garde la moitié y > 0 (axisymétrique autour d'un corps)"),
-        "x0": K("x min", types=(RECT,)), "x1": K("x max", types=(RECT,)),
-        "y0": K("y min", types=(RECT,)), "y1": K("y max", types=(RECT,)),
-        "nx": K("nombre de mailles selon x", types=(RECT,)),
-        "ny": K("nombre de mailles selon y", types=(RECT,)),
-        "grading": K("resserrement [gx, gy] (rapport dernière / première maille)",
-                     types=(RECT,)),
-        "names": Table(_NAMES.keys, _NAMES.doc, types=(RECT,)),
+        "x0": K("x min", types=_RB), "x1": K("x max", types=_RB),
+        "y0": K("y min", types=_RB), "y1": K("y max", types=_RB),
+        "z0": K("z min", types=(BOX,)), "z1": K("z max", types=(BOX,)),
+        "nx": K("nombre de mailles selon x", types=_RB),
+        "ny": K("nombre de mailles selon y", types=_RB),
+        "nz": K("nombre de mailles selon z", types=(BOX,)),
+        "grading": K("resserrement [gx, gy] (box : [gx, gy, gz] ; rapport dernière / "
+                     "première maille)", types=_RB),
+        "names": _NAMES3,
         "patch_types": K("types des frontières {nom = \"wall\" | \"patch\" | …}",
-                         types=(RECT, FILE)),
+                         types=(RECT, FILE, BOX)),
         "periodic": K("paires de frontières périodiques [[\"a\", \"b\"], …]",
-                      types=(RECT, BLOCKS)),
+                      types=(RECT, BLOCKS, BOX)),
+        "extrude": Table({
+            "z0": K("z de départ (défaut 0)"), "z1": K("z d'arrivée (défaut 1)"),
+            "nz": K("nombre de couches (défaut 1)"),
+            "grading": K("resserrement selon z (rapport dernière / première couche)"),
+            "names": Table({"back": K("nom de la face z = z0 (défaut back)"),
+                            "front": K("nom de la face z = z1 (défaut front)")},
+                           "noms des faces d'extrémité"),
+            "patch_types": K("types des frontières {nom = \"wall\" | \"symmetry\" | …} "
+                             "(défaut : type 2D ; patch pour back et front)"),
+            "periodic": K("paires périodiques supplémentaires [[\"back\", \"front\"]]")},
+            "3D : extrusion du maillage 2D selon z (quadrilatères → hexaèdres, triangles "
+            "→ prismes)"),
         "vertices": K("sommets [[x, y], …]", types=(BLOCKS,)),
         "blocks": Table({"vertices": K("4 indices de sommets (sens trigonométrique)"),
                          "cells": K("[nx, ny]"), "grading": K("[gx, gy]")},
@@ -133,7 +151,7 @@ SCHEMA = Table({
         "model": K("laminar | sa | ke | kw | sst | sst_gamma (défaut laminar)", INC),
         "model_options": Table({}, "options du modèle (sa : ft2 ; sst_gamma : "
                                "kato_launder)", INC, free=True),
-        "body_force": K("force volumique [fx, fy] (conduite périodique)", INC),
+        "body_force": K("force volumique [fx, fy] (3D : [fx, fy, fz] ; conduite périodique)", INC),
         "angle_of_attack": K("incidence (°) de l'écoulement amont"),
         "axisymmetric": K("true : axisymétrique (x = axe, y = rayon)"),
         "swirl": K("true : rotation propre (axisymétrique)", INC),
@@ -162,7 +180,7 @@ SCHEMA = Table({
         "sutherland_S": K("Sutherland : constante S (défaut 110.4 K)"),
     }, "écoulement amont (compressible)", COMP),
     "initial": Table({
-        "U": K("vitesse initiale [ux, uy] (valeurs ou formules en x, y)"),
+        "U": K("vitesse initiale [ux, uy] (3D : [ux, uy, uz] ; valeurs ou formules en x, y, z)"),
         "perturbation": K("amplitude d'un tourbillon initial (déclenche le lâcher)", INC),
         "perturbation_center": K("centre du tourbillon initial (défaut [1.5, 0])", INC),
         "restart": K("fichier checkpoint.npz de reprise"),
@@ -181,7 +199,7 @@ SCHEMA = Table({
         "Pr_t": K("Prandtl turbulent (défaut 0.85)"),
         "beta": K("dilatation thermique (Boussinesq)"), "T_ref": K("température de "
                                                                    "référence"),
-        "gravity": K("gravité [gx, gy]"), "T0": K("température initiale"),
+        "gravity": K("gravité [gx, gy] (3D : [gx, gy, gz])"), "T0": K("température initiale"),
         "delta_T": K("écart de température de référence (nombre de Nusselt)"),
         "source": K("source de chaleur (valeur ou formule)")}, "thermique", INC),
     "scalars": Table({"*": Table({
@@ -211,7 +229,7 @@ SCHEMA = Table({
         "type": K("type de condition (incompressible : wall, inlet, outlet, symmetry, "
                   "farfield, axis, pressure_inlet ; compressible : farfield, inlet, outlet, "
                   "supersonic_inlet, supersonic_outlet, slip_wall, symmetry, wall)"),
-        "U": K("vitesse [ux, uy] (valeurs ou formules en x, y)"),
+        "U": K("vitesse [ux, uy] (3D : [ux, uy, uz] ; valeurs ou formules en x, y, z)"),
         "p": K("pression"), "p0": K("pression totale"), "T": K("température"),
         "q": K("flux de chaleur pariétal", INC),
         "flow_rate": K("débit (au lieu de U)", INC),
@@ -231,12 +249,14 @@ SCHEMA = Table({
     "solver": Table({}, "réglages numériques"),         # complété plus bas (Settings)
     "output": Table({
         "directory": K("dossier des résultats"),
-        "probes": K("sondes [[x, y], …]"),
-        "lines": Table({"name": K("nom"), "start": K("[x, y]"), "end": K("[x, y]"),
+        "probes": K("sondes [[x, y], …] (3D : [[x, y, z], …])"),
+        "lines": Table({"name": K("nom"), "start": K("[x, y] (3D : [x, y, z])"),
+                        "end": K("[x, y] (3D : [x, y, z])"),
                         "n": K("nombre de points")}, "profils sur des segments",
                        many=True),
         "forces": K("frontières où calculer les efforts (défaut : parois)"),
-        "moment_center": K("centre des moments (défaut [0, 0])"),
+        "moment_center": K("centre des moments (défaut [0, 0] ; 3D : [x, y, z], moment autour de "
+                           "l'axe z)"),
         "checkpoint": K("écrit checkpoint.npz (défaut true)"),
         "checkpoint_minutes": K("sauvegarde périodique (min, défaut 5)"),
         "vtk": K("écrit fields.vtk (défaut true)"), "plots": K("figures (défaut true)"),
@@ -495,15 +515,55 @@ class _Values:
                                + (f" — vouliez-vous dire « {best} » ?" if best else "."))
         return norm
 
-    def vec2(self, sec: str, d: dict, key: str):
-        """[a, b] : 2 composantes, nombres ou formules en x, y."""
+    def vec2(self, sec: str, d: dict, key: str, dim: int = 2):
+        """[a, b] (3D : [a, b, c]) : nombres ou formules en x, y (, z)."""
         if not isinstance(d, dict) or d.get(key) is None:
             return
         v = d[key]
-        if not isinstance(v, (list, tuple)) or len(v) != 2 or not all(
+        if not isinstance(v, (list, tuple)) or len(v) != dim or not all(
                 _isnum(c) or isinstance(c, str) for c in v):
-            self.errors.append(f"[{sec}] {key} = {v!r} : 2 composantes attendues [x, y] "
-                               "(nombres ou formules en x, y).")
+            self.errors.append(
+                f"[{sec}] {key} = {v!r} : 2 composantes attendues [x, y] (nombres ou "
+                "formules en x, y)." if dim == 2 else
+                f"[{sec}] {key} = {v!r} : 3 composantes attendues [x, y, z] (maillage 3D ; "
+                "nombres ou formules en x, y, z).")
+
+
+def case_dim(cfg: dict) -> int:
+    """Dimension du cas lue dans [mesh] : 3 pour type = "box" ou [mesh.extrude], 2 sinon."""
+    m = cfg.get("mesh") if isinstance(cfg, dict) else None
+    if not isinstance(m, dict):
+        return 2
+    return 3 if (str(m.get("type", "")).lower() == BOX or m.get("extrude")) else 2
+
+
+# options 2D seulement : (section, clé, valeur qui l'active (None : présence), message)
+_ONLY_2D = [
+    ("physics", "axisymmetric", True, "axisymétrique"),
+    ("physics", "swirl", True, "rotation propre (swirl)"),
+    ("porous", None, None, "zones poreuses [[porous]]"),
+    ("actuator_disk", None, None, "disques actuateurs [[actuator_disk]]"),
+    ("solver", "algorithm", "coupled", "solveur couplé (algorithm = \"coupled\")"),
+    ("output", "animate", None, "animation (animate)"),
+    ("physics", "compressible", True, "solveur compressible"),
+]
+
+
+def _check_3d(cfg: dict, kind: str, errors: list):
+    """Options disponibles en 2D seulement (refusées avant de mailler)."""
+    used = []
+    for sec, key, val, what in _ONLY_2D:
+        d = cfg.get(sec)
+        if d is None:
+            continue
+        if key is None:
+            used.append(what)
+        elif isinstance(d, dict) and d.get(key) is not None and (
+                val is None or str(d[key]).lower() == str(val).lower()):
+            used.append(what)
+    if used:
+        errors.append("Maillage 3D ([mesh] type = \"box\" ou [mesh.extrude]) : "
+                      f"{', '.join(used)} disponible(s) en 2D seulement.")
 
 
 _MODE = {"unsteady": "transient", "instationnaire": "transient", "transitoire": "transient",
@@ -518,21 +578,32 @@ def _check_values(cfg: dict, kind: str, mesh_type: str, mesh_only: bool, errors:
         errors.append("[mesh] manquante : décrire le maillage (type = \"rectangle\", …), voir "
                       "les exemples (microrans examples).")
     elif isinstance(m, dict):
-        if mesh_type == RECT:
-            why = " (maillage rectangle)"
-            x0, x1, y0, y1 = (V.num("mesh", m, k, required=True, why=why)
-                              for k in ("x0", "x1", "y0", "y1"))
-            if x0 is not None and x1 is not None and x1 <= x0:
-                errors.append(f"[mesh] x1 = {m['x1']} doit être > x0 = {m['x0']}.")
-            if y0 is not None and y1 is not None and y1 <= y0:
-                errors.append(f"[mesh] y1 = {m['y1']} doit être > y0 = {m['y0']}.")
-            for k in ("nx", "ny"):
-                V.num("mesh", m, k, ge=1, integer=True, required=True, why=why)
+        if mesh_type in (RECT, BOX):
+            why = f" (maillage {mesh_type})"
+            axes = "xy" if mesh_type == RECT else "xyz"
+            for a in axes:
+                lo, hi = (V.num("mesh", m, k, required=True, why=why)
+                          for k in (f"{a}0", f"{a}1"))
+                if lo is not None and hi is not None and hi <= lo:
+                    errors.append(f"[mesh] {a}1 = {m[a + '1']} doit être > {a}0 = "
+                                  f"{m[a + '0']}.")
+            for a in axes:
+                V.num("mesh", m, f"n{a}", ge=1, integer=True, required=True, why=why)
             g = m.get("grading")
-            if isinstance(g, (list, tuple)) and len(g) == 2:
+            if isinstance(g, (list, tuple)) and len(g) == len(axes):
                 for c in g:
                     if _isnum(c) and c <= 0:
                         errors.append(f"[mesh] grading = {g!r} : rapports > 0 attendus.")
+            elif mesh_type == BOX and g is not None:
+                errors.append(f"[mesh] grading = {g!r} : 3 rapports attendus [gx, gy, gz] "
+                              "(maillage box).")
+            names = m.get("names")
+            if mesh_type == RECT and isinstance(names, dict):
+                for k in ("back", "front"):
+                    if k in names:
+                        errors.append(f"[mesh.names] {k} : face en z, pour un maillage "
+                                      "« box » seulement (rectangle : left, right, bottom, "
+                                      "top).")
         elif mesh_type == OGRID:
             V.num("mesh", m, "n_around", ge=4, integer=True)
             V.num("mesh", m, "n_radial", ge=2, integer=True)
@@ -553,8 +624,26 @@ def _check_values(cfg: dict, kind: str, mesh_type: str, mesh_only: bool, errors:
             for k in ("vertices", "blocks"):
                 if not m.get(k):
                     errors.append(f"[mesh] {k} manquant ou vide (maillage multi-blocs).")
+        e = m.get("extrude")
+        if e is not None:
+            if not isinstance(e, dict):
+                errors.append("[mesh.extrude] : table attendue (z0, z1, nz).")
+            elif mesh_type == BOX:
+                errors.append("[mesh.extrude] : sans objet pour un maillage « box » (déjà "
+                              "en 3D).")
+            else:
+                V.num("mesh.extrude", e, "nz", ge=1, integer=True)
+                V.num("mesh.extrude", e, "grading", gt=0)
+                z0, z1 = e.get("z0", 0.0), e.get("z1", 1.0)
+                if _isnum(z0) and _isnum(z1) and z1 <= z0:
+                    errors.append(f"[mesh.extrude] z1 = {z1} doit être > z0 = {z0}.")
+                for k in ("z0", "z1"):
+                    V.num("mesh.extrude", e, k)
     if mesh_only:
         return
+    dim = case_dim(cfg)
+    if dim == 3:
+        _check_3d(cfg, kind, errors)
     ph = cfg.get("physics") if isinstance(cfg.get("physics"), dict) else {}
     sc = cfg.get("solver") if isinstance(cfg.get("solver"), dict) else {}
     if kind == INC:
@@ -619,7 +708,7 @@ def _check_values(cfg: dict, kind: str, mesh_type: str, mesh_only: bool, errors:
             elif model == "laminar" and warns is not None:
                 warns.append("[solver] wall_treatment = \"wall_function\" : loi de paroi "
                              "turbulente, sans objet en laminaire (garder \"resolved\").")
-        V.vec2("physics", ph, "body_force")
+        V.vec2("physics", ph, "body_force", dim)
     else:
         fl = cfg.get("flow") if isinstance(cfg.get("flow"), dict) else {}
         V.num("flow", fl, "mach", ge=0)
@@ -677,7 +766,7 @@ def _check_values(cfg: dict, kind: str, mesh_type: str, mesh_only: bool, errors:
             errors.append(f"[{sec}] type manquant (ex. type = \"wall\").")
             continue
         for k in ("U", "velocity", "direction"):
-            V.vec2(sec, spec, k)
+            V.vec2(sec, spec, k, dim)
         for k in (("q", "omega", "flow_rate") if kind == INC else ("angle",)):
             V.num(sec, spec, k)                     # pas de formule pour ces valeurs
         t = str(spec["type"]).lower()
@@ -686,12 +775,13 @@ def _check_values(cfg: dict, kind: str, mesh_type: str, mesh_only: bool, errors:
                           "flow_rate.")
         if kind == INC and t == "farfield" and "U" not in spec:
             errors.append(f"[{sec}] (farfield) : donner la vitesse amont U = [ux, uy].")
-    V.vec2("initial", cfg.get("initial") if isinstance(cfg.get("initial"), dict) else {}, "U")
+    V.vec2("initial", cfg.get("initial") if isinstance(cfg.get("initial"), dict) else {}, "U",
+           dim)
     en = cfg.get("energy")
     if kind == INC and isinstance(en, dict):
         V.num("energy", en, "Pr", gt=0)
         V.num("energy", en, "Pr_t", gt=0)
-        V.vec2("energy", en, "gravity")
+        V.vec2("energy", en, "gravity", dim)
 
 
 # ordres de grandeur mesurés (cavité, SIMPLEC, solveur de pression AMG, un cœur) : mémoire
@@ -709,8 +799,12 @@ def _size_warning(m: dict, mesh_type: str) -> str | None:
             n = int(m.get("n_around", 128)) * int(m.get("n_radial", 64))
         elif mesh_type == BLOCKS:
             n = sum(int(b["cells"][0]) * int(b["cells"][1]) for b in m["blocks"])
+        elif mesh_type == BOX:
+            n = int(m["nx"]) * int(m["ny"]) * int(m["nz"])
         else:
             return None
+        if isinstance(m.get("extrude"), dict):
+            n *= int(m["extrude"].get("nz", 1))
     except (KeyError, TypeError, ValueError, IndexError):
         return None
     if n < BIG_MESH:

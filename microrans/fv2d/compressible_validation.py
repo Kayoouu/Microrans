@@ -14,7 +14,6 @@ Chaque cas passe par les fichiers d'exemple (run_case) quand il en existe un.
 from __future__ import annotations
 
 import argparse
-import copy
 import time
 from pathlib import Path
 

@@ -33,7 +33,7 @@ class FVM:
         if self.axisymmetric and self.dim != 2:
             raise ValueError("Axisymétrique : maillage 2D seulement (le maillage est en 3D).")
         self.backend = be = get_backend(backend)
-        self.xp = xp = be.xp
+        self.xp = be.xp
         self.nc, self.ni, self.nf = m.n_cells, m.n_internal, m.n_faces
         self.nb = self.nf - self.ni
         ni = self.ni
