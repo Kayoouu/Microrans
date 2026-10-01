@@ -60,6 +60,12 @@ jobs:
           # balayage sur 2 processus : lancement de processus (« spawn ») depuis l'exécutable
           ./dist/microrans/microrans sweep cavite_re100 -q --no-plot --jobs 2 --param physics.nu --values 0.01 0.02 --set mesh.nx=16 mesh.ny=16 solver.max_iter=300 -o smoke/sweep
           test -f smoke/sweep/balayage.csv
+          # cas 3D (conduite carrée réduite) : maillage, calcul, VTK 3D et figures en coupe z
+          ./dist/microrans/microrans run2d conduite_carree_3d -q --set mesh.ny=8 mesh.nz=8 solver.max_iter=30 -o smoke/cli3d || test $? -eq 1
+          grep -q '"dimension": 3' smoke/cli3d/summary.json
+          test -f smoke/cli3d/fields.vtk && test -f smoke/cli3d/U.png
+          ./dist/microrans/microrans mesh cavite_cubique_re100_3d -q --no-plot -o smoke/mesh3d
+          test -f smoke/mesh3d/*.vtk
       - name: Auto-test de l'interface (Windows, affichage natif comme chez l'utilisateur)
         if: runner.os == 'Windows'
         shell: pwsh

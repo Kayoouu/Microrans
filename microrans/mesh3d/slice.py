@@ -36,6 +36,9 @@ class ZSlice:
         sel = np.nonzero((zlo <= z) & (z < zhi))[0]
         if not len(sel):                                  # plan sur la face supérieure
             sel = np.nonzero((zlo < z) & (z <= zhi))[0]
+        if not len(sel):
+            raise ValueError(f"plan z = {z:g} hors du domaine (z de {P[:, 2].min():g} à "
+                             f"{P[:, 2].max():g}).")
         self.z = float(z)
         self.cells = sel
         used, inv = np.unique(lo[sel][ok[sel]], return_inverse=True)

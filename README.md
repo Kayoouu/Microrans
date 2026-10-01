@@ -21,8 +21,9 @@ Outil de simulation d'écoulements **incompressibles** (laminaires ou turbulents
 - **3D, périmètre réduit** : maillages hexaédriques (pavé, ou extrusion selon z de
   n'importe quel maillage 2D : hexaèdres et prismes), incompressible laminaire et turbulent
   (mêmes modèles qu'en 2D), stationnaire (SIMPLE/SIMPLEC) et instationnaire (PIMPLE,
-  Runge-Kutta), sortie VTK (ParaView) ; **ligne de commande seulement** (pas d'interface 3D,
-  pas de mailleur 3D général : voir § 3 « Cas 3D » et les limites § 8) ;
+  Runge-Kutta), sortie VTK (ParaView) ; interface graphique et ligne de commande (figures
+  dans un plan z = constante ; pas de mailleur 3D général : voir § 3 « Cas 3D » et les
+  limites § 8) ;
 - **1D** : canal plan turbulent intégré jusqu'à la paroi (RANS et URANS pulsé), très rapide,
   idéal pour comparer les modèles ;
 - **modèles de turbulence** : Spalart-Allmaras, k-ε (Launder-Sharma), k-ω (Wilcox 2006),
@@ -163,8 +164,15 @@ avec z (τ_w = norme du frottement). Efforts : totaux, rapportés à ½U²·A_re
 pour un corps extrudé), C_s = effort latéral (selon z), C_m autour de l'axe parallèle à z
 passant par `moment_center`. **Non disponibles en 3D** (refusés avant le calcul) :
 axisymétrique, swirl, zones poreuses, disques actuateurs, solveur couplé, animations,
-compressible, profil de débit parabolique ; l'interface graphique ouvre un cas 3D mais
-renvoie vers la ligne de commande.
+compressible, profil de débit parabolique.
+
+Dans l'interface graphique : type de maillage « Pavé 3D », ou case « Extruder le maillage
+2D en 3D » (cadre « 3D : extrusion selon z ») sous n'importe quel maillage 2D ; les vitesses
+prennent alors une composante z (colonne `Uz` des conditions limites). Page Résultats :
+champs (`Uz` compris) dans un plan z = constante au choix (vide : plan médian), profils
+entre deux points `x, y, z` ; la vue du maillage montre les frontières en perspective et la
+coupe. Les coupes x = cte ou y = cte et les isosurfaces se font dans ParaView
+(`fields.vtk`).
 
 ### Format de cas (TOML, extrait)
 
@@ -797,8 +805,8 @@ de coût corrigés pendant ces mesures : la distance à la paroi était calculé
 17. **3D (périmètre réduit)** :
    - maillages : pavés et extrusions seulement (hexaèdres, prismes) ; pas de mailleur 3D
      général, pas d'import de maillage 3D (Gmsh, OpenFOAM), export VTK seulement ;
-     incompressible seulement ; pas d'interface graphique 3D (ligne de commande) ; figures
-     dans le plan z médian seulement (le reste : ParaView) ;
+     incompressible seulement ; figures (interface et ligne de commande) dans un plan
+     z = constante seulement (coupes x ou y, isosurfaces : ParaView) ;
    - non disponibles : axisymétrique (sans objet), swirl, zones poreuses, disques
      actuateurs, solveur couplé, animations, compressible, profil de débit parabolique ;
    - coût (§ 7) : ~8.5 s par itération et 2.9 Go pour 10⁶ cellules en laminaire, plus
@@ -832,7 +840,7 @@ corrections de courbure et de rotation, loi de paroi thermique et k-ε haut-Reyn
 viscoélasticité ; compressible turbulent (RANS) et axisymétrique, écart transsonique ; solveur
 couplé : énergie et turbulence dans le système couplé, préconditionneur multigrille par blocs
 pour les grands maillages. 3D : mailleur général (tétraèdres, couches prismatiques), import
-Gmsh 3D, interface graphique 3D, distance à la paroi accélérée (Numba), VTK binaire.
+Gmsh 3D, coupes x / y dans l'interface, distance à la paroi accélérée (Numba), VTK binaire.
 
 ---
 
@@ -872,7 +880,7 @@ microrans/
   gui/                   interface PySide6 (app.py, widgets.py)
   examples/              cas fournis (microrans examples)
 packaging/               PyInstaller (microrans.spec) : exécutables GUI + CLI
-tests/                   pytest (435 tests : vérification, validation, 3D, GUI hors écran, faux GPU)
+tests/                   pytest (437 tests : vérification, validation, 3D, GUI hors écran, faux GPU)
 .github/workflows/       tests (Python 3.10 / 3.12) ; exécutables Windows / Linux
 ```
 

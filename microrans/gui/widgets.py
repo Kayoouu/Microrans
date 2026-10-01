@@ -55,24 +55,39 @@ class SciEdit(QLineEdit):
 
 
 class Vec2(QWidget):
+    """Vecteur à 2 composantes (x, y), ou 3 (x, y, z) après set_dim(3) : cas 3D."""
     valueChanged = Signal()
 
-    def __init__(self, value=(0.0, 0.0), parent=None):
+    def __init__(self, value=(0.0, 0.0), parent=None, z_default=0.0):
         super().__init__(parent)
         lay = QHBoxLayout(self)
         lay.setContentsMargins(0, 0, 0, 0)
+        self.z_default = z_default          # 3e composante absente (cas 2D rouvert en 3D)
         self.x, self.y = SciEdit(value[0]), SciEdit(value[1])
-        for w in (self.x, self.y):
+        self.z = SciEdit(value[2] if len(value) > 2 else z_default)
+        for w in (self.x, self.y, self.z):
             lay.addWidget(w)
             w.valueChanged.connect(self.valueChanged.emit)
+        self.dim = 2
+        self.set_dim(len(value))
+
+    def set_dim(self, n: int):
+        self.dim = 3 if n == 3 else 2
+        self.z.setVisible(self.dim == 3)
 
     def value(self):
-        return [self.x.value() or 0.0, self.y.value() or 0.0]
+        v = [self.x.value() or 0.0, self.y.value() or 0.0]
+        z = self.z.value()
+        return v + [self.z_default if z is None else z] if self.dim == 3 else v
 
     def set_value(self, v):
         v = v if v is not None else (0.0, 0.0)
-        self.x.set_value(float(v[0]) if isinstance(v[0], (int, float)) else v[0])
-        self.y.set_value(float(v[1]) if isinstance(v[1], (int, float)) else v[1])
+
+        def f(c):
+            return float(c) if isinstance(c, (int, float)) else c
+        self.x.set_value(f(v[0]))
+        self.y.set_value(f(v[1]))
+        self.z.set_value(f(v[2]) if len(v) > 2 else self.z_default)
 
 
 def combo(options, parent=None) -> QComboBox:
@@ -130,8 +145,12 @@ class Binder(QObject):
     def sci(self, path, default=None, allow_empty=False, placeholder=""):
         return self._add(path, SciEdit(default, allow_empty, placeholder), default, "sci")
 
-    def vec(self, path, default=(0.0, 0.0)):
-        return self._add(path, Vec2(default), default, "vec")
+    def vec(self, path, default=(0.0, 0.0), follow_dim=False, z_default=0.0):
+        """follow_dim : 2 ou 3 composantes selon la dimension du cas (vitesse, forces) ;
+        z_default : 3e composante quand le cas n'en donne pas (raffinement : 1)."""
+        w = Vec2(default, z_default=z_default)
+        w.follow_dim = follow_dim
+        return self._add(path, w, default, "vec")
 
     def int(self, path, default=0, lo=0, hi=10 ** 7):
         w = QSpinBox()
@@ -181,8 +200,9 @@ class Binder(QObject):
             v = default if v is None else v
             w.blockSignals(True)
             if kind == "vec":
-                simple = v is None or (len(v) == 2 and all(isinstance(c, (int, float))
-                                                           for c in v))
+                ok_len = (2, 3) if getattr(w, "follow_dim", False) else (w.dim,)
+                simple = v is None or (len(v) in ok_len and all(isinstance(c, (int, float))
+                                                                for c in v))
                 # valeur avancée (ex. multi-grading) : non éditable ici, conservée telle quelle
                 w.setEnabled(simple)
                 w.setToolTip("" if simple else "Valeur avancée : modifiez-la dans l'onglet TOML")
@@ -232,27 +252,30 @@ class Binder(QObject):
 
 
 def _points_text(v) -> str:
-    """[[x, y], ...] -> « x y ; x y » (texte laissé tel quel)."""
+    """[[x, y], ...] -> « x y ; x y » (3D : « x y z ») ; texte laissé tel quel."""
     if v is None:
         return ""
     if isinstance(v, str):
         return v
     try:
-        return " ; ".join(f"{float(p[0]):g} {float(p[1]):g}" for p in v)
-    except (TypeError, ValueError, IndexError):
+        return " ; ".join(" ".join(f"{float(c):g}" for c in p) for p in v)
+    except (TypeError, ValueError):
         return str(v)
 
 
 def _points_value(text):
-    """« x y ; x y » -> [[x, y], ...] ; texte illisible conservé (erreur claire au calcul)."""
+    """« x y ; x y » (3D : « x y z ; … ») -> [[x, y], ...] ; texte illisible conservé
+    (erreur claire au calcul)."""
     from ..fv2d.sampling import parse_points
     t = text.strip()
     if not t:
         return None
-    try:
-        return [[float(x), float(y)] for x, y in parse_points(t)]
-    except ValueError:
-        return t
+    for dim in (2, 3):
+        try:
+            return [[float(c) for c in p] for p in parse_points(t, dim)]
+        except ValueError:
+            continue
+    return t
 
 
 # ----------------------------------------------------------------------------- tracés
@@ -279,8 +302,10 @@ class PlotCanvas(QWidget):
         self.canvas.draw_idle()
 
     def message(self, text):
+        import textwrap
         ax = self.axes()
         ax.axis("off")
+        text = "\n".join(textwrap.fill(par, 60) for par in text.split("\n"))
         ax.text(0.5, 0.5, text, ha="center", va="center", fontsize=11, color="#52514e")
         self.draw()
 

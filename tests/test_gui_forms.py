@@ -516,15 +516,93 @@ def test_out_of_list_values_kept(win):
     assert win.cfg["solver"]["solver_p"] == "auto" and combo.count() == n - 1
 
 
-def test_3d_case_refused_with_explanation(win, monkeypatch):
-    """Lot D4 : interface 3D hors périmètre — un cas 3D est refusé avec la marche à suivre
-    (ligne de commande, ParaView) au lieu d'un tracé faux ou d'une erreur."""
-    from PySide6.QtWidgets import QMessageBox
-    shown = []
-    monkeypatch.setattr(QMessageBox, "information", lambda *a: shown.append(a[1:3]))
-    monkeypatch.setattr(win, "quiet", False)
-    cfg = {"mesh": {"type": "rectangle", "x0": 0, "x1": 1, "y0": 0, "y1": 1, "nx": 4, "ny": 4,
-                    "extrude": {"nz": 2}}, "physics": {"nu": 0.01},
-           "boundary": {"left": {"type": "wall"}}}
-    assert not win._case_ok(cfg, mesh_only=True)
-    assert shown[-1][0] == "Cas 3D" and "microrans run2d" in shown[-1][1]
+def _wait(win, timeout=120):
+    import time
+
+    from PySide6.QtWidgets import QApplication
+    t0 = time.time()
+    while win.thread is not None and time.time() - t0 < timeout:
+        QApplication.processEvents()
+        time.sleep(0.02)
+
+
+def test_3d_box_case_form_roundtrip(win):
+    """Lot E : pavé 3D dans l'interface — 3 composantes (raffinement, vitesses), colonne Uz
+    des conditions limites, cas relu valide ; le raffinement absent vaut 1 en z (pas 0)."""
+    import copy
+
+    from microrans.cli import examples_dir
+    from microrans.fv2d.validate import check_case
+    win.open_case(examples_dir() / "conduite_carree_3d.toml")
+    assert win._dim() == 3 and not win.bc_table.isColumnHidden(10)
+    assert win.box_z.isVisibleTo(win) and not win.box_extrude.isVisibleTo(win)
+    before = copy.deepcopy(win.cfg["mesh"])
+    win._store_forms()
+    m = win.cfg["mesh"]
+    assert m["grading"] == [1.0, 1.0, 1.0]
+    assert {k: m[k] for k in before} == before                   # rien de perdu
+    assert check_case(copy.deepcopy(win.cfg)) == []
+
+
+def test_extrude_checkbox_switches_case_to_3d(win):
+    """Lot E : un cas 2D extrudé depuis l'interface (case à cocher) devient 3D : vitesses à 3
+    composantes, bloc [mesh.extrude] écrit ; décoché, le cas redevient 2D."""
+    import copy
+
+    from microrans.cli import examples_dir
+    from microrans.fv2d.validate import check_case
+    win.open_case(examples_dir() / "cavite_re100.toml")
+    assert win._dim() == 2 and win.bc_table.isColumnHidden(10)
+    win.extrude_on.setChecked(True)
+    win.ext_z0.set_value(0.0)
+    win.ext_z1.set_value(0.1)
+    win.ext_nz.setValue(2)
+    win._store_forms()
+    ext = win.cfg["mesh"]["extrude"]
+    assert (ext["z0"], ext["z1"], ext["nz"]) == (0.0, 0.1, 2)
+    assert ext["periodic"] == [["back", "front"]]
+    lid = next(b for b in win.cfg["boundary"].values() if b.get("U"))
+    assert len(lid["U"]) == 3 and not win.bc_table.isColumnHidden(10)
+    assert check_case(copy.deepcopy(win.cfg)) == []
+    win.extrude_on.setChecked(False)
+    win._store_forms()
+    assert "extrude" not in win.cfg["mesh"]
+    lid = next(b for b in win.cfg["boundary"].values() if b.get("U"))
+    assert len(lid["U"]) == 2 and win.bc_table.isColumnHidden(10)
+
+
+def test_3d_case_meshed_run_and_plotted(win, monkeypatch, tmp_path):
+    """Lot E : cas 3D de bout en bout dans l'interface (avant : refusé) — maillage, calcul,
+    champs dans un plan z (Uz compris), plan hors du domaine expliqué au lieu d'une figure
+    vide."""
+    from microrans.cli import examples_dir
+    monkeypatch.setenv("MICRORANS_RESULTS", str(tmp_path))
+    win.open_case(examples_dir() / "cavite_cubique_re100_3d.toml")
+    win.cfg["mesh"].update(nx=4, ny=4, nz=4)
+    win.cfg["solver"].update(max_iter=3)
+    win.cfg["output"]["directory"] = str(tmp_path / "cav3d")
+    win.load_cfg(win.cfg)
+    win.quiet = True
+    win.errors.clear()
+    win.generate_mesh()
+    _wait(win)
+    assert win.mesh is not None and win.mesh.dim == 3 and win.mesh.n_cells == 64
+    win.run_2d()
+    _wait(win)
+    assert not win.errors and win.summary["iterations"] == 3
+    keys = [win.field_combo.itemData(i) for i in range(win.field_combo.count())]
+    assert "Uz" in keys and win.slice_z.isEnabled()
+    for i in range(len(keys)):
+        win.field_combo.setCurrentIndex(i)
+        win.plot_field()
+    assert "plan z = 0.5" in win.canvas.fig.axes[0].get_title()
+    win.line_start.set_value((0.5, 0.0, 0.5))
+    win.line_end.set_value((0.5, 1.0, 0.5))
+    win.plot_line()
+    win.slice_z.set_value(5.0)
+    win.plot_field()
+    texts = [t.get_text() for t in win.canvas.fig.axes[0].texts]
+    assert any("hors du domaine" in t for t in texts)
+    win.draw_mesh()
+    win.slice_z.set_value(None)
+    assert not win.errors

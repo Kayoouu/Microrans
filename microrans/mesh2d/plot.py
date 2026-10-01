@@ -47,9 +47,11 @@ def plot_mesh(mesh, path=None, ax=None, title=None, zoom=None, linewidth=0.3, sh
         ax.set_ylim(zoom[2], zoom[3])
     else:
         ax.autoscale_view()
-    q = mesh.quality()
-    types = ", ".join(f"{v} {k}" for k, v in q["cell_types"].items())
-    ax.set_title(title or f"{q['n_cells']} cellules ({types})", fontsize=10)
+    if title is None:                       # coupe d'un maillage 3D : titre fourni
+        q = mesh.quality()
+        types = ", ".join(f"{v} {k}" for k, v in q["cell_types"].items())
+        title = f"{q['n_cells']} cellules ({types})"
+    ax.set_title(title, fontsize=10)
     if own and path:
         fig.tight_layout()
         fig.savefig(path, dpi=150)

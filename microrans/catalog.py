@@ -46,7 +46,7 @@ GROUPS = [
         ("compressible_plaque_laminaire", "Plaque plane laminaire à Mach 0.2", "13 s"),
         ("compressible_naca0012_transsonique", "NACA 0012 transsonique, Mach 0.8", "50 s"),
     ]),
-    ("3D — ligne de commande seulement, champs dans ParaView", [
+    ("3D — figures en coupe z, champs complets dans ParaView", [
         ("conduite_carree_3d", "Conduite carrée laminaire (solution exacte)", "8 s"),
         ("canal_turbulent_3d", "Canal turbulent Re_τ = 395 extrudé, Spalart-Allmaras",
          "12 s"),

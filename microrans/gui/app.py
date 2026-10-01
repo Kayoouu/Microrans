@@ -65,9 +65,11 @@ BC_COLUMNS = [
     ("débit Q", "Entrée : débit (remplace U ; vitesse normale uniforme)"),
     ("scalaires", "Valeurs des scalaires, ex. c=1; age=0"),
     ("u_θ ou Ω=…", "Rotation propre : u_θ en entrée, Ω=… (rad/s) pour une paroi tournante"),
+    ("Uz", "Vitesse imposée, composante z (cas 3D ; nombre ou formule en x, y, z)"),
 ]
-BC_USED = {"wall": {2, 3, 5, 6, 8, 9}, "inlet": {2, 3, 5, 7, 8, 9},
-           "pressure_inlet": {4, 5, 8, 9}, "outlet": {4, 8}, "farfield": {2, 3, 4, 5, 8},
+BC_UZ = 10                       # colonne Uz : affichée après Uy, cas 3D seulement
+BC_USED = {"wall": {2, 3, 5, 6, 8, 9, 10}, "inlet": {2, 3, 5, 7, 8, 9, 10},
+           "pressure_inlet": {4, 5, 8, 9}, "outlet": {4, 8}, "farfield": {2, 3, 4, 5, 8, 10},
            "symmetry": set(), "axis": set()}
 COMP_BC_USED = {"outlet": {4}, "inlet": {4, 5}, "wall": {2, 3, 5}}
 # clés des formulaires conservées pour un cas compressible (le reste est dans [flow],
@@ -80,10 +82,16 @@ MESH_TYPES = [("rectangle", "Rectangle structuré"), ("ogrid", "Structuré en O 
               ("unstructured", "Triangles (non structuré)"),
               ("hybrid", "Hybride : couches de quadrilatères + triangles"),
               ("file", "Importer un fichier (.msh Gmsh, .su2)"),
-              ("blocks", "Multi-blocs (édition dans l'onglet TOML)")]
+              ("blocks", "Multi-blocs (édition dans l'onglet TOML)"),
+              ("box", "Pavé 3D (hexaèdres)")]
+# faces z = z0 / z = z1 d'une extrusion 3D : (valeur, libellé)
+EXTRUDE_ENDS = [("periodic", "Périodiques (écoulement invariant ou périodique en z)"),
+                ("symmetry", "Symétrie (plans de glissement)"),
+                ("wall", "Parois"), ("patch", "Frontières à régler (page Conditions limites)")]
 BODY_TYPES = [("circle", "Cercle"), ("rectangle", "Rectangle"), ("ellipse", "Ellipse"),
               ("naca", "Profil NACA 4 chiffres"), ("file", "Contour importé (.dat .csv .svg .dxf)")]
-FIELD_LABELS = {"T": "température T", "U_mag": "|U|", "Ux": "U_x", "Uy": "U_y", "p": "pression p", "vorticity":
+FIELD_LABELS = {"T": "température T", "U_mag": "|U|", "Ux": "U_x", "Uy": "U_y", "Uz": "U_z",
+                "p": "pression p", "vorticity":
                 "vorticité ω_z", "nut_over_nu": "ν_t / ν", "k": "k", "omega": "ω", "eps": "ε",
                 "nu_tilde": "ν̃", "wall_distance": "distance à la paroi",
                 "viscosity": "viscosité ν (non newtonien)", "shear_rate": "taux de cisaillement γ̇",
@@ -433,10 +441,21 @@ class MainWindow(QMainWindow):
         f.addRow("x min / x max", self._pair(B.sci(("mesh", "x0"), 0.0), B.sci(("mesh", "x1"), 1.0)))
         f.addRow("y min / y max", self._pair(B.sci(("mesh", "y0"), 0.0), B.sci(("mesh", "y1"), 1.0)))
         f.addRow("Cellules nx / ny", self._pair(B.int(("mesh", "nx"), 48, 1), B.int(("mesh", "ny"), 48, 1)))
-        f.addRow("Progression (dernière/1re) x, y", B.vec(("mesh", "grading"), (1.0, 1.0)))
+        # 2 composantes (rectangle) ou 3 (pavé) : voir _mesh_type_changed
+        self.grading_edit = B.vec(("mesh", "grading"), (1.0, 1.0), follow_dim=True,
+                                   z_default=1.0)
+        self.grading_label = QLabel("Progression (dernière/1re) x, y")
+        f.addRow(self.grading_label, self.grading_edit)
         for side, lab in [("left", "gauche"), ("right", "droite"), ("bottom", "bas"), ("top", "haut")]:
             f.addRow(f"Nom du bord {lab}", B.text(("mesh", "names", side), side))
         lay.addWidget(self.box_rect)
+        # pavé 3D : x, y et noms du groupe rectangle, plus z
+        self.box_z, f = _form("Pavé 3D : direction z")
+        f.addRow("z min / z max", self._pair(B.sci(("mesh", "z0"), 0.0), B.sci(("mesh", "z1"), 1.0)))
+        f.addRow("Cellules nz", B.int(("mesh", "nz"), 16, 1))
+        for side, lab in [("back", "arrière (z min)"), ("front", "avant (z max)")]:
+            f.addRow(f"Nom de la face {lab}", B.text(("mesh", "names", side), side))
+        lay.addWidget(self.box_z)
         # O-grid
         self.box_ogrid, f = _form("Maillage en O (un seul corps)")
         f.addRow("Cellules autour du corps", B.int(("mesh", "n_around"), 128, 8))
@@ -515,6 +534,28 @@ class MainWindow(QMainWindow):
             wdg.textChanged.connect(self._body_changed)
         self.b_type.currentIndexChanged.connect(self._body_changed)
         lay.addWidget(self.box_bodies)
+        # extrusion 3D de n'importe quel maillage 2D ([mesh.extrude])
+        self.box_extrude, f = _form("3D : extrusion selon z")
+        self.extrude_on = self._check("Extruder le maillage 2D en 3D (hexaèdres, prismes)",
+                                      False)
+        self.extrude_on.toggled.connect(self._extrude_toggled)
+        f.addRow(self.extrude_on)
+        self.ext_z0, self.ext_z1 = SciEdit(0.0), SciEdit(1.0)
+        self.ext_nz = QSpinBox()
+        self.ext_nz.setRange(1, 10 ** 5)
+        self.ext_nz.setValue(8)
+        self.ext_ends = combo(EXTRUDE_ENDS)
+        f.addRow("z min / z max", self._pair(self.ext_z0, self.ext_z1))
+        f.addRow("Couches nz", self.ext_nz)
+        f.addRow("Faces z min / z max", self.ext_ends)
+        f.addRow(_note("Une couche entre deux plans de symétrie redonne exactement le 2D ; "
+                       "plusieurs couches : écoulement 3D (voir README, limites 3D)."))
+        for wdg in (self.ext_z0, self.ext_z1):
+            wdg.valueChanged.connect(self._form_changed)
+        self.ext_nz.valueChanged.connect(self._form_changed)
+        self.ext_ends.currentIndexChanged.connect(self._form_changed)
+        self.ext_widgets = (self.ext_z0, self.ext_z1, self.ext_nz, self.ext_ends)
+        lay.addWidget(self.box_extrude)
         cut = self.binder.check(("mesh", "cut_axis"), False, "Couper à l'axe y = 0")
         cut.setToolTip("Axisymétrique : ne garder que la moitié y > 0 du maillage ; la coupe "
                        "devient la frontière « axis ».")
@@ -615,7 +656,8 @@ class MainWindow(QMainWindow):
             ("Prandtl Pr = ν/α", B.sci(("energy", "Pr"), 0.71)),
             ("Prandtl turbulent Pr_t", B.sci(("energy", "Pr_t"), 0.85)),
             ("β (dilatation ; 0 = sans flottabilité)", B.sci(("energy", "beta"), 0.0)),
-            ("Gravité (gx, gy)", B.vec(("energy", "gravity"), (0.0, -9.81))),
+            ("Gravité (gx, gy[, gz])", B.vec(("energy", "gravity"), (0.0, -9.81),
+                                             follow_dim=True)),
             ("Température de référence", B.sci(("energy", "T_ref"), 0.0)),
             ("ΔT de référence (Nusselt)", B.sci(("energy", "delta_T"), 1.0))]
         for lab, wdg in self.energy_fields:
@@ -685,9 +727,11 @@ class MainWindow(QMainWindow):
                        "avec rotation propre. Vitesse au disque et puissance dans summary.json."))
         lay.addWidget(box)
         box, f = _form("Conditions initiales et forces")
-        f.addRow("Vitesse initiale (Ux, Uy)", B.vec(("initial", "U"), (0.0, 0.0)))
+        f.addRow("Vitesse initiale (Ux, Uy[, Uz])", B.vec(("initial", "U"), (0.0, 0.0),
+                                                          follow_dim=True))
         f.addRow("Perturbation du sillage", B.sci(("initial", "perturbation"), None, True, "0"))
-        f.addRow("Force volumique (fx, fy)", B.vec(("physics", "body_force"), (0.0, 0.0)))
+        f.addRow("Force volumique (fx, fy[, fz])", B.vec(("physics", "body_force"), (0.0, 0.0),
+                                                          follow_dim=True))
         self.restart_path = B.text(("initial", "restart"), "")
         self.restart_path.setPlaceholderText("vide : démarrer de l'état initial ci-dessus")
         bb = QPushButton("Parcourir…")
@@ -707,7 +751,8 @@ class MainWindow(QMainWindow):
                             "normale uniforme ; U ignorée) ; Entrée (pression totale) : colonne "
                             "p = p0 ; Sortie : p imposée ; Champ lointain : U∞ en entrée, p∞ en "
                             "sortie selon le signe de U∞·n. Les composantes de U acceptent des "
-                            "expressions en x, y (ex. 6*y*(1-y))."))
+                            "expressions en x, y (3D : et z ; ex. 6*y*(1-y)). Cas 3D : colonne "
+                            "Uz en plus."))
         self.bc_table = QTableWidget(0, len(BC_COLUMNS))
         self.bc_table.setHorizontalHeaderLabels([c[0] for c in BC_COLUMNS])
         for i, (_, tip) in enumerate(BC_COLUMNS):
@@ -717,6 +762,7 @@ class MainWindow(QMainWindow):
         h.setSectionResizeMode(0, QHeaderView.ResizeToContents)
         h.setDefaultSectionSize(58)
         h.setStretchLastSection(True)
+        h.moveSection(BC_UZ, 4)                          # Ux, Uy, Uz côte à côte
         self.bc_table.verticalHeader().setVisible(False)
         self.bc_table.setWordWrap(False)                 # formule longue : info-bulle
         self.bc_table.itemChanged.connect(lambda *_: self._bc_changed())
@@ -894,6 +940,11 @@ class MainWindow(QMainWindow):
         self.mesh_check = self._check("Superposer le maillage", False)
         self.vec_check = self._check("Vecteurs vitesse", False)
         f.addRow("Grandeur", self.field_combo)
+        self.slice_z = SciEdit(None, allow_empty=True, placeholder="plan médian")
+        self.slice_z.setToolTip("Cas 3D : cote z du plan de coupe des figures (vide : plan "
+                                "médian). Champs complets : fields.vtk dans ParaView.")
+        self.slice_z.setEnabled(False)
+        f.addRow("Plan de coupe z (3D)", self.slice_z)
         f.addRow("Palette", self.cmap_combo)
         f.addRow(self.zoom_check)
         f.addRow(self.mesh_check)
@@ -915,8 +966,8 @@ class MainWindow(QMainWindow):
         lay.addWidget(box)
         box, f = _form("Profil le long d'une ligne (grandeur choisie ci-dessus)")
         self.line_start, self.line_end = Vec2((0.0, 0.0)), Vec2((1.0, 0.0))
-        f.addRow("Début (x, y)", self.line_start)
-        f.addRow("Fin (x, y)", self.line_end)
+        f.addRow("Début (x, y[, z])", self.line_start)
+        f.addRow("Fin (x, y[, z])", self.line_end)
         b = QPushButton("Tracer le profil")
         b.clicked.connect(self.plot_line)
         f.addRow(b)
@@ -974,6 +1025,7 @@ class MainWindow(QMainWindow):
         set_combo(self.nu_mode, "reynolds" if "reynolds" in ph and "nu" not in ph else "nu")
         self.binder.load(cfg)
         self._load_bodies()
+        self._load_extrude()
         self._mesh_type_changed()
         self._nu_mode_changed()
         self._show_derived_nu()
@@ -992,10 +1044,9 @@ class MainWindow(QMainWindow):
         self._syncing = False
         self._refresh_toml()
         from ..fv2d.validate import case_dim
-        if case_dim(cfg) == 3:                      # signalé dès l'ouverture (lot D4)
-            self.log("Cas 3D : l'interface traite les cas 2D seulement ; lancer en ligne de "
-                     "commande (microrans run2d <fichier.toml>), champs dans fields.vtk "
-                     "(ParaView).")
+        if case_dim(cfg) == 3:
+            self.log("Cas 3D : figures dans un plan z = constante (page Résultats) ; champs "
+                     "complets dans fields.vtk (ParaView).")
 
     def _load_sweep(self):
         """[sweep] du cas → page Calcul (avant : ignorée ; l'exemple de polaire ne lançait
@@ -1057,9 +1108,12 @@ class MainWindow(QMainWindow):
             only = {p for p, *_ in self.binder.items if p[0] in ("mesh", "domain", "output")
                     or p in COMP_FORM_KEYS}
             self.binder.store(self.cfg, only=only)
+            self._store_extrude()
             self._prune_mesh_keys()
             return
         self.binder.store(self.cfg)
+        self._store_extrude()
+        self._fit_vectors_to_dim()
         if not self.energy_on.isChecked():
             self.cfg.pop("energy", None)
         ph = self.cfg.setdefault("physics", {})
@@ -1083,6 +1137,8 @@ class MainWindow(QMainWindow):
         kind = m.get("type", "rectangle")
         keep = {"rectangle": {"x0", "x1", "y0", "y1", "nx", "ny", "grading", "names", "periodic",
                               "patch_types"},
+                "box": {"x0", "x1", "y0", "y1", "z0", "z1", "nx", "ny", "nz", "grading", "names",
+                        "periodic", "patch_types"},
                 "ogrid": {"n_around", "n_radial", "farfield_radius", "first_height", "center"},
                 "unstructured": {"h_max", "h_surface", "growth", "refinements", "max_iter"},
                 "hybrid": {"h_max", "h_surface", "growth", "refinements", "max_iter", "layers"},
@@ -1092,13 +1148,18 @@ class MainWindow(QMainWindow):
             return
         managed = {"x0", "x1", "y0", "y1", "nx", "ny", "grading", "names", "n_around",
                    "n_radial", "farfield_radius", "first_height", "h_max", "h_surface", "growth",
-                   "layers", "path"}
+                   "layers", "path", "z0", "z1", "nz"}
         for k in list(m):
             if k in managed and k not in keep:
                 m.pop(k)
+        if kind != "box" and isinstance(m.get("names"), dict):
+            for k in ("back", "front"):                  # faces z : pavé seulement
+                m["names"].pop(k, None)
+        if kind == "box":
+            m.pop("extrude", None)
         if kind not in ("unstructured", "hybrid"):
             self.cfg.pop("domain", None)
-        if kind in ("rectangle", "file", "blocks"):
+        if kind in ("rectangle", "file", "blocks", "box"):
             self.cfg.pop("bodies", None)
 
     def _refresh_toml(self):
@@ -1178,6 +1239,15 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------------ maillage
     def _mesh_type_changed(self):
         kind = self.mesh_type.currentData()
+        box3d = kind == "box"
+        self.box_rect.setTitle("Pavé 3D : directions x et y" if box3d else "Rectangle")
+        self.box_z.setVisible(box3d)
+        self.box_z.setEnabled(box3d)
+        self.box_extrude.setVisible(not box3d and kind != "blocks")
+        self.grading_edit.set_dim(3 if box3d else 2)
+        self.grading_label.setText("Progression (dernière/1re) x, y" + (", z" if box3d else ""))
+        if box3d:
+            kind = "rectangle"                       # mêmes champs x, y que le rectangle
         self.box_rect.setVisible(kind == "rectangle")
         self.box_ogrid.setVisible(kind == "ogrid")
         self.box_unst.setVisible(kind in ("unstructured", "hybrid"))
@@ -1196,6 +1266,97 @@ class MainWindow(QMainWindow):
                                    "name": "cylinder"}]
             self._load_bodies()
         self._body_buttons_state()
+        self._dim_changed()
+
+    # ------------------------------------------------------------------ 3D
+    def _dim(self) -> int:
+        """Dimension du cas lue dans le formulaire du maillage (pavé ou extrusion : 3)."""
+        kind = self.mesh_type.currentData()
+        if kind == "box":
+            return 3
+        if kind == "blocks":                         # extrusion : onglet TOML seulement
+            return 3 if self.cfg.get("mesh", {}).get("extrude") else 2
+        return 3 if self.extrude_on.isChecked() else 2
+
+    def _extrude_toggled(self, on=None):
+        for w in self.ext_widgets:
+            w.setEnabled(self.extrude_on.isChecked())
+        self._dim_changed()
+        self._form_changed()
+
+    def _dim_changed(self):
+        """Champs vectoriels à 2 ou 3 composantes, colonne Uz, plan de coupe des résultats."""
+        dim = self._dim()
+        for _, w, _, kind in self.binder.items:
+            if kind == "vec" and getattr(w, "follow_dim", False) and w is not self.grading_edit:
+                w.set_dim(dim)
+        if hasattr(self, "slice_z"):                 # page Résultats construite
+            for w in (self.line_start, self.line_end):
+                w.set_dim(dim)
+            self.slice_z.setEnabled(dim == 3)
+        if hasattr(self, "bc_table"):
+            self._style_bc_table()
+
+    def _load_extrude(self):
+        e = self.cfg.get("mesh", {}).get("extrude")
+        self.extrude_on.blockSignals(True)
+        self.extrude_on.setChecked(isinstance(e, dict))
+        self.extrude_on.blockSignals(False)
+        e = e if isinstance(e, dict) else {}
+        for w in self.ext_widgets:
+            w.blockSignals(True)
+        self.ext_z0.set_value(float(e.get("z0", 0.0)))
+        self.ext_z1.set_value(float(e.get("z1", 1.0)))
+        self.ext_nz.setValue(int(e.get("nz", 8)))
+        ends = "patch"
+        pt = e.get("patch_types") or {}
+        if any(set(p[:2]) == {"back", "front"} for p in e.get("periodic") or []):
+            ends = "periodic"
+        elif pt.get("back") == pt.get("front") and pt.get("back") in ("symmetry", "wall"):
+            ends = pt["back"]
+        elif not e:
+            ends = "periodic"
+        set_combo(self.ext_ends, ends)
+        for w in self.ext_widgets:
+            w.blockSignals(False)
+            w.setEnabled(self.extrude_on.isChecked())
+
+    def _store_extrude(self):
+        """[mesh.extrude] depuis le formulaire (faces z : noms back / front par défaut ;
+        noms et réglages avancés de l'onglet TOML conservés)."""
+        m = self.cfg.setdefault("mesh", {})
+        if m.get("type") in ("box", "blocks"):
+            return
+        if not self.extrude_on.isChecked():
+            m.pop("extrude", None)
+            return
+        e = dict(m.get("extrude") or {})
+        e.update(z0=self.ext_z0.value() or 0.0, z1=self.ext_z1.value() or 1.0,
+                 nz=int(self.ext_nz.value()))
+        names = e.get("names") or {}
+        back, front = names.get("back", "back"), names.get("front", "front")
+        ends = self.ext_ends.currentData()
+        per = [p for p in e.get("periodic") or [] if set(p[:2]) != {back, front}]
+        pt = {k: v for k, v in (e.get("patch_types") or {}).items() if k not in (back, front)}
+        if ends == "periodic":
+            per.append([back, front])
+        elif ends in ("symmetry", "wall"):
+            pt.update({back: ends, front: ends})
+        for key, val in (("periodic", per), ("patch_types", pt)):
+            if val:
+                e[key] = val
+            else:
+                e.pop(key, None)
+        m["extrude"] = e
+
+    def _fit_vectors_to_dim(self):
+        """Vitesses des conditions aux limites à 2 ou 3 composantes selon le cas (passage
+        2D ↔ 3D : U = [1, 0] devient [1, 0, 0], et inversement)."""
+        dim = self._dim()
+        for spec in (self.cfg.get("boundary") or {}).values():
+            U = spec.get("U") if isinstance(spec, dict) else None
+            if isinstance(U, list) and len(U) in (2, 3) and len(U) != dim:
+                spec["U"] = (U + [0.0])[:3] if dim == 3 else U[:2]
 
     def _body_buttons_state(self):
         """Maillage en O : un seul corps (avant : « Ajouter » en créait un second, refusé
@@ -1392,9 +1553,59 @@ class MainWindow(QMainWindow):
         from ..mesh2d.plot import plot_mesh
         if self.mesh is None:
             return
+        zoom = self._zoom() if self.zoom_check.isChecked() else None
+        if getattr(self.mesh, "dim", 2) == 3:
+            self._draw_mesh_3d(zoom)
+            return
         ax = self.canvas.axes()
-        plot_mesh(self.mesh, ax=ax, zoom=self._zoom() if self.zoom_check.isChecked() else None,
+        plot_mesh(self.mesh, ax=ax, zoom=zoom,
                   linewidth=0.25 if self.mesh.n_cells < 30000 else 0.1)
+        self.canvas.draw()
+        self.tabs.setCurrentIndex(0)
+
+    def _slice(self, mesh=None):
+        """Coupe du maillage 3D au plan z choisi (page Résultats ; vide : plan médian)."""
+        from ..mesh3d.slice import ZSlice
+        return ZSlice(mesh or self.mesh, self.slice_z.value())
+
+    def _draw_mesh_3d(self, zoom):
+        """Maillage 3D : vue d'ensemble des frontières (perspective) et coupe z = cte."""
+        from ..mesh2d.plot import plot_mesh
+        m = self.mesh
+        q = m.quality()
+        types = ", ".join(f"{v} {k}" for k, v in q["cell_types"].items())
+        ax1, ax2 = self.canvas.axes(2)
+        self.canvas.fig.delaxes(ax1)
+        ax1 = self.canvas.fig.add_subplot(1, 2, 1, projection="3d")
+        from mpl_toolkits.mplot3d.art3d import Poly3DCollection
+        colors = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300", "#4a3aa7",
+                  "#e34948"]
+        for k, (name, ptype, fn) in enumerate(m.all_boundary_patches()):
+            fn = np.asarray(fn)
+            step = max(1, len(fn) // 4000)           # vue d'ensemble : faces échantillonnées
+            polys = [m.points[f[f >= 0]] for f in fn[::step]]
+            ax1.add_collection3d(Poly3DCollection(polys, facecolor=colors[k % 8], alpha=0.25,
+                                                  edgecolor=colors[k % 8], linewidths=0.2,
+                                                  label=f"{name} ({ptype})"))
+        lo, hi = m.points.min(axis=0), m.points.max(axis=0)
+        ax1.set(xlim=(lo[0], hi[0]), ylim=(lo[1], hi[1]), zlim=(lo[2], hi[2]),
+                xlabel="x", ylabel="y", zlabel="z")
+        # domaine très plat (extrusion d'une couche) : épaisseur affichée ≥ 15 % (lisible)
+        ax1.set_box_aspect(np.maximum(hi - lo, 0.15 * np.max(hi - lo)))
+        ax1.locator_params(nbins=4)
+        ax1.tick_params(labelsize=7, pad=0)
+        ax1.legend(loc="upper left", fontsize=7)
+        ax1.set_title(f"{q['n_cells']} cellules ({types})", fontsize=9)
+        try:
+            sl = self._slice()
+        except ValueError as exc:
+            import textwrap
+            ax2.axis("off")
+            ax2.text(0.5, 0.5, "Coupe impossible :\n" + textwrap.fill(str(exc), 32),
+                     ha="center", va="center", fontsize=10, color="#52514e")
+        else:
+            plot_mesh(sl, ax=ax2, zoom=zoom, linewidth=0.25 if sl.n_cells < 30000 else 0.1,
+                      show_patches=False, title=f"Coupe z = {sl.z:.4g}")
         self.canvas.draw()
         self.tabs.setCurrentIndex(0)
 
@@ -1402,9 +1613,14 @@ class MainWindow(QMainWindow):
         if self.mesh is None:
             QMessageBox.information(self, "Exporter", "Générez d'abord le maillage.")
             return
-        path, filt = QFileDialog.getSaveFileName(
-            self, "Exporter le maillage", str(results_root() / "maillage.msh"),
-            "Gmsh (*.msh);;SU2 (*.su2);;VTK (*.vtk);;OpenFOAM (dossier polyMesh) (*)")
+        if getattr(self.mesh, "dim", 2) == 3:          # 3D : VTK seulement
+            path, filt = QFileDialog.getSaveFileName(
+                self, "Exporter le maillage", str(results_root() / "maillage.vtk"),
+                "VTK (*.vtk)")
+        else:
+            path, filt = QFileDialog.getSaveFileName(
+                self, "Exporter le maillage", str(results_root() / "maillage.msh"),
+                "Gmsh (*.msh);;SU2 (*.su2);;VTK (*.vtk);;OpenFOAM (dossier polyMesh) (*)")
         if not path:
             return
         from ..mesh2d.io import write_mesh, write_openfoam
@@ -1427,13 +1643,14 @@ class MainWindow(QMainWindow):
         walls = [n for n, t, _ in self.mesh.all_boundary_patches()
                  if self.cfg.get("boundary", {}).get(n, {}).get("type") == "wall"
                  or t == "wall"]
-        pts = [self.mesh.points[e].reshape(-1, 2) for n, t, e in self.mesh.all_boundary_patches()
-               if n in walls]
+        P = self.mesh.points
+        pts = [P[np.asarray(e)[np.asarray(e) >= 0]][:, :2]
+               for n, t, e in self.mesh.all_boundary_patches() if n in walls]
         if not pts:
             return None
         pts = np.vstack(pts)
         L = float(max(np.ptp(pts[:, 0]), np.ptp(pts[:, 1])))
-        bb = self.mesh.bbox()
+        bb = (*P[:, :2].min(axis=0), *P[:, :2].max(axis=0))       # x, y (3D : projection)
         if L > 0.5 * max(bb[2] - bb[0], bb[3] - bb[1]):
             return None
         (x0, y0), (x1, y1) = pts.min(axis=0), pts.max(axis=0)
@@ -1806,9 +2023,10 @@ class MainWindow(QMainWindow):
             set_combo(cb, spec.get("type", "wall"))
             cb.currentIndexChanged.connect(lambda *_: self._bc_changed())
             self.bc_table.setCellWidget(r, 1, cb)
-            U = spec.get("U", ["", ""])
+            U = list(spec.get("U", ["", ""])) + [""]
             self.bc_table.setItem(r, 2, QTableWidgetItem(str(U[0])))
             self.bc_table.setItem(r, 3, QTableWidgetItem(str(U[1])))
+            self.bc_table.setItem(r, BC_UZ, QTableWidgetItem(str(U[2])))
             self.bc_table.setItem(r, 4, QTableWidgetItem(str(spec.get("p", spec.get("p0", "")))))
             self.bc_table.setItem(r, 5, QTableWidgetItem(str(spec.get("T", spec.get("T0",
                                                                                     "")))))
@@ -1852,11 +2070,15 @@ class MainWindow(QMainWindow):
             spec["type"] = t
             ux = num(self.bc_table.item(r, 2).text() if self.bc_table.item(r, 2) else "")
             uy = num(self.bc_table.item(r, 3).text() if self.bc_table.item(r, 3) else "")
+            uz = (num(self.bc_table.item(r, BC_UZ).text() if self.bc_table.item(r, BC_UZ)
+                      else "") if self._dim() == 3 else None)
             Q = num(self.bc_table.item(r, 7).text() if self.bc_table.item(r, 7) else "")
             if t == "inlet" and Q is not None:
                 spec["flow_rate"] = Q
-            elif t in ("inlet", "farfield") or (t == "wall" and (ux or uy)):
+            elif t in ("inlet", "farfield") or (t == "wall" and (ux or uy or uz)):
                 spec["U"] = [ux if ux is not None else 0.0, uy if uy is not None else 0.0]
+                if self._dim() == 3:
+                    spec["U"].append(uz if uz is not None else 0.0)
             p = num(self.bc_table.item(r, 4).text() if self.bc_table.item(r, 4) else "")
             if t in ("outlet", "farfield") and p is not None:
                 spec["p"] = p
@@ -1894,11 +2116,12 @@ class MainWindow(QMainWindow):
         energy = self.cfg.get("energy") is not None
         types = {self.bc_table.cellWidget(r, 1).currentData()
                  for r in range(self.bc_table.rowCount()) if self.bc_table.cellWidget(r, 1)}
-        hidden = ({6, 7, 8, 9} if comp else
+        hidden = ({6, 7, 8, 9, BC_UZ} if comp else
                   ({5, 6} - ({5, 6} if energy else set()))
                   | (set() if "inlet" in types else {7})
                   | (set() if self.cfg.get("scalars") else {8})
-                  | (set() if ph.get("swirl") else {9}))
+                  | (set() if ph.get("swirl") else {9})
+                  | (set() if self._dim() == 3 else {BC_UZ}))
         for c in range(2, len(BC_COLUMNS)):
             self.bc_table.setColumnHidden(c, c in hidden)
         # colonne Type : largeur du plus long libellé affiché (pas de tous les choix)
@@ -2111,18 +2334,7 @@ class MainWindow(QMainWindow):
     def _case_ok(self, cfg, mesh_only=False) -> bool:
         """Vérification du cas avant maillage ou calcul (validate.py) : structure impossible
         -> message ; clés inconnues ou sans effet -> confirmation. False : ne pas lancer."""
-        from ..fv2d.validate import case_dim, check_case
-        if case_dim(cfg) == 3:
-            # interface 3D hors du périmètre du lot D4 : refus clair plutôt qu'une figure
-            # fausse ou une erreur de tracé
-            msg = ("Cas 3D ([mesh] type = \"box\" ou [mesh.extrude]) : l'interface graphique "
-                   "traite les cas 2D seulement. Lancer le calcul en ligne de commande : "
-                   "« microrans run2d <fichier.toml> » ; les champs (fields.vtk) s'ouvrent dans "
-                   "ParaView, les figures montrent le plan z médian.")
-            self.errors.append(msg)
-            if not self.quiet:
-                QMessageBox.information(self, "Cas 3D", msg)
-            return False
+        from ..fv2d.validate import check_case
         if not mesh_only and self.mesh is None and not cfg.get("boundary"):
             msg = ("Pas encore de conditions aux limites : générer d'abord le maillage (page "
                    "« Maillage »), les frontières apparaissent alors dans la page « Conditions "
@@ -2245,7 +2457,8 @@ class MainWindow(QMainWindow):
         self.summary_view.setPlainText(summary_text(summary))   # avant : JSON brut
         fields = solver.fields()
         self.field_combo.clear()
-        first = ["U_mag", "Ux", "Uy", "p", "vorticity"]
+        first = ["U_mag", "Ux", "Uy"] + (["Uz"] if solver.U.shape[1] == 3 else []) + [
+            "p", "vorticity"]
         if summary.get("solver") == "compressible":
             first = ["Mach", "p", "rho", "T", "U_mag", "Ux", "Uy", "vorticity"]
         for k in first + [k for k in fields if k not in first and k != "U"]:
@@ -2272,20 +2485,30 @@ class MainWindow(QMainWindow):
             return
         key = self.field_combo.currentData() or "U_mag"
         f = s.fields()
-        if key == "Ux":
-            val = s.U[:, 0]
-        elif key == "Uy":
-            val = s.U[:, 1]
+        if key in ("Ux", "Uy", "Uz"):
+            val = s.U[:, "xyz".index(key[1])]
         elif key == "vorticity":
             g = s.grad_U(s.U)
             val = g[:, 1, 0] - g[:, 0, 1]
         else:
             val = f[key]
+        val = np.asarray(val)
         zoom = self._zoom() if self.zoom_check.isChecked() else None
+        mesh, sel, plane, U = s.mesh, slice(None), "", s.U
+        if getattr(s.mesh, "dim", 2) == 3:          # 3D : plan z = cte
+            try:
+                mesh = self._slice(s.mesh)
+            except ValueError as exc:
+                self.canvas.message(f"Coupe impossible : {exc}\nChamps complets : "
+                                    "fields.vtk (ParaView).")
+                return
+            sel, plane = mesh.cells, f" — plan z = {mesh.z:.4g}"
+            val, U = val[sel], np.asarray(s.U)[sel][:, :2]
         vmin = vmax = None
         if key == "vorticity":
             _, L = _body_size(s)
-            far = s.mesh.wall_distance > 0.2 * L if L else np.ones(len(val), dtype=bool)
+            wd = np.asarray(s.mesh.wall_distance)[sel]
+            far = wd > 0.2 * L if L else np.ones(len(val), dtype=bool)
             lim = float(np.percentile(np.abs(val[far] if np.any(far) else val), 99))
             vmin, vmax = -lim, lim
         ax = self.canvas.axes()
@@ -2295,13 +2518,13 @@ class MainWindow(QMainWindow):
         mirror = None
         if s.axisymmetric:                           # image miroir par rapport à l'axe
             mirror = -1 if key in ("Uy", "vorticity") else 1
-        plot_field(s.mesh, val, ax=ax, cmap=cmap, zoom=zoom, vmin=vmin, vmax=vmax,
-                   title=FIELD_LABELS.get(key, key),
-                   vectors=s.U if self.vec_check.isChecked() else None, mirror=mirror)
+        plot_field(mesh, val, ax=ax, cmap=cmap, zoom=zoom, vmin=vmin, vmax=vmax,
+                   title=FIELD_LABELS.get(key, key) + plane,
+                   vectors=U if self.vec_check.isChecked() else None, mirror=mirror)
         if self.mesh_check.isChecked():
-            plot_mesh(s.mesh, ax=ax, zoom=zoom, linewidth=0.15, show_patches=False)
+            plot_mesh(mesh, ax=ax, zoom=zoom, linewidth=0.15, show_patches=False,
+                      title=FIELD_LABELS.get(key, key) + plane)
             ax.collections[-1].set_facecolor("none")
-            ax.set_title(FIELD_LABELS.get(key, key))
         self.canvas.draw()
         self.tabs.setCurrentIndex(0)
 
@@ -2424,7 +2647,8 @@ def QLineEdit_(text=""):
 # ============================================================================ lancement
 def _selftest(win: MainWindow, app, shot: str | None) -> int:
     """Test de fumée (CI, exécutable) : cavité 16×16, quelques itérations, tracés ; puis
-    rampe supersonique compressible (maillage réduit, 40 itérations implicites)."""
+    rampe supersonique compressible (maillage réduit, 40 itérations implicites) ; puis
+    conduite carrée 3D (128 cellules, 20 itérations, coupes)."""
     import time
     win.open_case(examples_dir() / "cavite_re100.toml")
     win.cfg["mesh"].update(nx=16, ny=16)
@@ -2499,12 +2723,36 @@ def _selftest(win: MainWindow, app, shot: str | None) -> int:
     win.line_start.set_value((0.0, 0.5))
     win.line_end.set_value((1.5, 0.5))
     win.plot_line()
+    # cas 3D (conduite carrée réduite, 8 × 8 dans la section) : maillage, calcul, champs
+    # dans un plan z, vue du maillage
+    win.open_case(examples_dir() / "conduite_carree_3d.toml")
+    win.cfg["mesh"].update(ny=8, nz=8)
+    win.cfg["solver"].update(max_iter=20)
+    win.cfg["output"]["directory"] = str(results_root() / "selftest_3d")
+    win.load_cfg(win.cfg)
+    win.summary = None
+    for action in (win.generate_mesh, win.run_2d):
+        action()
+        t0 = time.time()
+        while win.thread is not None and time.time() - t0 < 300:
+            app.processEvents()
+            time.sleep(0.02)
+    keys = [win.field_combo.itemData(i) for i in range(win.field_combo.count())]
+    d3 = (not errors and win.summary is not None and win.summary.get("dimension") == 3
+          and win.mesh.n_cells == 128 and "Uz" in keys
+          and (win.out_dir() / "fields.vtk").is_file())
+    if errors:
+        print("SELFTEST ÉCHEC (3D) :", errors[0])
+    for i in range(len(keys)):
+        win.field_combo.setCurrentIndex(i)
+        win.plot_field()
+    win.draw_mesh()
     app.processEvents()
-    ok = ok and comp and not errors
+    ok = ok and comp and d3 and not errors
     if shot:
         win.grab().save(shot)
     print("SELFTEST", "OK" if ok else "ÉCHEC", its, len(win.sweep_rows),
-          "compressible" if comp else "compressible ÉCHEC")
+          "compressible" if comp else "compressible ÉCHEC", "3D" if d3 else "3D ÉCHEC")
     return 0 if ok else 1
 
 
