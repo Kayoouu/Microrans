@@ -154,7 +154,8 @@ def test_case_checks_extrude():
     cfg["mesh"]["extrude"] = {"z1": 2, "nz": 2000}
     cfg["mesh"]["nx"] = 500
     cfg["physics"]["body_force"] = [1, 0, 0]
-    assert any("4 000 000 cellules" in w for w in check_case(cfg))
+    w = [w for w in check_case(cfg) if "4 000 000 cellules (3D)" in w]
+    assert w and "~10.7 Go de mémoire, ~34 s par itération" in w[0] and "~13 min" in w[0]
 
 
 def _cyl_cfg(dim, alpha=0.0, nz=1, **extra):
@@ -233,3 +234,18 @@ def test_cli_mesh_3d_writes_vtk_only(tmp_path, capsys):
     assert sorted(p.name for p in (tmp_path / "m").iterdir()) == ["box.vtk", "quality.json"]
     assert main(["mesh", str(case), "-o", str(tmp_path / "m2"), "-f", "su2", "vtk"]) == 0
     assert "format(s) su2 non disponible(s)" in capsys.readouterr().out
+
+
+def test_example_square_duct_via_cli(tmp_path, capsys):
+    """Exemple 3D fourni, maillage réduit (16²) : débit à +1.5 % de la série exacte
+    (32² dans l'exemple : +0.38 %)."""
+    import json
+
+    from microrans.cli import main
+    assert main(["run2d", "conduite_carree_3d", "-o", str(tmp_path), "--no-plot",
+                 "--set", "mesh.ny=16", "mesh.nz=16"]) == 0
+    out = capsys.readouterr().out
+    assert "Cas 3D : 512 cellules" in out and "Calcul stationnaire, laminaire, 3D" in out
+    s = json.loads((tmp_path / "summary.json").read_text(encoding="utf-8"))
+    assert s["converged"] and s["U_mean"][0] / 3.5144253739 - 1 == pytest.approx(0.015, abs=2e-3)
+    assert (tmp_path / "line_diagonale.csv").is_file()

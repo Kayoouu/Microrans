@@ -1,0 +1,55 @@
+# Conduite carrée laminaire établie (3D, périodique selon x) : solution exacte en série
+# (White, « Viscous Fluid Flow », éq. 3-48). Côté 1, force motrice f = 1, ν = 0.01.
+# Vitesse débitante exacte 3.5144 ; calculée : U_mean[0] dans summary.json
+# (3.5670 sur 16², +1.50 % ; 3.5276 sur 32², +0.38 % : ordre 2 ; ~8 s). Pas d'écoulement
+# secondaire (Uy = Uz = 0 à 1e-12) : attendu en laminaire.
+# Champs 3D : results/conduite_carree_3d/fields.vtk (ParaView) ; figures : plan z médian.
+# microrans run2d conduite_carree_3d
+[mesh]
+type = "box"
+x0 = 0.0
+x1 = 0.5
+y0 = -0.5
+y1 = 0.5
+z0 = -0.5
+z1 = 0.5
+nx = 2
+ny = 32
+nz = 32
+names = { left = "inlet", right = "outlet", bottom = "bottom", top = "top", back = "back", front = "front" }
+patch_types = { bottom = "wall", top = "wall", back = "wall", front = "wall" }
+periodic = [["inlet", "outlet"]]
+
+[physics]
+nu = 0.01
+body_force = [1.0, 0.0, 0.0]
+reference_length = 1.0
+
+[initial]
+U = [3.0, 0.0, 0.0]
+
+[boundary.bottom]
+type = "wall"
+
+[boundary.top]
+type = "wall"
+
+[boundary.back]
+type = "wall"
+
+[boundary.front]
+type = "wall"
+
+[solver]
+mode = "steady"
+max_iter = 3000
+tol = 1e-7
+
+[output]
+directory = "results/conduite_carree_3d"
+probes = [[0.25, 0.0, 0.0]]
+[[output.lines]]
+name = "diagonale"
+start = [0.25, -0.5, -0.5]
+end = [0.25, 0.5, 0.5]
+n = 101

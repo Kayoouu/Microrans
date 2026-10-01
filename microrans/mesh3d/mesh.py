@@ -28,11 +28,20 @@ CELL_FACES = {
 VTK_TYPES = {4: 10, 5: 14, 6: 13, 8: 12}
 
 
-def face_geometry(points, fn):
+def face_geometry(points, fn, chunk: int = 250_000):
     """(centres, vecteurs surface) de faces polygonales (nf, 4) complétées par −1 (triangles).
 
     Triangles autour de la moyenne des sommets (OpenFOAM) : S = Σ ½ (x_i − x̄) × (x_i+1 − x̄),
-    centre = moyenne des centres des triangles pondérée par leur aire (projetée sur S)."""
+    centre = moyenne des centres des triangles pondérée par leur aire (projetée sur S).
+    Par paquets de `chunk` faces : les tableaux intermédiaires (nf, 4, 3) des 6 millions de
+    faces locales d'un maillage de 10⁶ hexaèdres faisaient monter la mémoire à 5.2 Go."""
+    if len(fn) > chunk:
+        parts = [_face_geometry(points, fn[i:i + chunk]) for i in range(0, len(fn), chunk)]
+        return np.vstack([a for a, _ in parts]), np.vstack([b for _, b in parts])
+    return _face_geometry(points, fn)
+
+
+def _face_geometry(points, fn):
     k = np.sum(fn >= 0, axis=1)
     fn0 = np.where(fn >= 0, fn, fn[:, :1])
     X = points[fn0]                                              # (nf, 4, 3)
@@ -386,13 +395,17 @@ class Mesh3D:
         cand, dk = cand.reshape(nc, k), dk.reshape(nc, k)
         best, vec = self._dist_to_faces(self.cell_centers, cand, X, xbar, kk)
         unsure = np.nonzero(best > dk[:, -1] - R)[0] if k < len(fn) else np.zeros(0, int)
-        if len(unsure):
-            # toutes les faces de centre à moins de d + R, par paires (cellule, face)
-            balls = tree.query_ball_point(self.cell_centers[unsure], best[unsure] + R + 1e-12)
+        # toutes les faces de centre à moins de d + R, par paires (cellule, face) ; par paquets
+        # de cellules : les listes d'indices de query_ball_point (~150 entiers Python par
+        # cellule loin des parois) prenaient ~5 Go à 1 million de cellules
+        for u0 in range(0, len(unsure), 20_000):
+            uc = unsure[u0:u0 + 20_000]
+            balls = tree.query_ball_point(self.cell_centers[uc], best[uc] + R + 1e-12)
             cnt = np.array([len(b) for b in balls])
-            cells = np.repeat(unsure, cnt)
+            cells = np.repeat(uc, cnt)
             faces = np.fromiter((f for b in balls for f in b), dtype=np.int64,
                                 count=int(cnt.sum()))
+            del balls
             step = 500_000
             for s0 in range(0, len(cells), step):
                 c, f = cells[s0:s0 + step], faces[s0:s0 + step]
@@ -477,14 +490,16 @@ class Mesh3D:
         return msgs
 
     def set_patch_types(self, types: dict):
+        walls_before = self.wall_patches
         for p in self.patches:
             if p.name in types:
                 if types[p.name] not in PATCH_TYPES:
                     raise ValueError(f"Type de patch inconnu '{types[p.name]}'.")
                 p.type = types[p.name]
         self.patch_types = {p.name: p.type for p in self.patches}
-        self._wall_distance = None
-        self._wall_vec = None
+        if self.wall_patches != walls_before:      # distance à recalculer
+            self._wall_distance = None
+            self._wall_vec = None
 
     def __repr__(self):
         return (f"Mesh3D({self.n_cells} cellules, {self.n_points} sommets, "

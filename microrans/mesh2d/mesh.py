@@ -415,13 +415,15 @@ class Mesh2D:
     # ------------------------------------------------------------------ assemblage
     def set_patch_types(self, types: dict):
         """Change le type de patches existants (ex. 'wall' imposé par le cas de calcul)."""
+        walls_before = self.wall_patches
         for p in self.patches:
             if p.name in types:
                 if types[p.name] not in PATCH_TYPES:
                     raise ValueError(f"Type de patch inconnu '{types[p.name]}'.")
                 p.type = types[p.name]
         self.patch_types = {p.name: p.type for p in self.patches}
-        self._wall_distance = None
+        if self.wall_patches != walls_before:      # distance à recalculer
+            self._wall_distance = None
 
     def subset(self, keep, new_patch: str = "cut", new_type: str = "patch") -> "Mesh2D":
         """Sous-maillage des cellules `keep` (masque booléen) ; les faces coupées forment le

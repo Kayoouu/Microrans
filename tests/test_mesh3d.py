@@ -103,3 +103,16 @@ def test_wall_distance_exact_with_very_long_wall_faces():
     m = box_mesh(0, 100, 0, 1, 0, 1, 2, 20, 1, types={"bottom": "wall"},
                  grading=(1.0, 1.0, 1.0))
     assert np.abs(m.wall_distance - m.cell_centers[:, 1]).max() < 1e-13
+
+
+def test_wall_distance_cache_kept_when_walls_unchanged():
+    """Le solveur réimpose les types de frontières : la distance à la paroi (exacte, coûteuse
+    en 3D : ~30 s à 262 000 cellules) n'était plus gardée et se calculait deux fois."""
+    m = box_mesh(0, 1, 0, 1, 0, 1, 4, 4, 4, types={"bottom": "wall"})
+    d = m.wall_distance
+    m.set_patch_types({"bottom": "wall", "top": "patch"})
+    assert m.wall_distance is d
+    m.set_patch_types({"top": "wall"})
+    assert m.wall_distance is not d
+    assert np.abs(m.wall_distance - np.minimum(m.cell_centers[:, 1],
+                                               1 - m.cell_centers[:, 1])).max() < 1e-14

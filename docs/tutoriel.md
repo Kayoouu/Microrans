@@ -210,3 +210,8 @@ maillage suffisait. Ce contrôle est à faire pour tout nouveau cas.
 - **Turbulence** : vérifier y⁺ (colonne `y⁺ max` du résumé) : ≈ 1 en traitement résolu,
   30 à 300 avec lois de paroi.
 - **Un calcul qui diverge ou ne converge pas** : voir [`depannage.md`](depannage.md).
+- **3D** (ligne de commande seulement) : ajouter `[mesh.extrude]` (`z0`, `z1`, `nz`) à un
+  maillage 2D, ou `[mesh] type = "box"` ; les vecteurs prennent 3 composantes. Exemples :
+  `microrans run2d conduite_carree_3d` (solution exacte), `canal_turbulent_3d`,
+  `cavite_cubique_re100_3d`. Ouvrir `fields.vtk` dans ParaView ; les figures montrent le
+  plan z médian. Ce qui n'existe pas en 3D : README, § 8, limite 17.

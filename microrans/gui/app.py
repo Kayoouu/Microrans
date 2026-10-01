@@ -991,6 +991,11 @@ class MainWindow(QMainWindow):
         self._load_sweep()
         self._syncing = False
         self._refresh_toml()
+        from ..fv2d.validate import case_dim
+        if case_dim(cfg) == 3:                      # signalé dès l'ouverture (lot D4)
+            self.log("Cas 3D : l'interface traite les cas 2D seulement ; lancer en ligne de "
+                     "commande (microrans run2d <fichier.toml>), champs dans fields.vtk "
+                     "(ParaView).")
 
     def _load_sweep(self):
         """[sweep] du cas → page Calcul (avant : ignorée ; l'exemple de polaire ne lançait

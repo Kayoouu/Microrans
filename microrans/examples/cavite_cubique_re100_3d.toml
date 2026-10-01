@@ -1,0 +1,47 @@
+# Cavité cubique entraînée, Re = 100 (3D) : le couvercle (y = 1) glisse selon x, les cinq
+# autres faces sont fixes. DÉMONSTRATION : pas de référence chiffrée fournie ici. Les
+# parois latérales (z = 0 et z = 1) freinent l'écoulement : le profil sur l'axe vertical
+# du plan médian diffère de la cavité 2D (référence Ghia) — c'est l'effet 3D attendu.
+# 32³ = 32 768 hexaèdres, ~25 s. Champs 3D : fields.vtk (ParaView) ; figures : plan z = 0.5.
+# microrans run2d cavite_cubique_re100_3d
+[mesh]
+type = "box"
+x0 = 0.0
+x1 = 1.0
+y0 = 0.0
+y1 = 1.0
+z0 = 0.0
+z1 = 1.0
+nx = 32
+ny = 32
+nz = 32
+names = { left = "walls", right = "walls", bottom = "walls", top = "lid", back = "walls", front = "walls" }
+patch_types = { walls = "wall", lid = "wall" }
+
+[physics]
+reynolds = 100              # U = 1, L = 1 : ν = 0.01
+
+[boundary.lid]
+type = "wall"
+U = [1.0, 0.0, 0.0]
+
+[boundary.walls]
+type = "wall"
+
+[solver]
+mode = "steady"
+max_iter = 2000
+tol = 1e-6
+
+[output]
+directory = "results/cavite_cubique_re100_3d"
+[[output.lines]]
+name = "axe_vertical"
+start = [0.5, 0.0, 0.5]
+end = [0.5, 1.0, 0.5]
+n = 101
+[[output.lines]]
+name = "axe_horizontal"
+start = [0.0, 0.5, 0.5]
+end = [1.0, 0.5, 0.5]
+n = 101

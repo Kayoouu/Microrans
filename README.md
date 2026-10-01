@@ -1,4 +1,4 @@
-# microrans — simulation RANS / URANS 1D et 2D, avec mailleur et interface graphique
+# microrans — simulation RANS / URANS 1D et 2D (et 3D en périmètre réduit), avec mailleur et interface graphique
 
 [![tests](https://github.com/Kayoouu/Microrans/actions/workflows/tests.yml/badge.svg)](https://github.com/Kayoouu/Microrans/actions/workflows/tests.yml)
 [![executables](https://github.com/Kayoouu/Microrans/actions/workflows/build.yml/badge.svg)](https://github.com/Kayoouu/Microrans/actions/workflows/build.yml)
@@ -18,6 +18,11 @@ Outil de simulation d'écoulements **incompressibles** (laminaires ou turbulents
 - **compressible, 2D plan** : solveur en densité (flux de Roe ou HLLC, ordre 2 limité,
   stationnaire implicite ou Runge-Kutta) pour les chocs, le transsonique et le
   supersonique ; **sans turbulence** (Euler ou laminaire) ;
+- **3D, périmètre réduit** : maillages hexaédriques (pavé, ou extrusion selon z de
+  n'importe quel maillage 2D : hexaèdres et prismes), incompressible laminaire et turbulent
+  (mêmes modèles qu'en 2D), stationnaire (SIMPLE/SIMPLEC) et instationnaire (PIMPLE,
+  Runge-Kutta), sortie VTK (ParaView) ; **ligne de commande seulement** (pas d'interface 3D,
+  pas de mailleur 3D général : voir § 3 « Cas 3D » et les limites § 8) ;
 - **1D** : canal plan turbulent intégré jusqu'à la paroi (RANS et URANS pulsé), très rapide,
   idéal pour comparer les modèles ;
 - **modèles de turbulence** : Spalart-Allmaras, k-ε (Launder-Sharma), k-ω (Wilcox 2006),
@@ -33,8 +38,9 @@ est justifié par une mesure** reproductible dans ce dépôt (sections « Métho
 (section « Limites »).
 
 > **Ce que ce n'est pas :** un remplaçant d'OpenFOAM, SU2 ou Fluent. Python vectorisé
-> (NumPy/SciPy) : confortable jusqu'à ~10⁵ cellules en 2D ; 2D plan ou axisymétrique (pas
-> de 3D), pas de LES ; compressible sans turbulence (Euler ou laminaire, 2D plan).
+> (NumPy/SciPy) : confortable jusqu'à ~10⁵ cellules en 2D ; 3D limité aux pavés et
+> extrusions, incompressible, quelques centaines de milliers de cellules ; pas de LES ;
+> compressible sans turbulence (Euler ou laminaire, 2D plan).
 
 **Guides** (aussi dans le menu Aide de l'interface) :
 - premier calcul pas à pas : [`docs/tutoriel.md`](docs/tutoriel.md) ;
@@ -120,6 +126,45 @@ un calcul interrompu puis repris donne un résultat identique au bit près (test
 démarrée depuis une solution 32², 508 itérations au lieu de 1 135 (19 s au lieu de 45 s).
 Changer de modèle de turbulence est possible (les variables absentes partent des valeurs
 amont).
+
+### Cas 3D
+
+Un cas est en 3D quand son maillage l'est : `[mesh] type = "box"` (pavé d'hexaèdres) ou
+une section `[mesh.extrude]` ajoutée à n'importe quel maillage 2D (rectangle, blocs, O,
+triangles, hybride, fichier, préréglage). Les vecteurs ont alors 3 composantes et les
+formules peuvent utiliser `z` :
+
+```toml
+[mesh]                       # cylindre extrudé : maillage en O 2D puis 16 couches selon z
+type = "ogrid"
+n_around = 128
+n_radial = 64
+[mesh.extrude]
+z0 = 0.0
+z1 = 4.0
+nz = 16
+periodic = [["back", "front"]]        # ou patch_types = { back = "symmetry", … }
+[boundary.farfield]
+type = "farfield"
+U = [1.0, 0.0, 0.0]
+```
+
+```bash
+microrans run2d conduite_carree_3d     # conduite carrée laminaire, solution exacte (8 s)
+microrans run2d canal_turbulent_3d     # canal Re_τ = 395 extrudé, SA (12 s)
+microrans run2d cavite_cubique_re100_3d   # cavité cubique (démonstration, 25 s)
+microrans mesh mon_cas_3d.toml         # maillage seul : .vtk (ParaView)
+```
+
+Sorties : `fields.vtk` (hexaèdres, prismes ; vitesse à 3 composantes) à ouvrir dans
+ParaView, figures dans le plan z médian, sondes et profils `[x, y, z]`, `wall_<patch>.csv`
+avec z (τ_w = norme du frottement). Efforts : totaux, rapportés à ½U²·A_ref avec
+`[physics] reference_area` (défaut L_ref × étendue en z : mêmes C_d, C_l, C_m que le 2D
+pour un corps extrudé), C_s = effort latéral (selon z), C_m autour de l'axe parallèle à z
+passant par `moment_center`. **Non disponibles en 3D** (refusés avant le calcul) :
+axisymétrique, swirl, zones poreuses, disques actuateurs, solveur couplé, animations,
+compressible, profil de débit parabolique ; l'interface graphique ouvre un cas 3D mais
+renvoie vers la ligne de commande.
 
 ### Format de cas (TOML, extrait)
 
@@ -554,6 +599,20 @@ Vérifié indépendamment sur l'exemple T3A : minimum de C_f à Re_x = 1.47e5, m
 Plus : conduction pure (profil linéaire exact à 1e-8), flux imposé (T paroi = qL/α exact),
 équilibre hydrostatique d'une stratification stable.
 
+### 3D, incompressible (tests : `tests/test_solver3d.py`, `test_fvm3d.py`, `test_case3d.py`)
+
+| Cas | Grandeur | microrans | Référence |
+|-----|----------|-----------|-----------|
+| Laplacien, hexaèdres resserrés (MMS) | ordre en espace | 1.86 / 1.97 | 2 |
+| Conduite carrée laminaire 8², 16², 32² | erreur L2 sur u | 2.0e-2 / 5.0e-3 / 1.26e-3 (ordre 2.0) | série exacte (White, éq. 3-48) |
+| idem | débit | +5.9 / +1.5 / +0.38 % | idem |
+| Écoulement ABC, cube périodique, PIMPLE BDF2, Δt = 0.05, t = 1 | erreur U (p) | 5.8e-2 (2.6e-2) / 6.8e-3 (7.7e-3) / 5.7e-4 (2.5e-3) sur 8³ / 16³ / 32³ | solution exacte u₀ e^{−νt} |
+| idem, RK3 / Crank-Nicolson, 16³ | erreur U | 5.2e-3 / 9.4e-3 | idem |
+| Cavité, cylindre extrudés sur une couche entre plans de symétrie | champs ; C_d | identiques au 2D (1e-12 ; 1e-10) | même cas en 2D |
+| Canal Re_τ = 395 extrudé, périodique en x et z, SA / SST / k-ω / k-ε / SST-γ | U_b | écart au 2D ≤ 3e-6 ; SA 17.6402, τ_w = 1.000 | 2D ; 1D 17.6398 |
+| Conduite carrée turbulente, SST, Re_τ = 180 (2 048 cellules) | λ ; écoulement secondaire | 0.0419 ; nul (1e-14) | Blasius 0.0410 (ordre de grandeur) ; non nul en réalité (limite des modèles, § 8) |
+| Sortie VTK (hexaèdres, prismes) | volumes recalculés par la bibliothèque VTK 9.7 | égaux à 1e-8 (précision ASCII) | volumes du solveur |
+
 ### 1D (canal plan, 192 mailles, y1⁺ = 0.2)
 
 | Modèle | U_b⁺ Re_τ = 395 | écart Dean | U_b⁺ Re_τ = 5200 | écart Dean |
@@ -638,6 +697,23 @@ vrai processeur le résultat peut être meilleur : **le mesurer** avec
 `microrans bench --numba --sizes 128 256 --threads 1 2 4`. Résultats identiques à NumPy à
 l'arrondi près (~1e-13), et identiques quel que soit le nombre de fils.
 
+**3D** (cavité cubique Re = 100, hexaèdres, SIMPLEC + AMG, un processus, machine de test à
+4 cœurs ; pic mémoire de tout le calcul) :
+
+| Cellules | Maillage | Distance à la paroi | Par itération, laminaire | idem, SST | Mémoire | fields.vtk |
+|---:|---:|---:|---:|---:|---:|---:|
+| 32 768 (32³) | 1.2 s | 2.5 s | 0.15 s (4.5 µs/cellule) | — | 0.45 Go | 5 Mo |
+| 262 144 (64³) | 6.1 s | 30 s | 1.5 s (5.7 µs/cellule) | 2.1 s | 0.9 Go | 47 Mo |
+| 1 000 000 (100³) | 31 s | 172 s | 8.5 s (8.5 µs/cellule) | — | 2.9 Go | 169 Mo |
+
+Un calcul stationnaire demande quelques centaines d'itérations : ~1 h pour 10⁶ cellules en
+laminaire. La distance à la paroi est exacte (distance aux faces de paroi, pas aux
+centres) : elle domine la préparation et sert aussi aux sorties en laminaire. Deux défauts
+de coût corrigés pendant ces mesures : la distance à la paroi était calculée deux fois
+(le solveur réimposait les types de frontières et vidait le cache : +30 s à 64³, aussi en
+2D où elle est bon marché), et la géométrie des faces était calculée d'un bloc (pic de
+5.2 Go au maillage de 10⁶ cellules, 1.6 Go maintenant).
+
 ---
 
 ## 8. Limites connues (à lire avant d'utiliser les résultats)
@@ -718,6 +794,34 @@ l'arrondi près (~1e-13), et identiques quel que soit le nombre de fils.
 16. **Disques actuateurs** : charge imposée (pas de couplage avec des profils de pale,
    pas d'« actuator line ») ; la poussée ne s'adapte pas à la vitesse locale ; résultats à
    ±1 % de la théorie de Froude pour C_T = 0.5 (sensibles au maillage et à la viscosité).
+17. **3D (périmètre réduit)** :
+   - maillages : pavés et extrusions seulement (hexaèdres, prismes) ; pas de mailleur 3D
+     général, pas d'import de maillage 3D (Gmsh, OpenFOAM), export VTK seulement ;
+     incompressible seulement ; pas d'interface graphique 3D (ligne de commande) ; figures
+     dans le plan z médian seulement (le reste : ParaView) ;
+   - non disponibles : axisymétrique (sans objet), swirl, zones poreuses, disques
+     actuateurs, solveur couplé, animations, compressible, profil de débit parabolique ;
+   - coût (§ 7) : ~8.5 s par itération et 2.9 Go pour 10⁶ cellules en laminaire, plus
+     ~3.5 min de préparation (maillage, distance à la paroi exacte) ; fichiers VTK ASCII
+     volumineux (169 Mo pour 10⁶ cellules) ;
+   - un écoulement plan calculé sur **plusieurs couches** en z n'est pas identique au 2D :
+     la diffusion à travers les faces z intérieures entre dans a_P, donc dans
+     l'interpolation de Rhie-Chow (cylindre Re = 20 extrudé sur 2 couches : C_d 2.17561 au
+     lieu de 2.17575, écart qui décroît comme 1/Δz²) ; SIMPLE y converge ~2 fois plus
+     lentement (276 itérations au lieu de 141). Une couche entre deux plans de symétrie
+     redonne exactement le 2D. C'est inhérent à l'interpolation de Rhie-Chow (même
+     formulation 1/a_P qu'OpenFOAM ; comparaison avec OpenFOAM non faite) ;
+   - écoulement invariant en z : le résidu normalisé de U_z (composante nulle, bruit
+     d'arrondi ~1e-17) plafonne vers 1e-9 : tolérance utile ≥ 1e-8 ;
+   - les modèles à viscosité turbulente linéaire (tous ceux fournis) ne prédisent pas les
+     écoulements secondaires de 2e espèce (coins d'une conduite carrée turbulente : nuls,
+     alors qu'ils existent, de l'ordre de quelques % de U_b) ; c'est une limite de ces
+     modèles (il faudrait un modèle non linéaire ou aux tensions de Reynolds), pas du
+     code 3D ;
+   - gradient de Green-Gauss : ordre ~1 seulement sur maillages gauchis ou à forte
+     asymétrie (mesuré en 2D et en 3D ; ordre 2 sur hexaèdres réguliers ou resserrés) ;
+   - LU directe seulement sous 2 000 cellules en 3D (au-delà : AMG ; LU 3D de 32 768
+     cellules : 7 s par résolution contre 0.04 s en AMG).
 
 ## 9. Feuille de route
 
@@ -727,7 +831,8 @@ pression et décollement laminaire (T3C, profils à bas Reynolds), rugosité, cr
 corrections de courbure et de rotation, loi de paroi thermique et k-ε haut-Reynolds ;
 viscoélasticité ; compressible turbulent (RANS) et axisymétrique, écart transsonique ; solveur
 couplé : énergie et turbulence dans le système couplé, préconditionneur multigrille par blocs
-pour les grands maillages.
+pour les grands maillages. 3D : mailleur général (tétraèdres, couches prismatiques), import
+Gmsh 3D, interface graphique 3D, distance à la paroi accélérée (Numba), VTK binaire.
 
 ---
 
@@ -746,6 +851,7 @@ microrans/
   grid.py numerics.py flow.py solver.py cases.py   solveur 1D (canal) et ses schémas en temps
   models/                modèles de turbulence (communs 1D/2D), transition γ
   mesh2d/                géométrie CSG, blocs, O-grid, triangles, hybride, E/S, qualité, tracés
+  mesh3d/                maillage 3D (hexaèdres, prismes…), pavé, extrusion, coupe en z
   fv2d/
     fvm.py               opérateurs volumes finis, assemblage CSR
     solver.py            SIMPLE(C), PIMPLE, projection RK/AB2, thermique, CL, efforts
@@ -766,7 +872,7 @@ microrans/
   gui/                   interface PySide6 (app.py, widgets.py)
   examples/              cas fournis (microrans examples)
 packaging/               PyInstaller (microrans.spec) : exécutables GUI + CLI
-tests/                   pytest (394 tests : vérification, validation, GUI hors écran, faux GPU)
+tests/                   pytest (435 tests : vérification, validation, 3D, GUI hors écran, faux GPU)
 .github/workflows/       tests (Python 3.10 / 3.12) ; exécutables Windows / Linux
 ```
 

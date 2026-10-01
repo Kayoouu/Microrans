@@ -37,6 +37,9 @@ calculé tant qu'il en reste une.
 | `lois de paroi incompatibles avec le modèle ke` (ou `sst_gamma`) | ces modèles exigent y⁺ ≈ 1 | `wall_treatment = "resolved"`, ou SA, k-ω, SST |
 | `non newtonien en laminaire uniquement` | loi de viscosité + modèle de turbulence | `model = "laminar"` |
 | `[mesh] 1 000 000 cellules : prévoir ~1.2 Go de mémoire et ~15 s par itération` (ATTENTION) | maillage structuré de plus de 500 000 cellules | régler d'abord le cas sur un maillage plus grossier |
+| `3 composantes attendues [x, y, z] (maillage 3D …)` | cas 3D (`type = "box"` ou `[mesh.extrude]`) avec un vecteur à 2 composantes | écrire `U = [ux, uy, uz]`, `body_force = [fx, fy, fz]`… |
+| `Maillage 3D (…) : … disponible(s) en 2D seulement` | option sans version 3D (axisymétrique, swirl, poreux, disques, couplé, animation, compressible) | la retirer, ou calculer en 2D |
+| `reprise d'un calcul 2D sur un maillage 3D impossible` | `restart` d'un calcul d'une autre dimension | repartir d'un calcul de même dimension |
 
 ## 2. Le calcul diverge
 
@@ -225,6 +228,9 @@ Ce sont des règles usuelles en CFD, valables pour tout logiciel :
 - **Ordre de grandeur** : ~15 µs par cellule et par itération, ce qui donne ~15 s par
   itération pour 1 million de cellules. Ce chiffre est variable selon la machine.
   L'avertissement apparaît au-delà de 500 000 cellules.
+- **3D** : ~8.5 s par itération et 2.9 Go pour 10⁶ hexaèdres en laminaire (SST : ~40 %
+  de plus), ~3.5 min de préparation (maillage, distance à la paroi). Avertissement au-delà
+  de 500 000 cellules (README § 7).
 - **Algorithme couplé** : voir § 3. La mémoire mesurée va de 0.3 Go (16 000 cellules) à
   1.65 Go (160 000 cellules).
 - **Démarrage multigrille** (`fmg_levels`) : le calcul part d'une solution obtenue sur des

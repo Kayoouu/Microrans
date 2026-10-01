@@ -1,0 +1,58 @@
+# Canal plan turbulent établi en 3D, Re_τ = 395, Spalart-Allmaras : maillage 2D extrudé
+# sur 2 couches, périodique selon x et selon z (écoulement invariant en z). u_τ = 1 (force
+# motrice 1 pour une demi-hauteur 1) : la vitesse débitante U_b⁺ est U_mean[0] dans
+# summary.json. Mesuré : U_b⁺ = 17.640, identique au même cas en 2D à 2e-7 près et au
+# solveur 1D (17.640) à 2e-5 près ; frottement moyen τ_w = 1.000 sur chaque paroi.
+# microrans run2d canal_turbulent_3d
+[mesh]
+type = "rectangle"
+x0 = 0.0
+x1 = 1.0
+y0 = 0.0
+y1 = 2.0
+nx = 2
+ny = 96
+# resserrement symétrique vers les deux parois : 1re maille y⁺ ≈ 0.4
+grading = [1.0, [[0.5, 0.5, 91.35214557167608], [0.5, 0.5, 0.010946650390552535]]]
+names = { left = "inlet", right = "outlet", bottom = "bottom", top = "top" }
+patch_types = { bottom = "wall", top = "wall" }
+periodic = [["inlet", "outlet"]]
+
+[mesh.extrude]
+z0 = 0.0
+z1 = 0.5
+nz = 2
+names = { back = "z0", front = "z1" }
+periodic = [["z0", "z1"]]
+
+[physics]
+nu = 0.002531645569620253    # 1 / Re_τ
+model = "sa"
+body_force = [1.0, 0.0, 0.0]
+reference_velocity = 15.0
+
+[turbulence]
+intensity = 0.05
+viscosity_ratio = 50.0
+
+[initial]
+U = [15.0, 0.0, 0.0]
+
+[boundary.bottom]
+type = "wall"
+
+[boundary.top]
+type = "wall"
+
+[solver]
+mode = "steady"
+max_iter = 4000
+tol = 1e-7
+
+[output]
+directory = "results/canal_turbulent_3d"
+[[output.lines]]
+name = "profil"
+start = [0.5, 0.0, 0.25]
+end = [0.5, 1.0, 0.25]
+n = 200
