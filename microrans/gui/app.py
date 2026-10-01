@@ -2106,7 +2106,18 @@ class MainWindow(QMainWindow):
     def _case_ok(self, cfg, mesh_only=False) -> bool:
         """Vérification du cas avant maillage ou calcul (validate.py) : structure impossible
         -> message ; clés inconnues ou sans effet -> confirmation. False : ne pas lancer."""
-        from ..fv2d.validate import check_case
+        from ..fv2d.validate import case_dim, check_case
+        if case_dim(cfg) == 3:
+            # interface 3D hors du périmètre du lot D4 : refus clair plutôt qu'une figure
+            # fausse ou une erreur de tracé
+            msg = ("Cas 3D ([mesh] type = \"box\" ou [mesh.extrude]) : l'interface graphique "
+                   "traite les cas 2D seulement. Lancer le calcul en ligne de commande : "
+                   "« microrans run2d <fichier.toml> » ; les champs (fields.vtk) s'ouvrent dans "
+                   "ParaView, les figures montrent le plan z médian.")
+            self.errors.append(msg)
+            if not self.quiet:
+                QMessageBox.information(self, "Cas 3D", msg)
+            return False
         if not mesh_only and self.mesh is None and not cfg.get("boundary"):
             msg = ("Pas encore de conditions aux limites : générer d'abord le maillage (page "
                    "« Maillage »), les frontières apparaissent alors dans la page « Conditions "

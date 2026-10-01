@@ -514,3 +514,17 @@ def test_out_of_list_values_kept(win):
     win.load_cfg(copy.deepcopy(cfg))
     win._store_forms()
     assert win.cfg["solver"]["solver_p"] == "auto" and combo.count() == n - 1
+
+
+def test_3d_case_refused_with_explanation(win, monkeypatch):
+    """Lot D4 : interface 3D hors périmètre — un cas 3D est refusé avec la marche à suivre
+    (ligne de commande, ParaView) au lieu d'un tracé faux ou d'une erreur."""
+    from PySide6.QtWidgets import QMessageBox
+    shown = []
+    monkeypatch.setattr(QMessageBox, "information", lambda *a: shown.append(a[1:3]))
+    monkeypatch.setattr(win, "quiet", False)
+    cfg = {"mesh": {"type": "rectangle", "x0": 0, "x1": 1, "y0": 0, "y1": 1, "nx": 4, "ny": 4,
+                    "extrude": {"nz": 2}}, "physics": {"nu": 0.01},
+           "boundary": {"left": {"type": "wall"}}}
+    assert not win._case_ok(cfg, mesh_only=True)
+    assert shown[-1][0] == "Cas 3D" and "microrans run2d" in shown[-1][1]

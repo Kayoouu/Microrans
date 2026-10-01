@@ -145,10 +145,18 @@ def cmd_mesh(args) -> int:
     out.mkdir(parents=True, exist_ok=True)
     q = mesh.quality()
     (out / "quality.json").write_text(json.dumps(q, indent=2, ensure_ascii=False), encoding="utf-8")
-    for fmt in args.format:
+    dim = getattr(mesh, "dim", 2)
+    formats = args.format or (["msh", "vtk"] if dim == 2 else ["vtk"])
+    if dim == 3:                                 # 3D : VTK seulement (ParaView), pas de figure
+        skipped = [f for f in formats if f != "vtk"]
+        formats = ["vtk"]
+        if skipped and not args.quiet:
+            print(f"Maillage 3D : format(s) {', '.join(skipped)} non disponible(s), écrit en "
+                  ".vtk (ParaView) seulement.")
+    for fmt in formats:
         target = out / name if fmt == "foam" else out / f"{name}.{fmt}"
         write_mesh(mesh, target if fmt != "foam" else target.with_suffix(".foam"))
-    if not args.no_plot:
+    if not args.no_plot and dim == 2:
         plot_mesh(mesh, out / f"{name}.png")
         walls = [p.name for p in mesh.patches if p.type == "wall"]
         if walls:
@@ -487,13 +495,15 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("-v", "--verbose", action="store_true", help="suivi des pas de temps")
     p.set_defaults(func=cmd_urans)
 
-    p = sub.add_parser("mesh", help="générer / convertir un maillage 2D")
+    p = sub.add_parser("mesh", help="générer / convertir un maillage 2D (ou 3D : box, extrude)")
     p.add_argument("config", nargs="?", help="fichier de configuration .toml ou .json")
     p.add_argument("--preset", help="préréglage : cavity, channel, backstep, flatplate, "
                    "cylinder-ogrid, cylinder-tri, cylinder-hybrid, naca0012-ogrid, naca0012-hybrid")
-    p.add_argument("--type", help="force le type : blocks, rectangle, ogrid, unstructured, hybrid, file")
-    p.add_argument("-f", "--format", nargs="+", default=["msh", "vtk"],
-                   choices=["msh", "su2", "vtk", "foam"], help="formats de sortie (défaut : msh vtk)")
+    p.add_argument("--type", help="force le type : blocks, rectangle, ogrid, unstructured, hybrid, "
+                   "file, box")
+    p.add_argument("-f", "--format", nargs="+", default=None,
+                   choices=["msh", "su2", "vtk", "foam"],
+                   help="formats de sortie (défaut : msh vtk ; maillage 3D : vtk seulement)")
     p.add_argument("-o", "--out", metavar="DOSSIER", default="results/mesh",
                    help="dossier de sortie (défaut : results/mesh)")
     p.add_argument("--no-plot", action="store_true", help="ne pas produire de figures")
@@ -501,7 +511,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("-v", "--verbose", action="store_true", help="suivi du maillage")
     p.set_defaults(func=cmd_mesh)
 
-    p = sub.add_parser("run2d", help="calcul 2D décrit par un fichier de cas (ou un exemple)")
+    p = sub.add_parser("run2d", help="calcul 2D (ou 3D : [mesh] type = \"box\" ou "
+                       "[mesh.extrude]) décrit par un fichier de cas (ou un exemple)")
     p.add_argument("case", metavar="CAS", help="fichier de cas .toml / .json, ou nom d'un "
                                                "exemple (liste : microrans examples)")
     p.add_argument("-o", "--out", metavar="DOSSIER", help="dossier de sortie")

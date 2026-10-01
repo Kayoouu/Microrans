@@ -2,6 +2,12 @@
 du fichier .cfg de SU2). Voir les exemples de `microrans/examples/`
 (liste : `microrans examples`).
 
+3D : [mesh] type = "box" ou [mesh.extrude] ; vecteurs à 3 composantes ; efforts totaux
+rapportés à ½U²·A_ref, A_ref = [physics] reference_area (défaut L_ref × étendue en z :
+mêmes coefficients que le 2D pour un corps extrudé), Cs = effort latéral (selon z), Cm
+autour de l'axe parallèle à z passant par moment_center ; figures dans le plan z médian ;
+champs complets dans fields.vtk (ParaView).
+
 Sections : [mesh] (+ [domain], [[bodies]]), [physics], [initial], [turbulence],
 [boundary.<patch>], [solver], [output].
 
@@ -90,21 +96,23 @@ def _energy_from(cfg):
     return e
 
 
-def wind_axes(cfg: dict):
-    """Directions de traînée et de portance (vecteurs unitaires) pour l'incidence du cas."""
+def wind_axes(cfg: dict, dim: int = 2):
+    """Directions de traînée et de portance (vecteurs unitaires) pour l'incidence du cas
+    (3D : incidence dans le plan x, y ; l'effort latéral est selon z)."""
     a = np.radians(float(cfg.get("physics", {}).get("angle_of_attack", 0.0)))
-    return np.array([np.cos(a), np.sin(a)]), np.array([-np.sin(a), np.cos(a)])
+    z = [0.0] * (dim - 2)
+    return np.array([np.cos(a), np.sin(a), *z]), np.array([-np.sin(a), np.cos(a), *z])
 
 
-def _apply_incidence(cfg: dict) -> tuple[dict, list]:
+def _apply_incidence(cfg: dict, dim: int = 2) -> tuple[dict, list]:
     """(conditions aux limites, vitesse initiale) tournées de l'incidence du cas."""
     bcs = cfg["boundary"]
-    U0 = cfg.get("initial", {}).get("U", (0.0, 0.0))
+    U0 = cfg.get("initial", {}).get("U", (0.0,) * dim)
     alpha = float(cfg.get("physics", {}).get("angle_of_attack", 0.0))
     if alpha == 0.0:
         return bcs, U0
-    ed, el = wind_axes(cfg)
-    R = np.column_stack([ed, el])                   # repère écoulement -> repère maillage
+    ed, el = wind_axes(cfg, dim)
+    R = np.column_stack([ed, el] + ([np.array([0.0, 0.0, 1.0])] if dim == 3 else []))
 
     def rot(u, where):
         if not all(isinstance(c, (int, float)) for c in u):
@@ -153,10 +161,14 @@ def build_solver(cfg: dict, base_dir=".", verbose=False, mesh=None):
     if axi and float(ph.get("angle_of_attack", 0.0)) != 0.0:
         raise ValueError("Axisymétrique : pas d'incidence possible (l'écoulement amont doit "
                          "être parallèle à l'axe).")
-    bcs, U0 = _apply_incidence(cfg)
+    dim = getattr(mesh, "dim", 2)
+    if dim == 3 and cfg.get("output", {}).get("animate"):
+        raise ValueError("Maillage 3D : animation (animate) disponible en 2D seulement ; "
+                         "écrire des champs VTK avec [output] vtk_every = N.")
+    bcs, U0 = _apply_incidence(cfg, dim)
     solver = Solver2D(mesh, nu, bcs, model=ph.get("model", "laminar"),
                       model_options=ph.get("model_options"),
-                      body_force=ph.get("body_force", (0.0, 0.0)),
+                      body_force=ph.get("body_force", (0.0,) * dim),
                       initial_U=U0,
                       turbulence_inflow=cfg.get("turbulence"),
                       settings=_settings_from(cfg.get("solver", {})),
@@ -225,36 +237,47 @@ def run_case(cfg: dict, base_dir=".", out_dir=None, verbose=True, plot=True, cal
     Lref = ph.get("reference_length", 1.0)
     qdyn = 0.5 * Uref ** 2 * Lref
     axi = solver.axisymmetric
+    dim = solver.dim
+    a_ref = None
     # coefficient = effort · kF ; axisymétrique : effort sur 360° (2π × par radian) rapporté
-    # à ½ρU²·A_ref ; la résultante radiale est nulle par symétrie (Cl = Cm = 0)
+    # à ½ρU²·A_ref ; la résultante radiale est nulle par symétrie (Cl = Cm = 0) ; 3D : effort
+    # total rapporté à ½ρU²·A_ref, A_ref = L_ref × étendue en z par défaut (mêmes
+    # coefficients que le 2D pour un corps extrudé)
     if axi:
         a_ref = float(ph.get("reference_area", np.pi * Lref ** 2 / 4.0))
         kF = 2.0 * np.pi / (0.5 * Uref ** 2 * a_ref)
+    elif dim == 3:
+        span = float(np.ptp(solver.mesh.points[:, 2]))
+        a_ref = float(ph.get("reference_area", Lref * span))
+        kF = 1.0 / (0.5 * Uref ** 2 * a_ref)
     else:
         kF = 1.0 / qdyn
-    ed, el = wind_axes(cfg)
+    ed, el = wind_axes(cfg, dim)
+    es = np.array([0.0, 0.0, 1.0])
     center = oc.get("moment_center", (0.0, 0.0))
     force_patches = oc.get("forces", [p.name for p in solver.mesh.patches if p.type == "wall"])
     mode = sc.get("mode", "steady")
     if verbose:
-        print(f"Cas 2D : {solver.mesh.n_cells} cellules, modèle {solver.model.label}, "
+        print(f"Cas {dim}D : {solver.mesh.n_cells} cellules, modèle {solver.model.label}, "
               f"ν = {solver.nu:.4g}, {MODES.get(mode, mode)}")
         print("\n".join(quality_text(solver.mesh)))
     t0 = time.perf_counter()
     summary = {"mode": mode, "model": solver.model_name, "n_cells": solver.mesh.n_cells,
-               "axisymmetric": axi,
+               "axisymmetric": axi, "dimension": dim,
                "nu": solver.nu, "reference_velocity": Uref, "reference_length": Lref,
                "angle_of_attack": float(ph.get("angle_of_attack", 0.0))}
+    if dim == 3:
+        summary["reference_area"] = a_ref
     if solver.restart_info:
         summary["restart"] = {k: solver.restart_info[k] for k in ("file", "mode", "time",
                                                                   "iteration")}
     if fmg:
         summary["fmg"] = fmg
     # sondes : Ux, Uy, p (, T) en des points fixes, à chaque itération / pas de temps
-    probe_pts = parse_points(oc.get("probes"))
+    probe_pts = parse_points(oc.get("probes"), dim)
     sampler = Sampler(solver, probe_pts) if len(probe_pts) else None
-    probe_fields = (["Ux", "Uy", "p"] + (["T"] if solver.energy is not None else [])
-                    + list(solver.scalars))
+    probe_fields = (["Ux", "Uy", "Uz"][:dim] + ["p"]
+                    + (["T"] if solver.energy is not None else []) + list(solver.scalars))
     if sampler is not None and not sampler.ok.all() and verbose:
         print(f"  ATTENTION : sondes hors du domaine : {probe_pts[~sampler.ok].tolist()}")
 
@@ -296,6 +319,8 @@ def run_case(cfg: dict, base_dir=".", out_dir=None, verbose=True, plot=True, cal
             for name, f in s.forces(force_patches).items():
                 rec[f"Cd_{name}"] = float(f["total"] @ s.backend.asarray(ed)) * kF
                 rec[f"Cl_{name}"] = 0.0 if axi else float(f["total"] @ s.backend.asarray(el)) * kF
+                if dim == 3:
+                    rec[f"Cs_{name}"] = float(f["total"][2]) * kF
             rec.update(probe_rec(s))
             return rec
         vtk_every = oc.get("vtk_every", 0)
@@ -362,6 +387,8 @@ def run_case(cfg: dict, base_dir=".", out_dir=None, verbose=True, plot=True, cal
             Cm=0.0 if axi else solver.moment(name, center) * kF / Lref,
             Cd_pressure=float(f["pressure"] @ ed * kF),
             Cd_viscous=float(f["viscous"] @ ed * kF))
+        if dim == 3:                                # effort latéral (selon z)
+            summary[name]["Cs"] = float(f["total"] @ es * kF)
         xf, tau, yp = solver.wall_shear(name)
         summary[name].update(yplus_max=float(yp.max()), yplus_mean=float(yp.mean()))
         if solver.model.variables and not solver.wall_function and yp.max() > 5.0:
@@ -378,7 +405,8 @@ def run_case(cfg: dict, base_dir=".", out_dir=None, verbose=True, plot=True, cal
         # distribution pariétale (comme les « XY plots » de Fluent) : Cf, Cp, y+ (, T, q)
         pb = solver.boundary_p(solver.p)[solver.patch_slices[name]]
         cols = [xf, tau, tau / (0.5 * Uref ** 2), pb / (0.5 * Uref ** 2), yp]
-        header = "x,y,tau_w,Cf,Cp,yplus"
+        # 3D : τ_w = norme du frottement (≥ 0) ; 2D : signé selon la tangente locale
+        header = ",".join("xyz"[:dim]) + ",tau_w,Cf,Cp,yplus"
         if solver.energy is not None:
             Tw, q = solver.wall_heat_flux(name)
             e = solver.energy
@@ -417,7 +445,7 @@ def run_case(cfg: dict, base_dir=".", out_dir=None, verbose=True, plot=True, cal
             summary["animation"] = str(gif)
     if sampler is not None:
         v = sampler.sample(probe_fields)
-        summary["probes"] = [{"x": float(p[0]), "y": float(p[1]),
+        summary["probes"] = [{**{a: float(c) for a, c in zip("xyz", p)},
                               **{k: float(v[k][i]) for k in probe_fields}}
                              for i, p in enumerate(probe_pts)]
     if oc.get("lines"):

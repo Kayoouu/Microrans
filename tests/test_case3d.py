@@ -155,3 +155,81 @@ def test_case_checks_extrude():
     cfg["mesh"]["nx"] = 500
     cfg["physics"]["body_force"] = [1, 0, 0]
     assert any("4 000 000 cellules" in w for w in check_case(cfg))
+
+
+def _cyl_cfg(dim, alpha=0.0, nz=1, **extra):
+    """Cylindre Re = 20, maillage en O grossier ; 3D : extrudé, plans de symétrie en z.
+    Une couche : solution identique au 2D. Plusieurs couches : la diffusion à travers les
+    faces z intérieures entre dans a_P (interpolation de Rhie-Chow) — solution différente
+    à l'ordre de la discrétisation (Cd 2.17561 au lieu de 2.17575 avec 2 couches) et
+    convergence SIMPLE 2 fois plus lente (276 itérations au lieu de 141)."""
+    z = [0.0] * (dim - 2)
+    cfg = {"mesh": {"type": "ogrid", "n_around": 32, "n_radial": 16, "farfield_radius": 15.0,
+                    "first_height": 0.02},
+           "bodies": [{"type": "circle", "name": "cylinder", "radius": 0.5}],
+           "physics": {"reynolds": 20, "angle_of_attack": alpha},
+           "boundary": {"cylinder": {"type": "wall"},
+                        "farfield": {"type": "farfield", "U": [1.0, 0.0] + z}},
+           "initial": {"U": [1.0, 0.0] + z},
+           "solver": {"max_iter": 400, "tol": 1e-8},
+           "output": {"probes": [[2.0, 0.3] + [0.25] * (dim - 2)], "moment_center": [0.25, 0.0],
+                      "lines": [{"name": "wake", "start": [0.6, 0.0] + [0.25] * (dim - 2),
+                                 "end": [4.0, 0.0] + [0.25] * (dim - 2), "n": 10}]}}
+    if dim == 3:
+        cfg["mesh"]["extrude"] = {"z1": 0.5, "nz": nz,
+                                  "patch_types": {"back": "symmetry", "front": "symmetry"}}
+        cfg["boundary"].update(back={"type": "symmetry"}, front={"type": "symmetry"})
+    for k, v in extra.items():
+        cfg[k] = {**cfg.get(k, {}), **v}
+    return cfg
+
+
+def test_run_case_3d_matches_2d_with_incidence(tmp_path):
+    """Chaîne complète en 3D (efforts en axes écoulement, moment, sondes, profils, CSV de
+    paroi, figures du plan médian, VTK) : coefficients égaux au 2D (A_ref = L × envergure)."""
+    from microrans.fv2d.case import run_case
+    s2 = run_case(_cyl_cfg(2, 10.0), out_dir=tmp_path / "2d", verbose=False, plot=False)
+    s3 = run_case(_cyl_cfg(3, 10.0), out_dir=tmp_path / "3d", verbose=False)
+    assert s3["dimension"] == 3 and s3["reference_area"] == pytest.approx(0.5)
+    a, b = s2["cylinder"], s3["cylinder"]
+    for k in ("Cd", "Cl", "Cm", "Cd_pressure"):
+        assert b[k] == pytest.approx(a[k], rel=1e-9, abs=1e-12)
+    # Cl ≈ 6e-4 (et non 0) : maillage en O de 32 mailles incliné de 10° sur l'écoulement
+    assert abs(b["Cs"]) < 1e-12 and abs(a["Cl"]) < 1e-3
+    p2, p3 = s2["probes"][0], s3["probes"][0]
+    assert p3["z"] == 0.25 and abs(p3["Uz"]) < 1e-12
+    assert p3["Ux"] == pytest.approx(p2["Ux"], rel=1e-9)
+    out = tmp_path / "3d"
+    for f in ("fields.vtk", "U.png", "p.png", "vorticity.png", "convergence.png",
+              "line_wake.csv", "wall_cylinder.csv", "checkpoint.npz"):
+        assert (out / f).is_file(), f
+    assert (out / "wall_cylinder.csv").read_text().splitlines()[0] == \
+        "x,y,z,tau_w,Cf,Cp,yplus"
+    assert (out / "line_wake.csv").read_text().splitlines()[0].startswith("s,x,y,z,Ux,Uy,Uz")
+    from microrans.fv2d.report import summary_text
+    txt = summary_text(s3)
+    assert ", 3D —" in txt and " Cs " in txt and "A_ref = 0.5" in txt
+
+
+def test_run_case_3d_transient_vtk_and_averages(tmp_path):
+    from microrans.fv2d.case import run_case
+    cfg = _cyl_cfg(3, nz=2, solver={"mode": "transient", "dt": 0.2, "t_end": 1.0},
+                   output={"vtk_every": 2, "average_from": 0.4})
+    s = run_case(cfg, out_dir=tmp_path, verbose=False, plot=False)
+    assert s["steps"] == 5 and sorted(p.name for p in tmp_path.glob("fields_*.vtk")) == [
+        "fields_000002.vtk", "fields_000004.vtk"]
+    assert "VECTORS U double" in (tmp_path / "fields.vtk").read_text()
+    head = (tmp_path / "history.csv").read_text().splitlines()[0]
+    assert "Cs_cylinder" in head and "probe1_Uz" in head
+    assert "SCALARS Uz_mean double 1" in (tmp_path / "fields.vtk").read_text()
+
+
+def test_cli_mesh_3d_writes_vtk_only(tmp_path, capsys):
+    from microrans.cli import main
+    case = tmp_path / "box.toml"
+    case.write_text('[mesh]\ntype = "box"\nx0 = 0\nx1 = 1\ny0 = 0\ny1 = 1\nz0 = 0\nz1 = 1\n'
+                    "nx = 2\nny = 2\nnz = 2\n", encoding="utf-8")
+    assert main(["mesh", str(case), "-o", str(tmp_path / "m"), "-q"]) == 0
+    assert sorted(p.name for p in (tmp_path / "m").iterdir()) == ["box.vtk", "quality.json"]
+    assert main(["mesh", str(case), "-o", str(tmp_path / "m2"), "-f", "su2", "vtk"]) == 0
+    assert "format(s) su2 non disponible(s)" in capsys.readouterr().out

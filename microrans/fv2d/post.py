@@ -1,4 +1,4 @@
-"""Figures d'un calcul 2D : champs, convergence, efforts."""
+"""Figures d'un calcul 2D (3D : plan z médian) : champs, convergence, efforts."""
 from __future__ import annotations
 
 from pathlib import Path
@@ -10,11 +10,13 @@ from ..postprocess import MODEL_COLORS, REF_COLOR, _pyplot
 
 
 def _body_size(solver):
+    """Sommets des parois (projetés sur x, y en 3D) et taille du corps."""
     walls = [p.name for p in solver.mesh.patches if p.type == "wall"]
     if not walls:
         return None, None
-    pts = np.vstack([solver.mesh.points[solver.mesh.patch_face_nodes(w)].reshape(-1, 2)
-                     for w in walls])
+    m = solver.mesh
+    nodes = np.concatenate([m.patch_face_nodes(w).ravel() for w in walls])
+    pts = m.points[nodes[nodes >= 0], :2]
     return pts, float(max(np.ptp(pts[:, 0]), np.ptp(pts[:, 1])))
 
 
@@ -23,40 +25,56 @@ def _zoom(solver, downstream: float = 4.0):
     if pts is None:
         return None
     (x0, y0), (x1, y1) = pts.min(axis=0), pts.max(axis=0)
-    bb = solver.mesh.bbox()
+    P = solver.mesh.points
+    bb = (*P[:, :2].min(axis=0), *P[:, :2].max(axis=0))
     if L > 0.5 * max(bb[2] - bb[0], bb[3] - bb[1]):
         return None                       # parois = frontières du domaine : vue globale
     return (x0 - 1.0 * L, x1 + downstream * L, y0 - 1.5 * L, y1 + 1.5 * L)
 
 
 def plot_case(solver, hist, out: Path, mode, force_patches, qdyn):
+    """Figures du calcul ; 3D : champs dans le plan z médian (maillages en couches selon z :
+    pavé, extrusion), champs complets dans fields.vtk."""
     plt = _pyplot()
     zoom = _zoom(solver, 4.0 if mode == "steady" else 14.0)
     f = solver.fields()
     mir = 1 if solver.axisymmetric else None          # image miroir par rapport à l'axe
-    plot_mesh(solver.mesh, out / "mesh.png", zoom=zoom)
-    plot_field(solver.mesh, f["U_mag"], out / "U.png", title="|U|", zoom=zoom, cmap="viridis",
-               mirror=mir)
-    plot_field(solver.mesh, f["p"], out / "p.png", title="p (cinématique)", zoom=zoom,
-               cmap="RdBu_r", mirror=mir)
-    w = f["vorticity"]
-    # échelle de couleur calée hors couche limite (sinon le sillage paraît délavé)
-    _, L = _body_size(solver)
-    far = solver.mesh.wall_distance > 0.2 * L if L else np.ones(len(w), dtype=bool)
-    lim = np.percentile(np.abs(w[far]) if np.any(far) else np.abs(w), 99)
-    omz = solver.grad_U(solver.U)
-    plot_field(solver.mesh, omz[:, 1, 0] - omz[:, 0, 1], out / "vorticity.png",
-               title="vorticité ω_z", zoom=zoom, cmap="RdBu_r", vmin=-lim, vmax=lim,
-               mirror=mir and -1)
-    if "nut_over_nu" in f:
-        plot_field(solver.mesh, f["nut_over_nu"], out / "nut.png", title="ν_t/ν", zoom=zoom,
-                   cmap="magma", mirror=mir)
-    for name, v in solver.scalars.items():
-        plot_field(solver.mesh, v, out / f"scalar_{name}.png", title=f"scalaire {name}",
-                   zoom=zoom, cmap="viridis", mirror=mir)
-    if solver.rheology is not None:
-        plot_field(solver.mesh, np.log10(solver.nu_lam), out / "viscosity.png",
-                   title="log₁₀ ν (non newtonien)", zoom=zoom, cmap="magma", mirror=mir)
+    mesh, sel, plane = solver.mesh, slice(None), ""
+    if solver.dim == 3:
+        from ..mesh3d.slice import ZSlice
+        try:
+            mesh = ZSlice(solver.mesh)
+        except ValueError:
+            mesh = None                               # pas de coupe : figures de champs omises
+        else:
+            sel, plane = mesh.cells, f" (plan z = {mesh.z:.4g})"
+    if mesh is not None:
+        if solver.dim == 2:
+            plot_mesh(mesh, out / "mesh.png", zoom=zoom)
+        plot_field(mesh, f["U_mag"][sel], out / "U.png", title="|U|" + plane, zoom=zoom,
+                   cmap="viridis", mirror=mir)
+        plot_field(mesh, f["p"][sel], out / "p.png", title="p (cinématique)" + plane,
+                   zoom=zoom, cmap="RdBu_r", mirror=mir)
+        omz = solver.grad_U(solver.U)
+        omz = (omz[:, 1, 0] - omz[:, 0, 1])[sel]
+        # échelle de couleur calée hors couche limite (sinon le sillage paraît délavé)
+        _, L = _body_size(solver)
+        far = (solver.mesh.wall_distance[sel] > 0.2 * L if L
+               else np.ones(len(omz), dtype=bool))
+        lim = np.percentile(np.abs(omz[far]) if np.any(far) else np.abs(omz), 99)
+        plot_field(mesh, omz, out / "vorticity.png", title="vorticité ω_z" + plane,
+                   zoom=zoom, cmap="RdBu_r", vmin=-lim, vmax=lim, mirror=mir and -1)
+        if "nut_over_nu" in f:
+            plot_field(mesh, f["nut_over_nu"][sel], out / "nut.png", title="ν_t/ν" + plane,
+                       zoom=zoom, cmap="magma", mirror=mir)
+        for name, v in solver.scalars.items():
+            plot_field(mesh, v[sel], out / f"scalar_{name}.png",
+                       title=f"scalaire {name}" + plane, zoom=zoom, cmap="viridis",
+                       mirror=mir)
+        if solver.rheology is not None:
+            plot_field(mesh, np.log10(solver.nu_lam)[sel], out / "viscosity.png",
+                       title="log₁₀ ν (non newtonien)" + plane, zoom=zoom, cmap="magma",
+                       mirror=mir)
     if not hist:
         return
     color = MODEL_COLORS.get(solver.model_name, "#4a3aa7")

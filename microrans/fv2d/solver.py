@@ -1988,7 +1988,8 @@ class Solver2D:
 
     # ------------------------------------------------------------------ post-traitement
     def forces(self, patches=None):
-        """Efforts (par unité d'envergure, ρ = 1) sur des patches : pression + frottement."""
+        """Efforts (par unité d'envergure en 2D, totaux en 3D ; ρ = 1) sur des patches :
+        pression + frottement."""
         xp = self.xp
         fvm = self.fvm
         names = patches or [p.name for p in self.mesh.patches if p.type == "wall"]
@@ -2016,8 +2017,9 @@ class Solver2D:
         du = self.U[fvm.Pb[sl]] - self.U_fixed[sl]
         dF = pb[:, None] * fvm.Sb[sl] + (self.nu_wall[sl] * fvm.magSb[sl]
                                          / fvm.dperp[sl])[:, None] * du
+        # 3D : moment autour de l'axe parallèle à z passant par `center` (x, y seuls servent)
         r = self.backend.asarray(self.mesh.face_centers[self.mesh.n_internal:][
-            self.patch_slices[patch]] - np.asarray(center, float))
+            self.patch_slices[patch]][:, :2] - np.asarray(center, float)[:2])
         return -float(xp.sum(r[:, 0] * dF[:, 1] - r[:, 1] * dF[:, 0]))
 
     def wall_shear(self, patch):

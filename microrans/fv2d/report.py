@@ -14,7 +14,8 @@ _DONE = {"mode", "model", "n_cells", "axisymmetric", "nu", "reference_velocity",
          "checkpoint", "solver", "flux", "order", "limiter", "gas", "freestream", "reynolds",
          "dynamic_pressure", "final_residuals", "time", "steps", "steps_this_run",
          "totals_initial", "totals_final", "viscosity", "porous", "actuator_disks", "scalars",
-         "probes", "lines", "animation", "restart", "fmg", "warnings"}
+         "probes", "lines", "animation", "restart", "fmg", "warnings", "dimension",
+         "reference_area"}
 
 
 def quality_text(mesh) -> list[str]:
@@ -52,6 +53,8 @@ def summary_text(s: dict) -> str:
     head = f"Calcul {'compressible ' if comp else ''}{mode}, {model}"
     if s.get("axisymmetric"):
         head += ", axisymétrique"
+    if s.get("dimension") == 3:
+        head += ", 3D"
     out.append(f"{head} — {_g(s.get('n_cells'))} cellules.")
     if comp:
         out.append(f"Schéma : flux {s.get('flux')}, ordre {s.get('order')}, limiteur "
@@ -99,6 +102,9 @@ def summary_text(s: dict) -> str:
         elif s.get("axisymmetric"):
             out.append("Efforts (coefficients : force sur 360° / (½ U² A_ref), A_ref = π L²/4 "
                        "par défaut) :")
+        elif s.get("dimension") == 3:
+            out.append("Efforts (coefficients : force / (½ U² A_ref), A_ref = "
+                       f"{_g(s.get('reference_area'))} ; Cs : effort latéral selon z) :")
         else:
             out.append("Efforts (coefficients : force / (½ U² L), par unité de profondeur) :")
         def c(v, w):                                # bruit d'arrondi (1e-17…) : 0
@@ -106,13 +112,16 @@ def summary_text(s: dict) -> str:
             return "0" if isinstance(v, float) and abs(v) < 1e-9 * ref else _g(v)
 
         yp = any("yplus_max" in w for w in walls.values())
+        cs = any("Cs" in w for w in walls.values())
         w0 = max(9, max(len(n) for n in walls) + 1)
-        out.append(f"  {'frontière':<{w0}}{'Cd':>10}{'Cl':>10}{'Cm':>10}"
-                   + (f"{'y⁺ max':>9}" if yp else ""))
+        # une espace au moins entre colonnes (avant : « 2.134-3.938e-09 » collés)
+        out.append(f"  {'frontière':<{w0}} {'Cd':>9} {'Cl':>9}" + (f" {'Cs':>9}" if cs else "")
+                   + f" {'Cm':>9}" + (f" {'y⁺ max':>8}" if yp else ""))
         for name, w in walls.items():
-            out.append(f"  {name:<{w0}}{c(w.get('Cd'), w):>10}{c(w.get('Cl'), w):>10}"
-                       f"{c(w.get('Cm'), w):>10}"
-                       + (f"{_g(w.get('yplus_max')):>9}" if yp else ""))
+            out.append(f"  {name:<{w0}} {c(w.get('Cd'), w):>9} {c(w.get('Cl'), w):>9}"
+                       + (f" {c(w.get('Cs'), w):>9}" if cs else "")
+                       + f" {c(w.get('Cm'), w):>9}"
+                       + (f" {_g(w.get('yplus_max')):>8}" if yp else ""))
         for name, w in walls.items():
             if "Cd_pressure" in w:
                 visc = w.get("Cd_viscous") or 0.0
@@ -130,7 +139,7 @@ def summary_text(s: dict) -> str:
             if "torque" in w:
                 out.append(f"  {name} : couple {_g(w['torque'])}.")
             extra = {k: v for k, v in w.items() if k not in (
-                "Cd", "Cl", "Cm", "Cd_pressure", "Cd_viscous", "yplus_max", "yplus_mean",
+                "Cd", "Cl", "Cs", "Cm", "Cd_pressure", "Cd_viscous", "yplus_max", "yplus_mean",
                 "strouhal", "Cd_mean", "Cl_rms", "Cl_amplitude", "periods_used", "Nu_mean",
                 "heat_flux", "torque")}
             if extra:
@@ -155,8 +164,9 @@ def summary_text(s: dict) -> str:
         other.append(f"Scalaire « {name} » : flux sortants {flux} ; source totale "
                      f"{_g(b.get('source_total'))}.")
     for p in s.get("probes") or []:
-        vals = ", ".join(f"{k} = {_g(x)}" for k, x in p.items() if k not in ("x", "y"))
-        other.append(f"Sonde ({_g(p.get('x'))}, {_g(p.get('y'))}) : {vals}.")
+        vals = ", ".join(f"{k} = {_g(x)}" for k, x in p.items() if k not in ("x", "y", "z"))
+        where = ", ".join(_g(p[a]) for a in "xyz" if a in p)
+        other.append(f"Sonde ({where}) : {vals}.")
     if s.get("U_mean") and not comp:
         other.append(f"Vitesse moyenne dans le domaine : {_g(s['U_mean'])}.")
     if other:
