@@ -567,6 +567,20 @@ def _check_values(cfg: dict, kind: str, mesh_type: str, mesh_only: bool, errors:
         elif "nu" not in ph and "reynolds" not in ph and newtonian:
             errors.append("[physics] : donner la viscosité nu (m²/s) ou le nombre de "
                           "Reynolds reynolds.")
+        if not newtonian:                           # avant : refus au lancement seulement
+            from .rheology import MODELS as LAWS, PARAMS
+            law = V.choice("physics.viscosity", visc, "model", LAWS)
+            need = PARAMS.get(law, ())
+            missing = [k for k in need if visc.get(k) is None]
+            if missing:
+                errors.append(f"[physics.viscosity] loi {law} : paramètre(s) "
+                              f"{', '.join(missing)} manquant(s), sans valeur par défaut "
+                              f"(attendus : {', '.join(need)}).")
+            for k in ("K", "n", "nu0", "lambda", "m"):
+                if k in need:
+                    V.num("physics.viscosity", visc, k, gt=0)
+            for k in ("nu_inf", "tau_y", "nu_min", "nu_max", "a", "relax"):
+                V.num("physics.viscosity", visc, k, ge=0)
         for k in ("reference_velocity", "reference_length", "reference_area"):
             V.num("physics", ph, k, gt=0)
         if ph.get("model") is not None:

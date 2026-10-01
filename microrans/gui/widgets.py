@@ -44,7 +44,13 @@ class SciEdit(QLineEdit):
 
     def set_value(self, v):
         self.blockSignals(True)
-        self.setText("" if v is None else (f"{v:g}" if isinstance(v, (int, float)) else str(v)))
+        if isinstance(v, (int, float)) and not isinstance(v, bool):
+            t = f"{v:g}"
+            if float(t) != v:
+                t = repr(float(v))          # pas d'arrondi (avant : 6 chiffres, réécrits)
+        else:
+            t = "" if v is None else str(v)
+        self.setText(t)
         self.blockSignals(False)
 
 

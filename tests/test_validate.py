@@ -163,6 +163,12 @@ _BAD = [
     (_set(("solver", "convection_U"), "linearupwind"), "vouliez-vous dire « linearUpwind » ?"),
     (_set(("physics", "model_options"), {"ft3": True}), "option inconnue pour le modèle"),
     (_pop(("boundary", "lid", "type")), "[boundary.lid] type manquant"),
+    (_set(("physics", "viscosity"), {"model": "carreau", "nu0": 1.0, "n": 0.5}),
+     "[physics.viscosity] loi carreau : paramètre(s) nu_inf, lambda manquant(s), sans valeur "
+     "par défaut (attendus : nu0, nu_inf, lambda, n)."),
+    (_set(("physics", "viscosity"), {"model": "power_law", "K": 0.1, "n": -1.0}),
+     "[physics.viscosity] n = -1.0 : doit être > 0"),
+    (_set(("physics", "viscosity"), {"model": "carreaux"}), "vouliez-vous dire « carreau » ?"),
     (_set(("boundary", "lid", "omega"), "abc"), "[boundary.lid] omega = 'abc' : nombre attendu"),
     (_set(("boundary", "lid", "q"), "1,5"), "[boundary.lid] q = '1,5' : nombre attendu"),
 ]

@@ -33,6 +33,12 @@ def test_viscosity_and_scalars_roundtrip(win):
                         "outlet": {"type": "outlet"}, "wall": {"type": "wall"}}}
     win.load_cfg(cfg)
     assert win.visc_fields["lambda"].isEnabled() and not win.visc_fields["tau_y"].isEnabled()
+    # audit U4 : seuls les paramètres de la loi sont affichés, sans « défaut » trompeur
+    shown = {k for k, w in win.visc_fields.items() if win.visc_form.isRowVisible(w)}
+    assert shown == {"nu0", "nu_inf", "lambda", "n", "nu_min", "nu_max"}
+    assert win.visc_fields["lambda"].placeholderText() == "obligatoire"
+    assert win.visc_fields["nu_max"].placeholderText() == "auto"
+    assert win.visc_formula.text().startswith("ν = ν∞ + (ν₀ − ν∞)")
     # changement de loi : paramètres de l'ancienne loi retirés du cas
     set_combo(win.visc_combo, "power_law")
     win.visc_fields["K"].set_value(0.1)
@@ -44,6 +50,8 @@ def test_viscosity_and_scalars_roundtrip(win):
     set_combo(win.visc_combo, "newtonian")
     win._visc_changed()
     assert "viscosity" not in win.cfg["physics"]
+    assert not any(win.visc_form.isRowVisible(w) for w in win.visc_fields.values())
+    assert not win.visc_form.isRowVisible(win.visc_formula)
     # scalaires : édition du tableau, clés sans colonne (scheme) conservées
     win.scalar_table.item(0, 3).setText("1")
     assert win.cfg["scalars"]["c"] == {"scheme": "upwind", "diffusivity": 1e-3, "source": 1.0}
@@ -335,3 +343,29 @@ def test_derived_viscosity_shown(win):
     assert win.cfg["physics"]["nu"] == pytest.approx(UL / 40, rel=1e-5)
     assert "reynolds" not in win.cfg["physics"]
     assert win.re_edit.value() == pytest.approx(40) and not win.re_edit.isEnabled()
+
+
+def test_non_newtonian_case_keeps_its_reference_viscosity(win):
+    """Audit U11 : sans ν dans le cas (loi non newtonienne : ν de référence tiré de la loi),
+    l'interface affichait 0.01 et l'écrivait dans le cas à la première modification."""
+    import tomllib
+
+    from microrans.cli import examples_dir
+    cfg = tomllib.loads((examples_dir() / "sang_carreau_artere.toml").read_text(
+        encoding="utf-8"))
+    assert "nu" not in cfg["physics"]
+    win.load_cfg(cfg)
+    assert win.nu_edit.text() == "" and win.nu_edit.placeholderText().startswith("auto")
+    win.visc_fields["lambda"].setText("3.3")
+    assert "nu" not in win.cfg["physics"]
+    assert win.cfg["physics"]["viscosity"]["lambda"] == 3.3
+
+
+def test_form_values_not_rounded(win):
+    """Audit U12 : les champs affichaient 6 chiffres (ν = 1/550 → 0.00181818) et cette valeur
+    arrondie était réécrite dans le cas à la première modification."""
+    from microrans.gui.widgets import SciEdit
+    for v in (1 / 550, 0.000632455532, 3000, 0.1, 1e-05, -9.81):
+        e = SciEdit(v)
+        assert e.value() == v
+    assert SciEdit(3000.0).text() == "3000" and SciEdit(1e-05).text() == "1e-05"

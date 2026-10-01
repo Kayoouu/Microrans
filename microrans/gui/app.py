@@ -99,6 +99,14 @@ VISCOSITY_LABELS = {"K": "K (consistance, m²/sⁿ⁻¹…)", "n": "n (indice)",
                     "nu_inf": "ν∞ (γ̇ → ∞)", "lambda": "λ (temps, s)", "m": "m (temps, s)",
                     "tau_y": "τ_y / ρ (seuil)", "nu_max": "ν max (bouchon / borne)",
                     "nu_min": "ν min (borne)"}
+VISCOSITY_FORMULAS = {
+    "power_law": "ν = K γ̇ⁿ⁻¹ (n < 1 : rhéofluidifiant, n > 1 : rhéoépaississant).",
+    "carreau": "ν = ν∞ + (ν₀ − ν∞) [1 + (λγ̇)²]^((n−1)/2) : plateau ν₀ aux faibles "
+               "cisaillements, ν∞ aux forts.",
+    "cross": "ν = ν∞ + (ν₀ − ν∞) / [1 + (m γ̇)ⁿ].",
+    "herschel_bulkley": "ν = (τ_y + K γ̇ⁿ) / γ̇ : ne s'écoule qu'au-delà du seuil τ_y.",
+    "bingham": "ν = τ_y / γ̇ + K : seuil τ_y, puis viscosité plastique K.",
+    "casson": "ν = (√(τ_y / γ̇) + √ν∞)² (sang, chocolat…)."}
 
 DEFAULT_CASE = {
     "mesh": {"type": "rectangle", "x0": 0.0, "x1": 1.0, "y0": 0.0, "y1": 1.0, "nx": 48,
@@ -474,7 +482,9 @@ class MainWindow(QMainWindow):
         self.nu_mode = combo([("nu", "Viscosité ν"), ("reynolds", "Nombre de Reynolds")])
         self.nu_mode.currentIndexChanged.connect(self._nu_mode_changed)
         f.addRow("Définir par", self.nu_mode)
-        self.nu_edit = B.sci(("physics", "nu"), 0.01)
+        # vide permis : loi non newtonienne sans ν = ν de référence de la loi (avant : 0.01
+        # affiché puis écrit dans le cas à la première modification)
+        self.nu_edit = B.sci(("physics", "nu"), None, True, "obligatoire")
         self.re_edit = B.sci(("physics", "reynolds"), 100.0)
         f.addRow("ν (m²/s)", self.nu_edit)
         f.addRow("Re = U L / ν", self.re_edit)
@@ -497,14 +507,27 @@ class MainWindow(QMainWindow):
                                   "newtonian")
         self.visc_combo.currentIndexChanged.connect(self._visc_changed)
         f.addRow("Loi", self.visc_combo)
-        self.visc_fields = {}
+        self.visc_formula = _note("")
+        f.addRow(self.visc_formula)
+        # seuls les paramètres de la loi choisie sont affichés : ceux de la loi n'ont pas de
+        # défaut (avant : 9 champs « défaut », refus au lancement)
+        self.visc_form, self.visc_fields = f, {}
         for key in ("K", "n", "nu0", "nu_inf", "lambda", "m", "tau_y", "nu_max", "nu_min"):
-            wdg = B.sci(("physics", "viscosity", key), None, True, "défaut")
+            auto = key in ("nu_min", "nu_max")
+            wdg = B.sci(("physics", "viscosity", key), None, True,
+                        "auto" if auto else "obligatoire")
+            if auto:
+                wdg.setToolTip("Vide : 10⁻³ (ν min) ou 10³ (ν max) × ν au cisaillement de "
+                               "référence U/L. Fluides à seuil : ν max est la viscosité de la "
+                               "zone non cisaillée (bouchon) ; plus elle est grande, plus le "
+                               "bouchon est rigide.")
             self.visc_fields[key] = wdg
             f.addRow(VISCOSITY_LABELS[key], wdg)
-        f.addRow(_note("ν = ν(γ̇), grandeurs cinématiques (divisées par ρ) ; laminaire "
-                       "uniquement. Sans ν ci-dessus, ν de référence = ν(U/L). Écoulement "
-                       "entraîné par une force (sans entrée) : relaxation U = 1 conseillée."))
+        self.visc_help = _note("Grandeurs cinématiques (divisées par ρ) ; laminaire "
+                               "uniquement. Sans ν ci-dessus, ν de référence = ν(U/L). "
+                               "Écoulement entraîné par une force (sans entrée) : relaxation "
+                               "U = 1 conseillée.")
+        f.addRow(self.visc_help)
         lay.addWidget(box)
         box, f = _form("Turbulence")
         self.model_combo = B.combo(("physics", "model"), MODEL_LABELS, "laminar")
@@ -1282,6 +1305,12 @@ class MainWindow(QMainWindow):
             used |= {"nu_max", "nu_min"}
         for key, wdg in self.visc_fields.items():
             wdg.setEnabled(key in used)
+            self.visc_form.setRowVisible(wdg, key in used)
+        self.visc_formula.setText(VISCOSITY_FORMULAS.get(model, ""))
+        self.nu_edit.setPlaceholderText("obligatoire" if model == "newtonian"
+                                        else "auto : ν de la loi à γ̇ = U/L")
+        for w in (self.visc_formula, self.visc_help):
+            self.visc_form.setRowVisible(w, model != "newtonian")
         if not self._syncing:
             self._form_changed()
 
