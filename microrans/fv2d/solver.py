@@ -155,6 +155,18 @@ class Settings:
     nonorth_limit: float = 0.5            # limiteur ψ de la correction (1 = aucun)
 
 
+def _diverged(when: str, steady: bool = True) -> str:
+    """Message de divergence avec des pistes (stationnaire : dans l'ordre d'efficacité
+    observé, ex. mesh_naca_multi : upwind stable, relax_U = 0.5 et pseudo_cfl divergent)."""
+    tips = ('démarrer en convection_U = "upwind" (puis repasser en linearUpwind) ; qualité du '
+            "maillage (asymétrie, non-orthogonalité : affichées après le maillage) ; conditions "
+            "aux limites ; sous-relaxations plus faibles" if steady else
+            "pas de temps plus petit ou adjust_dt = true ; qualité du maillage ; conditions aux "
+            "limites")
+    return (f"Le calcul a divergé {when} (vitesses infinies, non définies ou démesurées). "
+            f"Pistes : {tips}.")
+
+
 def _eval_expr(expr, x, y):
     """Formule en x, y (texte du fichier de cas) évaluée sans risque : voir safe_expr.py."""
     from ..safe_expr import evaluate
@@ -348,9 +360,24 @@ class Solver2D:
         # force volumique : constante (fx, fy) ou fonction du temps t -> (fx, fy)
         self.body_force = body_force if callable(body_force) else np.asarray(body_force, float)
         self._t_eval = 0.0
-        missing = [p.name for p in mesh.patches if p.name not in boundaries]
+        names = [p.name for p in mesh.patches]
+        periodic = {q for pair in getattr(mesh, "periodic_pairs", []) for q in pair[:2]}
+        extra = [k for k in boundaries if k not in names and k not in periodic]
+        missing = [n for n in names if n not in boundaries]
         if missing:
-            raise ValueError(f"Conditions aux limites manquantes pour les patches {missing}.")
+            from .validate import _suggest
+            hint = "".join(f" ; [boundary.{e}] ne correspond à aucune frontière"
+                           f"{_suggest(e, missing)}" for e in extra)
+            raise ValueError(f"Conditions aux limites manquantes pour les patches {missing}"
+                             f"{hint}.")
+        if extra:
+            import warnings
+
+            from .validate import CaseWarning, _suggest
+            for e in extra:
+                warnings.warn(f"[boundary.{e}] : aucune frontière « {e} » dans le maillage "
+                              f"(frontières : {', '.join(names)}), condition ignorée"
+                              f"{_suggest(e, names)}", CaseWarning, stacklevel=2)
         types = {}
         for name, spec in boundaries.items():
             if spec["type"] not in BC_TYPES:
@@ -947,6 +974,13 @@ class Solver2D:
         self.nut = self.model.eddy_viscosity(self.state, self.flow()) if self.model.variables \
             else xp.zeros(self.fvm.nc)
 
+    def _blown_up(self) -> bool:
+        """Vitesse non définie, infinie ou absurde (> 10⁶ max(U_ref, 1) : divergence en
+        cours, avant que la matrice de pression ne devienne singulière ; U_ref peut valoir
+        1e-12 en convection naturelle, d'où le plancher 1)."""
+        umax = float(self.xp.max(self.xp.abs(self.U)))
+        return not np.isfinite(umax) or umax > 1e6 * max(float(self.U_ref), 1.0)
+
     def _offdiag_mult(self, up, lo, x):
         xp = self.xp
         fvm = self.fvm
@@ -1422,6 +1456,8 @@ class Solver2D:
                 if not coupled:
                     self.U[:, c] = self.fvm.lin.solve(A, b, self.U[:, c], s.solver_U,
                                                       rtol=0.1, tag="U")
+            if not coupled and self._blown_up():               # avant la pression
+                raise FloatingPointError(_diverged(f"à l'itération {it}"))
             if coupled:
                 # vitesse et pression résolues ensemble (voir coupled.py)
                 from .coupled import coupled_step
@@ -1444,9 +1480,8 @@ class Solver2D:
             rec = {"iteration": self.iterations_total + it, **self.residuals_now,
                    "continuity": cont}
             self.history.append(rec)
-            if not all(np.isfinite(float(v)) for v in rec.values()) or not bool(
-                    xp.all(xp.isfinite(self.U))):
-                raise FloatingPointError(f"Divergence à l'itération {it}.")
+            if not all(np.isfinite(float(v)) for v in rec.values()) or self._blown_up():
+                raise FloatingPointError(_diverged(f"à l'itération {it}"))
             if probes:
                 rec.update(probes(self))            # sondes (NaN possible hors domaine)
             if verbose and (it % log_every == 0 or it == 1):
@@ -1545,7 +1580,6 @@ class Solver2D:
         rk3 (SSP), rk4, ab2. Si Settings.adjust_dt, Δt suit max_co (et la limite de
         diffusion des schémas explicites). probes : fonction(solver) -> dict par pas.
         """
-        xp = self.xp
         s = self.settings
         self.steady = False
         self.update_nut()
@@ -1587,8 +1621,8 @@ class Solver2D:
                 if self.dt > remaining or remaining - self.dt < 0.05 * self.dt:
                     self.dt = remaining
             step(name, info)
-            if not xp.all(xp.isfinite(self.U)):
-                raise FloatingPointError(f"Divergence à t = {self.time:.4g}.")
+            if self._blown_up():
+                raise FloatingPointError(_diverged(f"à t = {self.time:.4g}", steady=False))
             co, dn, _, _ = self.courant()
             rec = {"time": self.time, "dt": self.dt, "Co": co, **self.residuals_now}
             if info["kind"] == "explicit":

@@ -222,7 +222,7 @@ def test_toml_typo_reported(win, monkeypatch):
     cfg["solver"] = {**cfg.get("solver", {}), "max_iters": 50}
     win.toml_edit.setPlainText(dumps(cfg))
     win._apply_toml()
-    assert len(shown) == 1 and shown[0][0] == "Réglages non reconnus"
+    assert len(shown) == 1 and shown[0][0] == "À vérifier"
     assert "vouliez-vous dire « max_iter » ?" in shown[0][1]
     # cas de l'interface, sans faute : aucune fenêtre
     shown.clear()
@@ -230,3 +230,40 @@ def test_toml_typo_reported(win, monkeypatch):
     win.toml_edit.setPlainText(dumps(win.cfg))
     win._apply_toml()
     assert shown == []
+
+
+def test_mesh_only_example_run_explained(win, monkeypatch):
+    """Audit M4 : « Lancer » sur un exemple de maillage seul maillait ~1 min puis échouait
+    (conditions aux limites manquantes) sans dire pourquoi."""
+    from PySide6.QtWidgets import QMessageBox
+
+    from microrans.cli import examples_dir
+    shown = []
+    monkeypatch.setattr(QMessageBox, "warning", lambda *a: shown.append(a[1:3]))
+    monkeypatch.setattr(win, "quiet", False)
+    win.open_case(examples_dir() / "mesh_naca_multi.toml")
+    win.run_2d()
+    assert win.thread is None                       # rien n'est lancé
+    assert len(shown) == 1 and shown[0][0] == "Maillage à générer d'abord"
+    assert "ne décrit qu'un maillage" in shown[0][1]
+
+
+def test_toml_incomplete_case_still_loads(win, monkeypatch):
+    """Un cas en cours d'écriture (viscosité pas encore donnée) se charge ; le manque est
+    signalé (le contrôle complet a lieu au lancement)."""
+    from PySide6.QtWidgets import QMessageBox
+
+    from microrans.tomlio import dumps
+    shown = []
+    monkeypatch.setattr(QMessageBox, "information", lambda *a: shown.append(a[1:3]))
+    monkeypatch.setattr(QMessageBox, "warning", lambda *a: shown.append(a[1:3]))
+    monkeypatch.setattr(win, "quiet", False)
+    win.new_case()
+    cfg = dict(win.cfg)
+    cfg["physics"] = {k: v for k, v in cfg["physics"].items() if k not in ("nu", "reynolds")}
+    cfg["solver"] = {**cfg.get("solver", {}), "max_iter": 7}
+    win.toml_edit.setPlainText(dumps(cfg))
+    win._apply_toml()
+    assert win.cfg["solver"]["max_iter"] == 7               # chargé
+    assert len(shown) == 1 and shown[0][0] == "À vérifier"
+    assert "À corriger avant de lancer : [physics] : donner la viscosité" in shown[0][1]

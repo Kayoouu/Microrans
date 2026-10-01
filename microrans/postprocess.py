@@ -36,9 +36,25 @@ def _json_default(o):
     raise TypeError(type(o))
 
 
+def json_safe(o):
+    """Types NumPy -> Python ; NaN et ±inf -> None (null) : JSON valide pour les autres
+    outils (« NaN » n'est pas du JSON standard)."""
+    if isinstance(o, dict):
+        return {k: json_safe(v) for k, v in o.items()}
+    if isinstance(o, (list, tuple)):
+        return [json_safe(v) for v in o]
+    if isinstance(o, np.ndarray):
+        return json_safe(o.tolist())
+    if isinstance(o, (np.floating, np.integer, np.bool_)):
+        o = o.item()
+    if isinstance(o, float) and not np.isfinite(o):
+        return None
+    return o
+
+
 def write_json(path: Path, data: dict):
-    path.write_text(json.dumps(data, indent=2, ensure_ascii=False, default=_json_default),
-                    encoding="utf-8")
+    path.write_text(json.dumps(json_safe(data), indent=2, ensure_ascii=False,
+                               default=_json_default), encoding="utf-8")
 
 
 def write_columns(path: Path, columns: dict[str, np.ndarray]):

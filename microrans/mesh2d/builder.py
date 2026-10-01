@@ -66,9 +66,13 @@ def _build_mesh(cfg: dict, base_dir=".", verbose: bool = False) -> Mesh2D:
     m = cfg.get("mesh", cfg)
     kind = m.get("type", "unstructured").lower()
     if kind == "file":
+        if not str(m.get("path") or "").strip():
+            raise ValueError("[mesh] path manquant : fichier .msh (Gmsh) ou .su2 à importer.")
         p = Path(m["path"])
         if not p.is_absolute():
             p = Path(base_dir) / p
+        if not p.is_file():
+            raise ValueError(f"[mesh] path : fichier de maillage introuvable : {p}")
         return read_mesh(p, m.get("patch_types"))
     if kind == "blocks":
         return block_mesh(m["vertices"], m["blocks"], m.get("edges"), m.get("patches"),

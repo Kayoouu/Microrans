@@ -128,3 +128,25 @@ def test_animation_gif(tmp_path):
     cfg["output"]["animate"] = "inconnue"
     with pytest.raises(ValueError, match="grandeur inconnue"):
         run_case(cfg, out_dir=tmp_path / "b", verbose=False, plot=False)
+
+
+def test_summary_is_strict_json_when_strouhal_undefined(tmp_path):
+    """Audit M8 : calcul instationnaire trop court -> "strouhal": NaN dans summary.json
+    (JSON invalide pour d'autres outils). Attendu : null."""
+    import json
+    import tomllib
+    from pathlib import Path
+
+    from microrans.fv2d.case import run_case
+    ex = Path(__file__).resolve().parent.parent / "microrans" / "examples" / "cavite_re100.toml"
+    cfg = tomllib.loads(ex.read_text(encoding="utf-8"))
+    cfg["mesh"].update(nx=6, ny=6)
+    cfg["solver"].update(mode="transient", dt=0.01, t_end=0.05)
+    cfg["output"] = {"plots": False, "vtk": False}
+    run_case(cfg, out_dir=tmp_path, verbose=False, plot=False)
+
+    def refuse(c):
+        raise ValueError(f"constante non standard {c}")
+    s = json.loads((tmp_path / "summary.json").read_text(encoding="utf-8"),
+                   parse_constant=refuse)
+    assert s["lid"]["strouhal"] is None and s["lid"]["periods_used"] == 0

@@ -2,10 +2,13 @@
 from __future__ import annotations
 
 import argparse
+import os
 import sys
+import traceback
 import warnings
 from pathlib import Path
 
+from . import __version__
 from .models import MODELS, TURBULENT_MODELS, canonical_name
 from .solver import TIME_SCHEMES_1D
 
@@ -168,21 +171,58 @@ def cmd_mesh(args) -> int:
     return 0
 
 
+def _set_value(text: str):
+    """Valeur d'un --set : nombre, liste, true/false (JSON) ; décimale à virgule acceptée
+    (0,5) ; sinon texte (physics.model=sst)."""
+    import json
+    import re
+    t = text.strip()
+    if re.fullmatch(r"[+-]?\d+,\d+([eE][+-]?\d+)?", t):
+        t = t.replace(",", ".")
+    try:
+        return json.loads(t)
+    except ValueError:
+        return text
+
+
+def _apply_set(cfg: dict, items) -> dict:
+    """--set SECTION.CLÉ=VALEUR, à plusieurs niveaux (boundary.lid.U=[2,0]) ; un indice
+    choisit un élément de liste (bodies.0.radius=0.3)."""
+    for item in items or []:
+        key, eq, val = item.partition("=")
+        parts = key.strip().split(".")
+        if not eq:
+            raise ValueError(f"--set {item} : écrire SECTION.CLÉ=VALEUR "
+                             "(ex. --set solver.max_iter=500).")
+        if len(parts) < 2 or not all(parts):
+            raise ValueError(f"--set {item} : clé « {key} » incomplète, écrire SECTION.CLÉ "
+                             "(ex. --set physics.nu=0.01).")
+        d = cfg
+        for i, p in enumerate(parts):
+            last = i == len(parts) - 1
+            where = ".".join(parts[:i + 1])
+            if isinstance(d, list):
+                if not p.isdigit() or int(p) >= len(d):
+                    raise ValueError(f"--set {item} : « {where} » : indice 0 à {len(d) - 1} "
+                                     f"attendu (liste de {len(d)} éléments).")
+                p = int(p)
+            elif not isinstance(d, dict):
+                raise ValueError(f"--set {item} : « {'.'.join(parts[:i])} » est une valeur, "
+                                 "pas une section.")
+            if last:
+                d[p] = _set_value(val)
+            else:
+                if isinstance(d, dict) and d.get(p) is None:
+                    d[p] = {}
+                d = d[p]
+    return cfg
+
+
 def _load_case(args):
     from .mesh2d.builder import load_config
 
     args.case = str(resolve_example(args.case))
-    cfg = load_config(args.case)
-    for item in args.set or []:
-        key, _, val = item.partition("=")
-        sec, _, name = key.partition(".")
-        try:
-            import json as _json
-            val = _json.loads(val)
-        except ValueError:
-            pass
-        cfg.setdefault(sec, {})[name] = val
-    return cfg
+    return _apply_set(load_config(args.case), args.set)
 
 
 def cmd_run2d(args) -> int:
@@ -307,6 +347,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="microrans",
         description="Micro-solveur RANS/URANS 1D/2D : SA, k-ε, k-ω, k-ω SST ; mailleur 2D.")
+    parser.add_argument("--version", action="version", version=f"microrans {__version__}")
+    parser.add_argument("--debug", action="store_true",
+                        help="trace Python complète en cas d'erreur (pour signaler un défaut)")
     sub = parser.add_subparsers(dest="command", required=True)
 
     p = sub.add_parser("rans", help="canal plan établi, stationnaire")
@@ -441,6 +484,19 @@ def _utf8_console():
                 pass
 
 
+def _error_text(exc) -> str:
+    """Message d'une erreur prévue (fichiers, mémoire) en clair."""
+    if isinstance(exc, MemoryError):
+        return "mémoire insuffisante : réduire le nombre de cellules."
+    if isinstance(exc, FileNotFoundError) and exc.filename:
+        return f"fichier introuvable : {exc.filename}"
+    if isinstance(exc, PermissionError) and exc.filename:
+        return f"accès refusé : {exc.filename}"
+    if isinstance(exc, IsADirectoryError) and exc.filename:
+        return f"un fichier est attendu, pas un dossier : {exc.filename}"
+    return str(exc)
+
+
 def _show_warning(message, category, filename, lineno, file=None, line=None):
     print(f"ATTENTION : {message}", file=sys.stderr)
 
@@ -448,10 +504,24 @@ def _show_warning(message, category, filename, lineno, file=None, line=None):
 def main(argv=None) -> int:
     _utf8_console()
     args = build_parser().parse_args(argv)
+    debug = args.debug or bool(os.environ.get("MICRORANS_DEBUG"))
     try:
         with warnings.catch_warnings():             # « ATTENTION : … » (sans fichier:ligne)
             warnings.showwarning = _show_warning
             return args.func(args)
-    except (ValueError, RuntimeError, FloatingPointError) as exc:
-        print(f"Erreur : {exc}", file=sys.stderr)
+    except KeyboardInterrupt:
+        print("\nInterrompu.", file=sys.stderr)
+        return 130
+    except (ValueError, RuntimeError, FloatingPointError, OSError, MemoryError) as exc:
+        if debug:
+            traceback.print_exc()
+        print(f"Erreur : {_error_text(exc)}", file=sys.stderr)
         return 2
+    except Exception as exc:                        # noqa: BLE001 — défaut du logiciel
+        if debug:
+            traceback.print_exc()
+        print(f"Erreur interne inattendue ({type(exc).__name__} : {exc}). Ce n'est "
+              "probablement pas une erreur de votre part : merci de la signaler (GitHub → "
+              "Issues) avec la trace complète, obtenue en relançant avec microrans --debug …",
+              file=sys.stderr)
+        return 3

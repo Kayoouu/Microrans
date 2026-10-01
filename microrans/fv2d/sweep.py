@@ -318,7 +318,9 @@ def write_table(rows, out: Path):
         w = csv.DictWriter(fh, fieldnames=keys)
         w.writeheader()
         w.writerows(rows)
-    (out / "balayage.json").write_text(json.dumps(rows, indent=2, ensure_ascii=False),
+    from ..postprocess import json_safe
+    (out / "balayage.json").write_text(json.dumps(json_safe(rows), indent=2,
+                                                  ensure_ascii=False),
                                        encoding="utf-8")
 
 

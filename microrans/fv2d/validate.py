@@ -352,16 +352,19 @@ _HINTS = {("physics", "nu"): "viscosité du compressible : [flow] mu ou reynolds
           ("boundary", "total_pressure"): "incompressible : p0"}
 
 
-def _suggest(key: str, known, section=False) -> str:
+def _closest(key: str, known):
     known = [k for k in known if k != "*"]
     low = {k.lower(): k for k in known}
     if key.lower() in low:
-        best = low[key.lower()]
-    elif key.lower() in _FRENCH and _FRENCH[key.lower()] in known:
-        best = _FRENCH[key.lower()]
-    else:
-        m = difflib.get_close_matches(key, known, n=1, cutoff=0.6)
-        best = m[0] if m else None
+        return low[key.lower()]
+    if key.lower() in _FRENCH and _FRENCH[key.lower()] in known:
+        return _FRENCH[key.lower()]
+    m = difflib.get_close_matches(key, known, n=1, cutoff=0.6)
+    return m[0] if m else None
+
+
+def _suggest(key: str, known, section=False) -> str:
+    best = _closest(key, known)
     if not best:
         return ""
     return f" — vouliez-vous dire [{best}] ?" if section else f" — vouliez-vous dire « {best} » ?"
@@ -444,6 +447,248 @@ class _Check:
                 self.table(v, sub, here)
 
 
+# ------------------------------------------------------------------ valeurs
+def _isnum(v) -> bool:
+    return isinstance(v, (int, float)) and not isinstance(v, bool)
+
+
+class _Values:
+    """Valeurs impossibles : messages groupés (tout est signalé en une fois)."""
+
+    def __init__(self, errors: list):
+        self.errors = errors
+
+    def num(self, sec: str, d: dict, key: str, *, gt=None, ge=None, le=None, integer=False,
+            required=False, why=""):
+        if not isinstance(d, dict) or d.get(key) is None:
+            if required:
+                self.errors.append(f"[{sec}] {key} manquant{why}.")
+            return None
+        v = d[key]
+        if integer and not (isinstance(v, int) and not isinstance(v, bool)):
+            whole = _isnum(v) and float(v).is_integer()
+            self.errors.append(f"[{sec}] {key} = {v!r} : nombre entier attendu"
+                               + (f" (écrire {int(v)}, sans « .0 »)." if whole else "."))
+            return None
+        if not _isnum(v):
+            self.errors.append(f"[{sec}] {key} = {v!r} : nombre attendu.")
+            return None
+        if gt is not None and not v > gt:
+            self.errors.append(f"[{sec}] {key} = {v!r} : doit être > {gt:g}.")
+        elif ge is not None and not v >= ge:
+            self.errors.append(f"[{sec}] {key} = {v!r} : doit être ≥ {ge:g}.")
+        elif le is not None and not v <= le:
+            self.errors.append(f"[{sec}] {key} = {v!r} : doit être ≤ {le:g}.")
+        return float(v)
+
+    def choice(self, sec: str, d: dict, key: str, choices, *, lower=True):
+        if not isinstance(d, dict) or d.get(key) is None:
+            return None
+        v = d[key]
+        norm = str(v).lower() if lower else str(v)
+        ok = [c.lower() for c in choices] if lower else list(choices)
+        if norm not in ok:
+            best = _closest(str(v), list(choices))
+            self.errors.append(f"[{sec}] {key} = {v!r} inconnu. Choix : {', '.join(choices)}"
+                               + (f" — vouliez-vous dire « {best} » ?" if best else "."))
+        return norm
+
+    def vec2(self, sec: str, d: dict, key: str):
+        """[a, b] : 2 composantes, nombres ou formules en x, y."""
+        if not isinstance(d, dict) or d.get(key) is None:
+            return
+        v = d[key]
+        if not isinstance(v, (list, tuple)) or len(v) != 2 or not all(
+                _isnum(c) or isinstance(c, str) for c in v):
+            self.errors.append(f"[{sec}] {key} = {v!r} : 2 composantes attendues [x, y] "
+                               "(nombres ou formules en x, y).")
+
+
+_MODE = {"unsteady": "transient", "instationnaire": "transient", "transitoire": "transient",
+         "urans": "transient", "stationnaire": "steady", "rans": "steady"}
+
+
+def _check_values(cfg: dict, kind: str, mesh_type: str, mesh_only: bool, errors: list):
+    V = _Values(errors)
+    m = cfg.get("mesh")
+    if m is None:
+        errors.append("[mesh] manquante : décrire le maillage (type = \"rectangle\", …), voir "
+                      "les exemples (microrans examples).")
+    elif isinstance(m, dict):
+        if mesh_type == RECT:
+            why = " (maillage rectangle)"
+            x0, x1, y0, y1 = (V.num("mesh", m, k, required=True, why=why)
+                              for k in ("x0", "x1", "y0", "y1"))
+            if x0 is not None and x1 is not None and x1 <= x0:
+                errors.append(f"[mesh] x1 = {m['x1']} doit être > x0 = {m['x0']}.")
+            if y0 is not None and y1 is not None and y1 <= y0:
+                errors.append(f"[mesh] y1 = {m['y1']} doit être > y0 = {m['y0']}.")
+            for k in ("nx", "ny"):
+                V.num("mesh", m, k, ge=1, integer=True, required=True, why=why)
+            g = m.get("grading")
+            if isinstance(g, (list, tuple)) and len(g) == 2:
+                for c in g:
+                    if _isnum(c) and c <= 0:
+                        errors.append(f"[mesh] grading = {g!r} : rapports > 0 attendus.")
+        elif mesh_type == OGRID:
+            V.num("mesh", m, "n_around", ge=4, integer=True)
+            V.num("mesh", m, "n_radial", ge=2, integer=True)
+            V.num("mesh", m, "farfield_radius", gt=0)
+            V.num("mesh", m, "first_height", gt=0)
+        elif mesh_type in _TRI_HYB:
+            for k in ("h_max", "h_surface", "growth"):
+                V.num("mesh", m, k, gt=0)
+            V.num("mesh", m, "max_iter", ge=1, integer=True)
+            lay = m.get("layers")
+            if mesh_type == HYB and isinstance(lay, dict):
+                V.num("mesh.layers", lay, "n", ge=1, integer=True)
+                V.num("mesh.layers", lay, "first_height", gt=0)
+                V.num("mesh.layers", lay, "ratio", gt=0)
+        elif mesh_type == FILE and not str(m.get("path") or "").strip():
+            errors.append("[mesh] path manquant : fichier .msh (Gmsh) ou .su2 à importer.")
+        elif mesh_type == BLOCKS:
+            for k in ("vertices", "blocks"):
+                if not m.get(k):
+                    errors.append(f"[mesh] {k} manquant ou vide (maillage multi-blocs).")
+    if mesh_only:
+        return
+    ph = cfg.get("physics") if isinstance(cfg.get("physics"), dict) else {}
+    sc = cfg.get("solver") if isinstance(cfg.get("solver"), dict) else {}
+    if kind == INC:
+        V.num("physics", ph, "nu", gt=0)
+        V.num("physics", ph, "reynolds", gt=0)
+        visc = ph.get("viscosity")
+        newtonian = not (isinstance(visc, dict)
+                         and str(visc.get("model", "newtonian")).lower() != "newtonian")
+        if "nu" in ph and "reynolds" in ph:
+            errors.append(f"[physics] nu = {ph['nu']} et reynolds = {ph['reynolds']} donnés "
+                          "ensemble : garder l'un des deux (nu serait utilisé, reynolds "
+                          "ignoré).")
+        elif "nu" not in ph and "reynolds" not in ph and newtonian:
+            errors.append("[physics] : donner la viscosité nu (m²/s) ou le nombre de "
+                          "Reynolds reynolds.")
+        for k in ("reference_velocity", "reference_length", "reference_area"):
+            V.num("physics", ph, k, gt=0)
+        if ph.get("model") is not None:
+            from ..models import MODELS, canonical_name
+            try:
+                model = canonical_name(str(ph["model"]))
+            except ValueError as exc:
+                errors.append(f"[physics] model : {exc}")
+            else:
+                import inspect
+                opts = ph.get("model_options")
+                if isinstance(opts, dict):
+                    ok = [p for p in inspect.signature(MODELS[model].__init__).parameters
+                          if p not in ("self", "grid", "nu")]
+                    for k in opts:
+                        if k not in ok:
+                            errors.append(f"[physics.model_options] {k} : option inconnue "
+                                          f"pour le modèle {model} (options : "
+                                          f"{', '.join(ok) or 'aucune'}).")
+        V.vec2("physics", ph, "body_force")
+    else:
+        fl = cfg.get("flow") if isinstance(cfg.get("flow"), dict) else {}
+        V.num("flow", fl, "mach", ge=0)
+        for k in ("pressure", "temperature", "density", "gas_constant", "prandtl", "mu",
+                  "reynolds"):
+            V.num("flow", fl, k, gt=0)
+        V.num("flow", fl, "gamma", gt=1)
+        V.vec2("flow", fl, "velocity")
+    V.num("physics", ph, "angle_of_attack")
+    # [solver]
+    mode = sc.get("mode", "steady")
+    if str(mode).lower() not in ("steady", "transient"):
+        alt = _MODE.get(str(mode).lower())
+        errors.append(f"[solver] mode = {mode!r} inconnu : steady (stationnaire) ou "
+                      f"transient (instationnaire)" + (f" — vouliez-vous dire « {alt} » ?"
+                                                       if alt else "."))
+    elif str(mode).lower() == "transient":
+        V.num("solver", sc, "t_end", gt=0, required=True, why=" (mode transient : temps final)")
+        V.num("solver", sc, "dt", gt=0, required=kind == INC,
+              why=" (mode transient : pas de temps)")
+    V.num("solver", sc, "max_iter", ge=1, integer=True)
+    V.num("solver", sc, "tol", ge=0)
+    V.num("solver", sc, "monitor_tol", gt=0)
+    V.num("solver", sc, "monitor_window", ge=1, integer=True)
+    V.num("solver", sc, "log_every", ge=1, integer=True)
+    if kind == INC:
+        for k in ("relax_U", "relax_p", "relax_turb", "relax_T", "relax_scalar"):
+            V.num("solver", sc, k, gt=0, le=1)
+        for k in ("n_outer", "n_corr", "n_nonorth"):
+            V.num("solver", sc, k, ge=1, integer=True)
+        for k in ("max_co", "pseudo_cfl", "pseudo_dt", "max_dt"):
+            V.num("solver", sc, k, gt=0)
+        V.num("solver", sc, "fmg_levels", ge=0, integer=True)
+        V.choice("solver", sc, "algorithm", ("SIMPLE", "SIMPLEC", "coupled"))
+        V.choice("solver", sc, "wall_treatment", ("resolved", "wall_function"), lower=False)
+        for k in ("convection_U", "convection_turb", "convection_T"):
+            V.choice("solver", sc, k, ("upwind", "linearUpwind", "linearUpwindLimited"),
+                     lower=False)
+        from ..linalg import SOLVERS
+        for k in ("solver_p", "solver_U", "solver_turb"):
+            V.choice("solver", sc, k, tuple(SOLVERS), lower=False)
+        from .solver import TIME_SCHEMES
+        V.choice("solver", sc, "time_scheme", ("auto", *TIME_SCHEMES), lower=False)
+    else:
+        for k in ("cfl", "cfl_max"):
+            V.num("solver", sc, k, gt=0)
+        V.num("solver", sc, "first_order_iter", ge=0, integer=True)
+    # [boundary.*], [initial]
+    bnd = cfg.get("boundary") if isinstance(cfg.get("boundary"), dict) else {}
+    for name, spec in bnd.items():
+        if not isinstance(spec, dict):
+            continue
+        sec = f"boundary.{name}"
+        if not spec.get("type"):
+            errors.append(f"[{sec}] type manquant (ex. type = \"wall\").")
+            continue
+        for k in ("U", "velocity", "direction"):
+            V.vec2(sec, spec, k)
+        t = str(spec["type"]).lower()
+        if kind == INC and t == "inlet" and "U" not in spec and "flow_rate" not in spec:
+            errors.append(f"[{sec}] (inlet) : donner la vitesse U = [ux, uy] ou le débit "
+                          "flow_rate.")
+        if kind == INC and t == "farfield" and "U" not in spec:
+            errors.append(f"[{sec}] (farfield) : donner la vitesse amont U = [ux, uy].")
+    V.vec2("initial", cfg.get("initial") if isinstance(cfg.get("initial"), dict) else {}, "U")
+    en = cfg.get("energy")
+    if kind == INC and isinstance(en, dict):
+        V.num("energy", en, "Pr", gt=0)
+        V.num("energy", en, "Pr_t", gt=0)
+        V.vec2("energy", en, "gravity")
+
+
+# ordres de grandeur mesurés (cavité, SIMPLEC, solveur de pression AMG, un cœur) : mémoire
+# ~250 Mo + ~1 Ko par cellule, ~15 µs par cellule et par itération
+BIG_MESH = 500_000
+
+
+def _size_warning(m: dict, mesh_type: str) -> str | None:
+    """Avertissement pour un maillage structuré très gros (nombre de cellules exact avant
+    maillage ; pas d'estimation fiable pour les triangles, raffinements compris)."""
+    try:
+        if mesh_type == RECT:
+            n = int(m["nx"]) * int(m["ny"])
+        elif mesh_type == OGRID:
+            n = int(m.get("n_around", 128)) * int(m.get("n_radial", 64))
+        elif mesh_type == BLOCKS:
+            n = sum(int(b["cells"][0]) * int(b["cells"][1]) for b in m["blocks"])
+        else:
+            return None
+    except (KeyError, TypeError, ValueError, IndexError):
+        return None
+    if n < BIG_MESH:
+        return None
+    gb = 0.25 + n * 1e-6
+    it = n * 15e-6
+    count = f"{n:,}".replace(",", " ")
+    return (f"[mesh] {count} cellules : prévoir ~{gb:.1f} Go de mémoire et ~{it:.0f} s par "
+            "itération (ordre de grandeur mesuré, variable selon la machine ; plusieurs "
+            "centaines d'itérations sont nécessaires). Régler d'abord le cas sur un maillage "
+            "plus grossier.")
+
+
 def _mesh_type(m) -> str:
     """Type de maillage, ou "" si inconnu / préréglage (pas de vérification par type)."""
     from ..mesh2d.builder import MESH_TYPES
@@ -453,11 +698,19 @@ def _mesh_type(m) -> str:
     return t if t in MESH_TYPES else ""
 
 
-def check_case(cfg: dict, mesh_only: bool = False) -> list[str]:
-    """Avertissements (liste de textes) ; ValueError si la structure est impossible.
-    mesh_only : fichier de maillage seul (microrans mesh) : [mesh], [domain], [[bodies]]."""
-    if not isinstance(cfg, dict):
-        raise ValueError("Le fichier de cas doit contenir des sections [mesh], [physics]…")
+def check_case(cfg: dict, mesh_only: bool = False, values: bool = True) -> list[str]:
+    """Avertissements (liste de textes) ; ValueError si la structure ou une valeur est
+    impossible. mesh_only : fichier de maillage seul (microrans mesh) : [mesh], [domain],
+    [[bodies]] ; values = False : structure seulement (cas en cours d'écriture)."""
+    if not isinstance(cfg, dict) or not cfg:
+        raise ValueError("Fichier de cas vide : il faut au moins [mesh], [physics] et "
+                         "[boundary.<frontière>] (partir d'un exemple : microrans examples).")
+    if values and not mesh_only and "mesh" in cfg and not any(
+            k in cfg for k in ("physics", "boundary", "flow")):
+        raise ValueError("Ce fichier décrit seulement un maillage (ni [physics] ni "
+                         "[boundary]) : le générer avec « microrans mesh <fichier> » ou le "
+                         "bouton « Générer le maillage » de l'interface ; pour un calcul, "
+                         "partir d'un exemple de calcul (microrans examples).")
     kind = COMP if (isinstance(cfg.get("physics"), dict)
                     and cfg["physics"].get("compressible")) else INC
     m = cfg.get("mesh", {})
@@ -482,8 +735,14 @@ def check_case(cfg: dict, mesh_only: bool = False) -> list[str]:
     c.keys({k: v for k, v in cfg.items()
             if not (k in ("domain", "bodies") and mesh_type
                     and mesh_type not in schema.keys[k].types)}, schema, [])
-    if c.errors:
-        raise ValueError("\n".join(c.errors))
+    if values and not c.errors:                   # structure lisible : valeurs
+        _check_values(cfg, kind, mesh_type, mesh_only, c.errors)
+        big = _size_warning(cfg.get("mesh"), mesh_type) if isinstance(cfg.get("mesh"),
+                                                                      dict) else None
+        if big:
+            c.warnings.append(big)
+    if c.errors:                                  # une faute de frappe explique souvent l'erreur
+        raise ValueError("\n".join(c.errors + [f"Remarque : {w}" for w in c.warnings]))
     return c.warnings
 
 

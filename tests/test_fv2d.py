@@ -211,3 +211,21 @@ def test_pseudo_transient_fine_stretched_channel():
     ub = np.sum(s.U[:, 0] * m.cell_volumes) / np.sum(m.cell_volumes)
     r1 = run_rans_channel("sa", re_tau, n_cells=256, y1_plus=0.2).summary
     assert ub == pytest.approx(r1["Ub_plus"] * r1["u_tau"], rel=2e-3)
+
+
+def test_divergence_reported_with_tips(tmp_path):
+    """Audit : une divergence finissait en « Factor is exactly singular » (matrice de
+    pression) ; les vitesses démesurées mais finies (~1e50) n'étaient pas détectées."""
+    import tomllib
+    from pathlib import Path
+
+    from microrans.fv2d.case import run_case
+    ex = Path(__file__).resolve().parent.parent / "microrans" / "examples" / "cavite_re100.toml"
+    cfg = tomllib.loads(ex.read_text(encoding="utf-8"))
+    cfg["mesh"].update(nx=12, ny=12)
+    cfg["physics"]["nu"] = 1e-6
+    cfg["solver"].update(max_iter=200, algorithm="SIMPLE", relax_U=1.0, relax_p=1.0)
+    cfg["output"] = {"plots": False, "vtk": False}
+    with pytest.raises(FloatingPointError, match=r"Le calcul a divergé à l'itération \d+ .*"
+                                                 r"Pistes : démarrer en convection_U = \"upwind\""):
+        run_case(cfg, out_dir=tmp_path, verbose=False, plot=False)

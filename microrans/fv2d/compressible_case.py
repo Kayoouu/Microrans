@@ -431,8 +431,10 @@ def run_compressible_case(cfg: dict, base_dir=".", out_dir=None, verbose=True, p
     if oc.get("lines"):
         summary["lines"] = [str(p) for p in _write_lines(solver, oc["lines"], out,
                                                          plot and oc.get("plots", True))]
-    (out / "summary.json").write_text(json.dumps(summary, indent=2, ensure_ascii=False,
-                                                 default=float), encoding="utf-8")
+    from ..postprocess import json_safe
+    (out / "summary.json").write_text(json.dumps(json_safe(summary), indent=2,
+                                                 ensure_ascii=False, default=float),
+                                      encoding="utf-8")
     if oc.get("vtk", True):
         write_vtk(solver.mesh, out / "fields.vtk", solver.fields())
     if plot and oc.get("plots", True):

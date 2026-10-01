@@ -920,7 +920,8 @@ class MainWindow(QMainWindow):
                 "ogrid": {"n_around", "n_radial", "farfield_radius", "first_height", "center"},
                 "unstructured": {"h_max", "h_surface", "growth", "refinements", "max_iter"},
                 "hybrid": {"h_max", "h_surface", "growth", "refinements", "max_iter", "layers"},
-                "file": {"path", "patch_types"}}.get(kind)
+                "file": {"path", "patch_types"},
+                "blocks": set()}.get(kind)              # blocs : onglet TOML seulement
         if keep is None:
             return
         managed = {"x0", "x1", "y0", "y1", "nx", "ny", "grading", "names", "n_around",
@@ -931,7 +932,7 @@ class MainWindow(QMainWindow):
                 m.pop(k)
         if kind not in ("unstructured", "hybrid"):
             self.cfg.pop("domain", None)
-        if kind in ("rectangle", "file"):
+        if kind in ("rectangle", "file", "blocks"):
             self.cfg.pop("bodies", None)
 
     def _refresh_toml(self):
@@ -944,20 +945,26 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "TOML invalide", str(exc))
             return
         from ..fv2d.validate import check_case
-        try:
-            warn = check_case(cfg)
+        try:                                         # structure : chargement impossible
+            check_case(cfg, values=False)
         except ValueError as exc:
-            QMessageBox.warning(self, "Fichier de cas incorrect", str(exc))
+            QMessageBox.warning(self, "Réglages à corriger", str(exc))
             return
+        try:                                         # valeurs : signalées, cas chargé
+            notes = check_case(copy.deepcopy(cfg))
+        except ValueError as exc:
+            notes = [e.removeprefix("Remarque : ") if e.startswith("Remarque : ")
+                     else f"À corriger avant de lancer : {e}" for e in str(exc).split("\n")]
         self.load_cfg(cfg)
         self.statusBar().showMessage("Cas mis à jour depuis le TOML", 4000)
-        if warn and not self.quiet:
-            QMessageBox.information(self, "Réglages non reconnus",
-                                    "Le cas est chargé, mais ces réglages seront ignorés :"
-                                    "\n\n• " + "\n• ".join(warn))
+        if notes and not self.quiet:
+            QMessageBox.information(self, "À vérifier",
+                                    "Le cas est chargé. Points à vérifier :\n\n• "
+                                    + "\n• ".join(notes))
 
     def new_case(self):
         self.case_path = None
+        self._mesh_only_file = False
         self.mesh = None
         self.load_cfg(copy.deepcopy(DEFAULT_CASE))
         self.nav.setCurrentRow(2)
@@ -978,7 +985,10 @@ class MainWindow(QMainWindow):
         self.case_path = path
         self.mesh = None
         self.solver = None
+        # fichier de maillage seul (exemples mesh_*) : load_cfg y ajoute [physics]…
+        mesh_only = not any(k in cfg for k in ("physics", "boundary", "flow"))
         self.load_cfg(cfg)
+        self._mesh_only_file = mesh_only
         self.setWindowTitle(f"{APP_NAME} — {path.name}")
         self.log(f"Cas ouvert : {path}")
         self.nav.setCurrentRow(2)
@@ -1115,8 +1125,8 @@ class MainWindow(QMainWindow):
         self._store_forms()
         cfg = copy.deepcopy(self.cfg)
         base = self.base_dir()
-        if cfg.get("mesh", {}).get("type") == "file":
-            p = Path(cfg["mesh"].get("path", ""))
+        if cfg.get("mesh", {}).get("type") == "file" and cfg["mesh"].get("path"):
+            p = Path(cfg["mesh"]["path"])
             if not p.is_absolute() and self.case_path is None:
                 cfg["mesh"]["path"] = str(p.resolve())
         if not self._case_ok(cfg, mesh_only=True):
@@ -1776,18 +1786,32 @@ class MainWindow(QMainWindow):
         """Vérification du cas avant maillage ou calcul (validate.py) : structure impossible
         -> message ; clés inconnues ou sans effet -> confirmation. False : ne pas lancer."""
         from ..fv2d.validate import check_case
+        if not mesh_only and self.mesh is None and not cfg.get("boundary"):
+            msg = ("Pas encore de conditions aux limites : générer d'abord le maillage (page "
+                   "« Maillage »), les frontières apparaissent alors dans la page « Conditions "
+                   "aux limites ».")
+            if getattr(self, "_mesh_only_file", False):
+                msg += ("\n\nLe fichier ouvert ne décrit qu'un maillage (exemple mesh_*) : "
+                        "pour un premier calcul, ouvrir plutôt un exemple de calcul (page "
+                        "« Accueil »).")
+            self.errors.append(msg)
+            if not self.quiet:
+                QMessageBox.warning(self, "Maillage à générer d'abord", msg)
+            return False
         try:
             warn = check_case(cfg, mesh_only)
         except ValueError as exc:
             self.errors.append(str(exc))
             if not self.quiet:
-                QMessageBox.warning(self, "Fichier de cas incorrect", str(exc))
+                QMessageBox.warning(self, "Réglages à corriger",
+                                    f"{exc}\n\n(Noms des réglages tels qu'écrits dans l'onglet "
+                                    "« Fichier de cas (TOML) ».)")
             return False
         if not warn or self.quiet:
             return True
         r = QMessageBox.question(
-            self, "Réglages non reconnus",
-            "Ces réglages du cas seront ignorés :\n\n• " + "\n• ".join(warn)
+            self, "À vérifier avant de lancer",
+            "• " + "\n• ".join(warn)
             + "\n\nCorriger : onglet « Fichier de cas (TOML) ». Lancer quand même ?",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
         return r == QMessageBox.StandardButton.Yes
