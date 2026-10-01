@@ -56,6 +56,7 @@ import numpy as np
 
 from ..mesh2d.io import write_vtk
 from .compressible import (CompressibleSettings, CompressibleSolver2D, Gas, make_state)
+from .report import MODES
 
 _SETTINGS = {"flux", "order", "limiter", "venkat_k", "limiter_freeze", "entropy_fix", "cfl",
              "steady_scheme", "cfl_max", "cfl_growth", "first_order_iter",
@@ -321,7 +322,7 @@ def run_compressible_case(cfg: dict, base_dir=".", out_dir=None, verbose=True, p
         print(f"Cas 2D compressible : {solver.nc} cellules, M∞ = {fs.mach:.4g}, "
               f"p∞ = {fs.p:.6g} Pa, T∞ = {fs.T:.5g} K, "
               + (f"Re = {Re:.4g}" if Re else "Euler (non visqueux)")
-              + f", flux {s.flux}, ordre {s.order}, limiteur {s.limiter}, mode {mode}")
+              + f", flux {s.flux}, ordre {s.order}, limiteur {s.limiter}, {MODES.get(mode, mode)}")
     t0 = time.perf_counter()
     summary = {"solver": "compressible", "mode": mode,
                "model": "euler" if not gas.viscous else "laminar",
@@ -439,8 +440,9 @@ def run_compressible_case(cfg: dict, base_dir=".", out_dir=None, verbose=True, p
         write_vtk(solver.mesh, out / "fields.vtk", solver.fields())
     if plot and oc.get("plots", True):
         plot_compressible(solver, hist, out, mode, force_patches, qinf)
-    if verbose:
-        print(json.dumps(summary, indent=2, ensure_ascii=False, default=float))
+    if verbose:                                     # avant : JSON brut de ~60 lignes
+        from .report import summary_text
+        print("\n" + summary_text(summary))
         print(f"Résultats dans {out.resolve()}")
     return (summary, solver) if return_solver else summary
 

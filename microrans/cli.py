@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
 import sys
 import traceback
 import warnings
@@ -36,7 +37,7 @@ def _add_common(p: argparse.ArgumentParser, default_out: str):
                    help="hauteur de la 1re maille en unités de paroi (défaut : 0.2)")
     p.add_argument("--sa-ft2", action="store_true",
                    help="SA : active le terme f_t2 (défaut : SA-noft2)")
-    p.add_argument("-o", "--out", default=default_out, help=f"dossier de sortie (défaut : {default_out})")
+    p.add_argument("-o", "--out", metavar="DOSSIER", default=default_out, help=f"dossier de sortie (défaut : {default_out})")
     p.add_argument("--no-plot", action="store_true", help="ne pas produire de figures")
     p.add_argument("-q", "--quiet", action="store_true", help="moins de messages")
 
@@ -345,25 +346,89 @@ def cmd_examples(args) -> int:
     return 0
 
 
+class _Formatter(argparse.HelpFormatter):
+    def add_usage(self, usage, actions, groups, prefix=None):
+        return super().add_usage(usage, actions, groups,
+                                 "utilisation : " if prefix is None else prefix)
+
+
+def _fr_error(message: str) -> str:
+    """Erreurs de saisie d'argparse (anglais) en français, avec suggestion de commande."""
+    import difflib
+    m = re.fullmatch(r"argument (.+?): invalid choice: '(.*)' \(choose from (.*)\)", message)
+    if m:
+        name, value, choices = m.groups()
+        choices = [c.strip().strip("'") for c in choices.split(",")]
+        best = difflib.get_close_matches(value, choices, n=1)
+        what = "commande" if name == "COMMANDE" else name
+        return (f"{what} « {value} » inconnue"
+                + (f" — vouliez-vous dire « {best[0]} » ?" if best else "")
+                + f" (choix : {', '.join(choices)})")
+    rules = [
+        (r"the following arguments are required: (.*)", "argument(s) manquant(s) : {0}"),
+        (r"unrecognized arguments: (.*)", "option(s) inconnue(s) : {0}"),
+        (r"argument (.+?): expected one argument", "{0} : une valeur attendue"),
+        (r"argument (.+?): expected at least one argument", "{0} : au moins une valeur attendue"),
+        (r"argument (.+?): expected (\d+) arguments", "{0} : {1} valeurs attendues"),
+        (r"argument (.+?): invalid float value: '(.*)'", "{0} : « {1} » n'est pas un nombre"),
+        (r"argument (.+?): invalid int value: '(.*)'",
+         "{0} : « {1} » n'est pas un nombre entier"),
+        (r"argument (.+?): not allowed with argument (.+)",
+         "{0} : incompatible avec {1}"),
+        (r"ambiguous option: (.+?) could match (.+)", "option ambiguë {0} (possibles : {1})"),
+        (r"one of the arguments (.+) is required", "donner l'un des arguments {0}"),
+    ]
+    for pattern, text in rules:
+        m = re.fullmatch(pattern, message)
+        if m:
+            return text.format(*m.groups())
+    return message
+
+
+class _Parser(argparse.ArgumentParser):
+    """Aide et erreurs de saisie en français (avant : « usage », « positional arguments »,
+    « invalid choice »… en anglais, usage complet de 3 lignes à chaque faute de frappe)."""
+
+    def __init__(self, *args, **kwargs):
+        kwargs.setdefault("formatter_class", _Formatter)
+        kwargs["add_help"] = False
+        super().__init__(*args, **kwargs)
+        self._positionals.title = "arguments "      # « arguments : » (typographie)
+        self._optionals.title = "options "
+        self.add_argument("-h", "--help", action="help", help="afficher cette aide")
+
+    def error(self, message):
+        self.exit(2, f"{self.prog} : erreur : {_fr_error(message)}\n"
+                     f"Aide : {self.prog} --help\n")
+
+
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
+    parser = _Parser(
         prog="microrans",
-        description="Micro-solveur RANS/URANS 1D/2D : SA, k-ε, k-ω, k-ω SST ; mailleur 2D.")
-    parser.add_argument("--version", action="version", version=f"microrans {__version__}")
+        description="Écoulements 2D en volumes finis (incompressible laminaire ou turbulent : "
+                    "SA, k-ε, k-ω, SST, transition SST-γ ; thermique, scalaires, non "
+                    "newtonien, poreux, disques actuateurs, axisymétrique ; compressible "
+                    "Euler / Navier-Stokes laminaire), mailleur 2D et canal turbulent 1D.",
+        epilog="Premier calcul : microrans examples, puis microrans run2d cavite_re100. "
+               "Aide d'une commande : microrans run2d --help. Interface : microrans gui.")
+    parser.add_argument("--version", action="version", version=f"microrans {__version__}",
+                        help="afficher la version")
     parser.add_argument("--debug", action="store_true",
                         help="trace Python complète en cas d'erreur (pour signaler un défaut)")
-    sub = parser.add_subparsers(dest="command", required=True)
+    sub = parser.add_subparsers(dest="command", required=True, metavar="COMMANDE",
+                                title="commandes ")
 
     p = sub.add_parser("rans", help="canal plan établi, stationnaire")
     _add_common(p, "results/rans")
     p.add_argument("--dt", type=float, default=5.0, help="pas de pseudo-temps (défaut : 5)")
     p.add_argument("--relax", type=float, default=0.5,
                    help="sous-relaxation des variables de turbulence (défaut : 0.5)")
-    p.add_argument("--max-iter", type=int, default=20000)
+    p.add_argument("--max-iter", type=int, default=20000,
+                   help="nombre maximal d'itérations (défaut : 20000)")
     p.add_argument("--tol", type=float, default=1e-10,
                    help="variation relative max par itération pour l'arrêt (défaut : 1e-10)")
     p.add_argument("--reference", help="fichier (y+, U+) à superposer, ex. profil DNS")
-    p.add_argument("-v", "--verbose", action="store_true")
+    p.add_argument("-v", "--verbose", action="store_true", help="suivi des itérations")
     p.set_defaults(func=cmd_rans)
 
     p = sub.add_parser("urans", help="canal à gradient de pression pulsé, instationnaire")
@@ -382,11 +447,13 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--scheme", choices=list(TIME_SCHEMES_1D), default="sdirk2",
                    help="schéma en temps (défaut sdirk2, voir README) : implicites euler, bdf2, "
                         "cn, sdirk2, sdirk3 ; explicites rk1..rk4, ab2 (Δt minuscule requis)")
-    p.add_argument("--max-inner", type=int, default=30)
-    p.add_argument("--inner-tol", type=float, default=1e-6)
+    p.add_argument("--max-inner", type=int, default=30,
+                   help="sous-itérations maximales par pas (défaut : 30)")
+    p.add_argument("--inner-tol", type=float, default=1e-6,
+                   help="tolérance des sous-itérations (défaut : 1e-6)")
     p.add_argument("--relax", type=float, default=1.0,
                    help="sous-relaxation dans les sous-itérations (défaut : 1)")
-    p.add_argument("-v", "--verbose", action="store_true")
+    p.add_argument("-v", "--verbose", action="store_true", help="suivi des pas de temps")
     p.set_defaults(func=cmd_urans)
 
     p = sub.add_parser("mesh", help="générer / convertir un maillage 2D")
@@ -396,16 +463,17 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--type", help="force le type : blocks, rectangle, ogrid, unstructured, hybrid, file")
     p.add_argument("-f", "--format", nargs="+", default=["msh", "vtk"],
                    choices=["msh", "su2", "vtk", "foam"], help="formats de sortie (défaut : msh vtk)")
-    p.add_argument("-o", "--out", default="results/mesh")
-    p.add_argument("--no-plot", action="store_true")
-    p.add_argument("-q", "--quiet", action="store_true")
-    p.add_argument("-v", "--verbose", action="store_true")
+    p.add_argument("-o", "--out", metavar="DOSSIER", default="results/mesh",
+                   help="dossier de sortie (défaut : results/mesh)")
+    p.add_argument("--no-plot", action="store_true", help="ne pas produire de figures")
+    p.add_argument("-q", "--quiet", action="store_true", help="moins de messages")
+    p.add_argument("-v", "--verbose", action="store_true", help="suivi du maillage")
     p.set_defaults(func=cmd_mesh)
 
-    p = sub.add_parser("run2d", help="calcul 2D (RANS/URANS) décrit par un fichier de cas")
-    p.add_argument("case", help="fichier de cas .toml / .json, ou nom d'un exemple "
-                                "(liste : microrans examples)")
-    p.add_argument("-o", "--out", help="dossier de sortie")
+    p = sub.add_parser("run2d", help="calcul 2D décrit par un fichier de cas (ou un exemple)")
+    p.add_argument("case", metavar="CAS", help="fichier de cas .toml / .json, ou nom d'un "
+                                               "exemple (liste : microrans examples)")
+    p.add_argument("-o", "--out", metavar="DOSSIER", help="dossier de sortie")
     p.add_argument("--set", nargs="+", action="extend", metavar="SECTION.CLE=VALEUR",
                    help="surcharge d'un paramètre, ex. physics.model=sst solver.max_iter=500")
     p.add_argument("--restart", metavar="FICHIER",
@@ -415,22 +483,25 @@ def build_parser() -> argparse.ArgumentParser:
                    help="poursuivre le calcul depuis le checkpoint.npz du dossier de sortie "
                         "(stationnaire : max_iter itérations de plus ; instationnaire : "
                         "jusqu'au nouveau t_end)")
-    p.add_argument("--no-plot", action="store_true")
-    p.add_argument("-q", "--quiet", action="store_true")
+    p.add_argument("--no-plot", action="store_true", help="ne pas produire de figures")
+    p.add_argument("-q", "--quiet", action="store_true",
+                   help="sans suivi des itérations ni résumé final")
     p.set_defaults(func=cmd_run2d)
 
     def sweep_common(p):
-        p.add_argument("case", help="fichier de cas .toml / .json, ou nom d'un exemple")
-        p.add_argument("-o", "--out", help="dossier de sortie")
-        p.add_argument("--set", nargs="+", action="extend", metavar="SECTION.CLE=VALEUR")
+        p.add_argument("case", metavar="CAS",
+                       help="fichier de cas .toml / .json, ou nom d'un exemple")
+        p.add_argument("-o", "--out", metavar="DOSSIER", help="dossier de sortie")
+        p.add_argument("--set", nargs="+", action="extend", metavar="SECTION.CLE=VALEUR",
+                       help="surcharge d'un paramètre, ex. solver.max_iter=500")
         p.add_argument("--no-continuation", action="store_true",
                        help="chaque point part de l'état initial (plus lent, pas d'hystérésis)")
         p.add_argument("-j", "--jobs", type=int, metavar="N",
                        help="nombre de processus en parallèle (un point par cœur ; 0 = tous "
                             "les cœurs ; défaut : [sweep] jobs du cas, sinon 1). Avec "
                             "continuation : N blocs contigus de points, chacun en continuation")
-        p.add_argument("--no-plot", action="store_true")
-        p.add_argument("-q", "--quiet", action="store_true")
+        p.add_argument("--no-plot", action="store_true", help="ne pas produire de figures")
+        p.add_argument("-q", "--quiet", action="store_true", help="moins de messages")
         p.set_defaults(func=cmd_sweep, param=None, values=None, range=None, alpha=None)
 
     p = sub.add_parser("polar", help="polaire Cl(α), Cd(α), Cm(α) (incidence de l'écoulement)")
@@ -442,7 +513,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--param", help="clé du cas, ex. physics.reynolds, physics.angle_of_attack")
     g = p.add_mutually_exclusive_group()
     g.add_argument("--values", nargs="+", type=float, help="valeurs explicites")
-    g.add_argument("--range", nargs=3, type=float, metavar=("DEBUT", "FIN", "PAS"))
+    g.add_argument("--range", nargs=3, type=float, metavar=("DEBUT", "FIN", "PAS"),
+                   help="plage de valeurs, fin incluse, ex. --range 100 1000 100")
 
     p = sub.add_parser("examples", help="liste des cas d'exemple fournis")
     p.set_defaults(func=cmd_examples)
@@ -451,7 +523,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.set_defaults(func=lambda a: __import__("microrans.gui", fromlist=["main"]).main([]))
 
     p = sub.add_parser("schemes", help="étude précision / coût des schémas en temps")
-    p.add_argument("-o", "--out", default="results/schemes")
+    p.add_argument("-o", "--out", metavar="DOSSIER", default="results/schemes",
+                   help="dossier de sortie (défaut : results/schemes)")
     p.set_defaults(func=cmd_schemes)
 
     p = sub.add_parser("verify", help="vérification contre des solutions exactes")
@@ -466,10 +539,11 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--backend", default="intel", help="cuda | rocm | intel | intel:opencl:gpu…")
     p.add_argument("--sizes", type=int, nargs="+", default=[64, 128, 256],
                    help="côtés des cavités (N × N cellules)")
-    p.add_argument("--iters", type=int, default=20)
+    p.add_argument("--iters", type=int, default=20, help="itérations mesurées (défaut : 20)")
     p.add_argument("--numba", action="store_true",
                    help="compare NumPy et les noyaux Numba (1 fil, puis --threads)")
-    p.add_argument("--threads", type=int, nargs="+", default=[1, 2, 4])
+    p.add_argument("--threads", type=int, nargs="+", default=[1, 2, 4],
+                   help="nombres de fils comparés avec --numba (défaut : 1 2 4)")
     p.set_defaults(func=cmd_bench)
     return parser
 

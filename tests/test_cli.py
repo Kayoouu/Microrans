@@ -78,3 +78,46 @@ def test_examples_catalog_is_complete(capsys):
     assert main(["examples"]) == 0
     out = capsys.readouterr().out
     assert "Commencer ici" in out and "cavite_re100" in out
+
+
+def test_help_in_french(capsys):
+    """Audit L1 : aide mêlant anglais (« usage », « positional arguments », « show this help
+    message and exit ») et français ; description limitée à « RANS/URANS »."""
+    with pytest.raises(SystemExit):
+        main(["--help"])
+    out = capsys.readouterr().out
+    assert out.startswith("utilisation : microrans")
+    assert "compressible" in out and "transition" in out
+    with pytest.raises(SystemExit):
+        main(["run2d", "--help"])
+    out = capsys.readouterr().out
+    for english in ("usage", "positional", "show this help", "OUT"):
+        assert english not in out
+    assert "--no-plot             ne pas produire de figures" in out
+
+
+@pytest.mark.parametrize("argv,expected", [
+    (["runn"], "commande « runn » inconnue — vouliez-vous dire « run2d » ?"),
+    (["run2d"], "microrans run2d : erreur : argument(s) manquant(s) : CAS"),
+    (["polar", "cavite_re100", "--alpha", "1", "2"], "--alpha : 3 valeurs attendues"),
+    (["sweep", "cavite_re100", "--values", "a"], "--values : « a » n'est pas un nombre"),
+    (["run2d", "cavite_re100", "--nope"], "option(s) inconnue(s) : --nope"),
+])
+def test_usage_errors_in_french(argv, expected, capsys):
+    with pytest.raises(SystemExit) as exc:
+        main(argv)
+    assert exc.value.code == 2
+    err = capsys.readouterr().err
+    assert expected in err and "--help" in err and "usage" not in err
+
+
+def test_end_of_run_summary_readable(tmp_path, capsys):
+    """Audit L2 : la fin de calcul affichait le JSON brut (~40 lignes, 16 chiffres)."""
+    assert main(["run2d", "cavite_re100", "-o", str(tmp_path / "o"), "--no-plot",
+                 "--set", "mesh.nx=8", "mesh.ny=8", "solver.max_iter=5"]) == 1
+    out = capsys.readouterr().out
+    assert "Cas 2D : 64 cellules" in out and ", stationnaire" in out and "mode steady" not in out
+    assert "Calcul stationnaire, laminaire — 64 cellules." in out
+    assert "NON CONVERGÉ après 5 itérations" in out
+    assert '"n_cells"' not in out                    # plus de JSON à l'écran
+    assert (tmp_path / "o" / "summary.json").is_file()  # toujours écrit en entier

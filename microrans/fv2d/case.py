@@ -55,6 +55,7 @@ import numpy as np
 
 from ..mesh2d.builder import PRESETS, build_mesh
 from ..mesh2d.io import write_vtk
+from .report import MODES
 from .restart import load_checkpoint, save_checkpoint
 from .sampling import Sampler, TimeAverage, parse_points, write_lines
 from .solver import Settings, Solver2D
@@ -237,7 +238,7 @@ def run_case(cfg: dict, base_dir=".", out_dir=None, verbose=True, plot=True, cal
     mode = sc.get("mode", "steady")
     if verbose:
         print(f"Cas 2D : {solver.mesh.n_cells} cellules, modèle {solver.model.label}, "
-              f"ν = {solver.nu:.4g}, mode {mode}")
+              f"ν = {solver.nu:.4g}, {MODES.get(mode, mode)}")
     t0 = time.perf_counter()
     summary = {"mode": mode, "model": solver.model_name, "n_cells": solver.mesh.n_cells,
                "axisymmetric": axi,
@@ -422,7 +423,8 @@ def run_case(cfg: dict, base_dir=".", out_dir=None, verbose=True, plot=True, cal
     if plot and oc.get("plots", True):
         from .post import plot_case
         plot_case(solver, hist, out, mode, force_patches, qdyn)
-    if verbose:
-        print(json.dumps(summary, indent=2, ensure_ascii=False))
+    if verbose:                                     # avant : JSON brut de ~40 lignes
+        from .report import summary_text
+        print("\n" + summary_text(summary))
         print(f"Résultats dans {out.resolve()}")
     return (summary, solver) if return_solver else summary
