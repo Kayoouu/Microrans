@@ -416,10 +416,12 @@ class MainWindow(QMainWindow):
         self.body_list.currentRowChanged.connect(self._body_selected)
         bl.addWidget(self.body_list)
         row = QHBoxLayout()
+        self.body_buttons = []
         for text, fn in [("Ajouter", self._body_add), ("Supprimer", self._body_remove)]:
             b = QPushButton(text)
             b.clicked.connect(fn)
             row.addWidget(b)
+            self.body_buttons.append(b)
         bl.addLayout(row)
         bf = QFormLayout()
         self.b_type = combo(BODY_TYPES)
@@ -1086,6 +1088,17 @@ class MainWindow(QMainWindow):
             self.cfg["bodies"] = [{"type": "circle", "center": [0.0, 0.0], "radius": 0.5,
                                    "name": "cylinder"}]
             self._load_bodies()
+        self._body_buttons_state()
+
+    def _body_buttons_state(self):
+        """Maillage en O : un seul corps (avant : « Ajouter » en créait un second, refusé
+        seulement au maillage)."""
+        add = self.body_buttons[0]
+        one = self.mesh_type.currentData() == "ogrid" and len(self.cfg.get("bodies", [])) >= 1
+        add.setEnabled(not one)
+        add.setToolTip("Le maillage en O entoure un seul corps : choisir « Non structuré » ou "
+                       "« Hybride » pour en placer plusieurs." if one else
+                       "Nouveau cercle placé à droite des corps existants, sans recouvrement.")
 
     def _browse_mesh(self):
         path, _ = QFileDialog.getOpenFileName(self, "Maillage", "", "Maillages (*.msh *.su2)")
@@ -1164,11 +1177,33 @@ class MainWindow(QMainWindow):
         self._toml_timer.start()
 
     def _body_add(self):
-        self.cfg.setdefault("bodies", []).append(
-            {"type": "circle", "center": [0.0, 0.0], "radius": 0.5,
-             "name": f"body{len(self.cfg['bodies']) + 1}"})
+        """Nouveau cercle à droite des corps existants, de taille comparable (avant : posé
+        exactement sur le premier corps)."""
+        from ..mesh2d.geometry import shape_from_dict
+        bodies = self.cfg.setdefault("bodies", [])
+        boxes = []
+        for b in bodies:
+            try:
+                boxes.append(shape_from_dict(dict(b)).bbox())
+            except Exception:
+                continue                            # contour en fichier, cas incomplet
+        if boxes:
+            x1 = max(b[2] for b in boxes)
+            y0, y1 = min(b[1] for b in boxes), max(b[3] for b in boxes)
+            r = 0.25 * max(max(b[2] - b[0], b[3] - b[1]) for b in boxes)   # plus grand corps
+            r = max(r, 1e-3)
+            center = [float(f"{x1 + 3 * r:.6g}"), float(f"{0.5 * (y0 + y1):.6g}")]
+            r = float(f"{r:.6g}")
+        else:
+            center, r = [0.0, 0.0], 0.5
+        names = {b.get("name") for b in bodies}
+        i = len(bodies) + 1
+        while f"body{i}" in names:
+            i += 1
+        bodies.append({"type": "circle", "center": center, "radius": r, "name": f"body{i}"})
         self._load_bodies()
-        self.body_list.setCurrentRow(len(self.cfg["bodies"]) - 1)
+        self.body_list.setCurrentRow(len(bodies) - 1)
+        self._body_buttons_state()
         self._toml_timer.start()
 
     def _body_remove(self):
@@ -1176,6 +1211,7 @@ class MainWindow(QMainWindow):
         if 0 <= row < len(self.cfg.get("bodies", [])):
             self.cfg["bodies"].pop(row)
             self._load_bodies()
+            self._body_buttons_state()
             self._toml_timer.start()
 
     def generate_mesh(self):

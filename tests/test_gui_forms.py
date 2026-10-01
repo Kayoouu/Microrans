@@ -369,3 +369,33 @@ def test_form_values_not_rounded(win):
         e = SciEdit(v)
         assert e.value() == v
     assert SciEdit(3000.0).text() == "3000" and SciEdit(1e-05).text() == "1e-05"
+
+
+def test_added_body_does_not_overlap(win):
+    """Audit U5 : « Ajouter » posait un cercle de rayon 0.5 en (0, 0), exactement sur le
+    cylindre ; en maillage en O, il créait un second corps refusé au maillage."""
+    import tomllib
+
+    from microrans.cli import examples_dir
+    from microrans.fv2d.validate import check_case
+    from microrans.gui.widgets import set_combo
+    cfg = tomllib.loads((examples_dir() / "cylindre_re20.toml").read_text(encoding="utf-8"))
+    win.load_cfg(cfg)
+    assert win.cfg["mesh"]["type"] == "ogrid" and not win.body_buttons[0].isEnabled()
+    set_combo(win.mesh_type, "hybrid")
+    win._mesh_type_changed()
+    assert win.body_buttons[0].isEnabled()
+    win._body_add()
+    win._body_add()
+    new = win.cfg["bodies"][1:]
+    assert [b["name"] for b in new] == ["body2", "body3"]
+    assert new[0]["center"][0] - new[0]["radius"] > 0.5      # à droite du cylindre
+    win._store_forms()
+    check_case(win.cfg)                                     # ni recouvrement ni collision
+    set_combo(win.mesh_type, "ogrid")
+    win._mesh_type_changed()
+    win._store_forms()
+    assert not win.body_buttons[0].isEnabled()
+    with pytest.raises(ValueError, match="le maillage en O entoure exactement un corps "
+                                         r"\(3 donné\(s\)\)"):
+        check_case(win.cfg)

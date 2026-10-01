@@ -234,3 +234,41 @@ def test_huge_structured_mesh_announced():
     assert len(w) == 1 and w[0].startswith("[mesh] 4 000 000 cellules : prévoir ~4.2 Go")
     c["mesh"].update(nx=200, ny=200)
     assert check_case(c) == []
+
+
+def _two_bodies(kind, x2, r2=0.5, domain_x1=10.0):
+    m = {"type": kind, "h_max": 2.0, "h_surface": 0.1}
+    if kind == "hybrid":
+        m["layers"] = {"n": 4, "first_height": 0.01, "ratio": 1.2}
+    return {"mesh": m,
+            "domain": {"x0": -5.0, "x1": domain_x1, "y0": -5.0, "y1": 5.0},
+            "bodies": [{"type": "circle", "center": [0.0, 0.0], "radius": 0.5, "name": "b1"},
+                       {"type": "circle", "center": [x2, 0.0], "radius": r2, "name": "b2"}]}
+
+
+def test_overlapping_bodies_detected_before_meshing():
+    """Audit U5 (mesuré) : corps identiques en hybride → « non manifold » après 6 à 20 s ;
+    corps imbriqués ou trop proches (écart < 2 × épaisseur des couches, ici 0.054) →
+    maillage « réussi » mais faux (couches dans un solide, frontières _b1_top) ; non
+    structuré : corps recouvert disparu en silence."""
+    with pytest.raises(ValueError, match="« b1 » et « b2 » se recouvrent ou se touchent : "
+                                         "impossible en maillage hybride"):
+        check_case(_two_bodies("hybrid", 0.0), mesh_only=True)
+    with pytest.raises(ValueError, match="se recouvrent"):
+        check_case(_two_bodies("hybrid", 0.1, 0.2), mesh_only=True)     # b2 dans b1
+    with pytest.raises(ValueError, match=r"écart 0.08 < 2 × épaisseur des couches de paroi "
+                                         r"\(0.0537\) : couches en collision"):
+        check_case(_two_bodies("hybrid", 1.08), mesh_only=True)
+    assert check_case(_two_bodies("hybrid", 1.12), mesh_only=True) == []
+    w = check_case(_two_bodies("unstructured", 0.0), mesh_only=True)
+    assert len(w) == 1 and "ils formeront un seul obstacle" in w[0]
+    assert check_case(_two_bodies("unstructured", 1.08), mesh_only=True) == []
+
+
+def test_body_at_domain_edge():
+    with pytest.raises(ValueError, match="« b2 » : à 0 du bord du domaine"):
+        check_case(_two_bodies("hybrid", 9.8), mesh_only=True)
+    assert check_case(_two_bodies("unstructured", 9.8), mesh_only=True) == []  # coupé : permis
+    w = check_case(_two_bodies("unstructured", 20.0), mesh_only=True)
+    assert w == ["[[bodies]] « b2 » est entièrement hors du domaine de calcul [domain] : il "
+                 "sera ignoré."]

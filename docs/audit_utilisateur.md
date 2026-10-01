@@ -61,7 +61,7 @@ reprise introuvable ; TOML mal formé (ligne et colonne).
 | U2 | **Colonne centrale trop étroite** : champs et notes coupés, défilement horizontal sur toutes les pages. | corrigé : largeur minimale des pages ramenée sous 480 px (avant : 852, 785, 505, 492 px), libellé au-dessus du champ si la place manque, listes déroulantes compactes ; panneau de réglages élargi (640 px à l'ouverture) |
 | U3 | Mode « Nombre de Reynolds » : le champ ν grisé affiche une valeur périmée (0.01 au lieu de 0.05 pour Re = 20). | corrigé : le champ grisé affiche la valeur déduite (ν = U L / Re, ou Re = U L / ν dans l'autre mode) et suit les modifications ; changer de mode garde la même viscosité |
 | U4 | Non newtonien : 9 paramètres affichés « défaut » alors qu'aucun défaut n'existe → erreur « paramètres manquants » au lancement. | corrigé : seuls les paramètres de la loi choisie sont affichés, marqués « obligatoire » (ν min / ν max : « auto », défaut expliqué en bulle d'aide), formule de la loi sous la liste ; paramètres manquants ou négatifs et loi mal orthographiée signalés avant le lancement (aussi en ligne de commande) |
-| U5 | Maillage en O : « Ajouter » crée un 2e corps interdit ; tout corps ajouté est posé exactement sur le premier. | à faire |
+| U5 | Maillage en O : « Ajouter » crée un 2e corps interdit ; tout corps ajouté est posé exactement sur le premier. | corrigé : « Ajouter » grisé en maillage en O (bulle d'aide : choisir non structuré ou hybride) ; nouveau cercle placé à droite des corps existants, de taille comparable (maillage hybride réel vérifié : 3 corps, frontières propres) ; vérification avant maillage, en interface et en ligne de commande, voir « Corps superposés » ci-dessous |
 | U6 | Accueil : 22 exemples non classés (noms de fichiers, descriptions coupées), exemples de maillage seul mélangés aux calculs, rien pour dire par où commencer. | à faire |
 | U7 | Résumé des résultats en JSON brut (16 chiffres). | à faire |
 | U8 | Textes périmés : accueil et « À propos » (« RANS/URANS », 4 modèles ; ni compressible, ni couplé, ni transition) ; « Stationnaire (RANS) » même en laminaire. | à faire |
@@ -87,15 +87,32 @@ reprise introuvable ; TOML mal formé (ligne et colonne).
 | D3 | Pas de glossaire (RANS, SIMPLE, y⁺, Cp, Cf, patch, O-grid…). | à faire |
 | D4 | Pas de référence complète des clés du fichier de cas ; l'extrait du README oublie `sst_gamma`. | à faire |
 
+## Corps superposés ou trop proches (mesuré pendant le lot 3, corrigé)
+
+Mesures sur deux cercles de rayon 0.5, couches de paroi de 0.054 d'épaisseur
+(n = 4, première maille 0.01, raison 1.2) :
+
+| Disposition | Hybride (avant) | Non structuré (avant) |
+|---|---|---|
+| séparés (écart ≥ 2 × épaisseur des couches) | correct | correct |
+| identiques | refus « non manifold » après 6 s (20 s sur le cas de l'audit) | réussi, 2e corps **disparu en silence** |
+| l'un dans l'autre | « réussi » mais **faux** : couches de cellules dans le solide, frontières parasites `_b1_top`, `_b2_top` | 2e corps disparu (géométriquement juste) |
+| écart 0.08 (< 2 × 0.054) | « réussi » mais faux (mêmes frontières parasites) | correct |
+| corps à cheval sur le bord du domaine | « réussi » mais faux (frontière parasite) | corps coupé par le bord (usage légitime : bosse sur une paroi) |
+
+Maintenant, avant de mailler (vérification du cas, < 0,1 s) : en hybride, erreur pour les
+corps qui se recouvrent, se touchent, sont plus proches que deux épaisseurs de couches, ou
+sont à moins d'une épaisseur du bord du domaine (avec l'écart mesuré et l'épaisseur) ; en
+non structuré, avertissement pour les corps qui se recouvrent (obstacle unique) et pour un
+corps hors du domaine ; en maillage en O, erreur si le nombre de corps n'est pas 1. Corps
+décrits par un fichier de contour : non vérifiés.
+
 ## Observations à approfondir (non traitées)
 
 - **Performance** : sur la cavité (laminaire, SIMPLEC), le temps par itération passe de
   0.036 s (10 000 cellules) à 0.79 s (40 000 cellules), soit ×5 par cellule, au seuil de
   20 000 cellules où le solveur de pression passe de la factorisation directe (LU) à l'AMG.
   Le seuil ou le réglage de l'AMG est peut-être mal placé ; à mesurer avant de conclure.
-- **Corps superposés** (maillage hybride) : « Maillage non manifold : une arête est partagée
-  par plus de 2 cellules » après ~20 s de maillage. Le chevauchement devrait être détecté
-  avant de mailler (lié à U5).
 - **Robustesse sur maillage déformé** : sur le maillage de `mesh_naca_multi` (asymétrie max
   19, non-orthogonalité 63°, fente entre les deux éléments), le cas laminaire Re = 100 diverge
   vers l'itération 28 avec `convection_U = "linearUpwind"` (défaut), reste stable en `upwind`.

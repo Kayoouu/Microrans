@@ -705,6 +705,78 @@ def _size_warning(m: dict, mesh_type: str) -> str | None:
             "plus grossier.")
 
 
+def _check_bodies(cfg: dict, mesh_type: str, errors: list, warns: list):
+    """Corps qui se recouvrent, trop proches ou au bord du domaine, détectés avant de mailler
+    (avant : hybride refusé après 6 à 20 s « non manifold », ou maillage faux avec des
+    couches dans un solide ; non structuré : corps disparu en silence)."""
+    bodies = cfg.get("bodies")
+    if mesh_type == OGRID and (not isinstance(bodies, list) or len(bodies) != 1):
+        errors.append(f"[[bodies]] : le maillage en O entoure exactement un corps "
+                      f"({len(bodies) if isinstance(bodies, list) else 0} donné(s)). "
+                      "Plusieurs corps : maillage « unstructured » ou « hybrid ».")
+    if mesh_type not in (TRI, HYB) or not isinstance(bodies, list) or not bodies:
+        return
+    import numpy as np
+
+    from ..mesh2d.builder import _outer
+    from ..mesh2d.geometry import shape_from_dict
+    shapes = []
+    for i, b in enumerate(bodies):
+        if not isinstance(b, dict) or b.get("type") == "file":
+            continue                                # contour lu dans un fichier : non vérifié
+        try:
+            sh = shape_from_dict(dict(b))
+            shapes.append((str(b.get("name", f"corps {i + 1}")), sh, sh.boundary_curve(n=400)))
+        except Exception:                           # dimensions fausses : signalées ailleurs
+            continue
+    m = cfg.get("mesh", {})
+    lay = m.get("layers", {}) if isinstance(m.get("layers"), dict) else {}
+    try:
+        n, h1, r = int(lay.get("n", 10)), float(lay.get("first_height", 1e-3)), \
+            float(lay.get("ratio", 1.2))
+        thick = h1 * n if abs(r - 1.0) < 1e-12 else h1 * (r ** n - 1.0) / (r - 1.0)
+    except (TypeError, ValueError):
+        thick = 0.0
+    hyb = mesh_type == HYB
+    for k, (na, a, pa) in enumerate(shapes):
+        for nb, b, pb in shapes[k + 1:]:
+            size = max(np.ptp(pa, axis=0).max(), np.ptp(pb, axis=0).max())
+            gap = min(float(b.sdf(pa).min()), float(a.sdf(pb).min()))
+            if gap < 1e-6 * size:
+                txt = (f"[[bodies]] « {na} » et « {nb} » se recouvrent ou se touchent")
+                if hyb:
+                    errors.append(f"{txt} : impossible en maillage hybride (couches de paroi "
+                                  "de l'un dans l'autre). Les écarter, ou maillage "
+                                  "« unstructured » pour un obstacle composé.")
+                else:
+                    warns.append(f"{txt} : ils formeront un seul obstacle (frontières "
+                                 "fusionnées ; une condition pour un corps entièrement "
+                                 "recouvert restera sans frontière).")
+            elif hyb and gap < 2.0 * thick:
+                errors.append(f"[[bodies]] « {na} » et « {nb} » : écart {gap:.3g} < 2 × "
+                              f"épaisseur des couches de paroi ({thick:.3g}) : couches en "
+                              "collision. Écarter les corps ou réduire [mesh.layers] n, "
+                              "first_height ou ratio.")
+    try:
+        outer = _outer(cfg)
+    except Exception:
+        return
+    for na, a, pa in shapes:
+        d = -outer.sdf(pa)                          # > 0 : dans le domaine
+        if d.max() <= 0.0:
+            txt = f"[[bodies]] « {na} » est entièrement hors du domaine de calcul [domain]"
+            if hyb:
+                errors.append(txt + ".")
+            else:
+                warns.append(txt + " : il sera ignoré.")
+        elif hyb and d.min() < thick:
+            errors.append(f"[[bodies]] « {na} » : à {max(d.min(), 0.0):.3g} du bord du "
+                          f"domaine, moins que l'épaisseur des couches de paroi ({thick:.3g})"
+                          " : impossible en maillage hybride. Agrandir [domain], déplacer le "
+                          "corps, ou maillage « unstructured » (corps coupé par le bord "
+                          "permis).")
+
+
 def _mesh_type(m) -> str:
     """Type de maillage, ou "" si inconnu / préréglage (pas de vérification par type)."""
     from ..mesh2d.builder import MESH_TYPES
@@ -757,6 +829,8 @@ def check_case(cfg: dict, mesh_only: bool = False, values: bool = True) -> list[
                                                                       dict) else None
         if big:
             c.warnings.append(big)
+        if not c.errors:
+            _check_bodies(cfg, mesh_type, c.errors, c.warnings)
     if c.errors:                                  # une faute de frappe explique souvent l'erreur
         raise ValueError("\n".join(c.errors + [f"Remarque : {w}" for w in c.warnings]))
     return c.warnings
