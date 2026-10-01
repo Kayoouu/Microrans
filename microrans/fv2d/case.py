@@ -79,8 +79,8 @@ def strouhal(times, signal, frac: float = 0.5):
 
 
 def _energy_from(cfg):
-    """Section [energy] : Pr, Pr_t, beta, T_ref, gravity, T0, delta_T, source ;
-    ou [physics] rayleigh = Ra (convection naturelle adimensionnée, voir exemples)."""
+    """Section [energy] : Pr, Pr_t, beta, T_ref, gravity, T0, delta_T, source (convection
+    naturelle adimensionnée : voir l'exemple convection_naturelle_ra1e5)."""
     e = cfg.get("energy")
     if e is None or e.get("enabled", True) is False:
         return None
@@ -191,11 +191,15 @@ def build_solver(cfg: dict, base_dir=".", verbose=False, mesh=None):
 
 
 def run_case(cfg: dict, base_dir=".", out_dir=None, verbose=True, plot=True, callback=None,
-             mesh=None, return_solver=False):
+             mesh=None, return_solver=False, check=True):
     """Exécute un cas complet. callback(solver, n) -> True pour arrêter (interface
-    graphique) ; mesh : maillage déjà construit ; return_solver : renvoie (résumé, solveur).
+    graphique) ; mesh : maillage déjà construit ; return_solver : renvoie (résumé, solveur) ;
+    check : clés inconnues signalées (CaseWarning, voir validate.py).
 
     [physics] compressible = true : solveur compressible en densité (compressible_case.py)."""
+    if check:
+        from .validate import warn_case
+        warn_case(cfg)
     if cfg.get("physics", {}).get("compressible", False):
         from .compressible_case import run_compressible_case
         return run_compressible_case(cfg, base_dir, out_dir, verbose, plot, callback, mesh,

@@ -103,6 +103,21 @@ tol = 1e-6
     assert (out / "balayage.png").exists()
 
 
+def test_reynolds_sweep_on_case_given_in_nu(tmp_path):
+    """Audit : sur un cas donné en nu (prioritaire), balayer physics.reynolds calculait
+    tous les points avec le même ν (résultats identiques, sans message)."""
+    cfg = _small_cavity()
+    cfg["solver"]["max_iter"] = 300
+    rows = run_sweep(cfg, "physics.reynolds", [10, 100], out_dir=tmp_path, verbose=False,
+                     plot=False, continuation=False)
+    cd = [abs(r["Cd_lid"]) for r in rows]
+    assert cd[0] > 5 * cd[1]                        # frottement ∝ 1/Re environ
+    c = {**cfg, "physics": {"reynolds": 100.0, "reference_velocity": 1.0}}
+    rows = run_sweep(c, "physics.nu", [0.1, 0.01], out_dir=tmp_path / "nu", verbose=False,
+                     plot=False, continuation=False)
+    assert abs(rows[0]["Cd_lid"]) > 5 * abs(rows[1]["Cd_lid"])
+
+
 def _small_cavity():
     return {"mesh": {"type": "rectangle", "x0": 0.0, "x1": 1.0, "y0": 0.0, "y1": 1.0,
                      "nx": 12, "ny": 12,

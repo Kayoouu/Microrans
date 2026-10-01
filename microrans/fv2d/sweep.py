@@ -99,6 +99,8 @@ def run_sweep(cfg: dict, key: str, values, base_dir=".", out_dir=None, continuat
     should_stop() -> True : arrêt demandé (tous modes, interface graphique) ;
     on_point(ligne) : appelé après chaque point (avec jobs > 1, dans l'ordre d'achèvement) ;
     jobs : nombre de processus (1 = séquentiel, 0 = tous les cœurs), voir l'en-tête."""
+    from .validate import warn_case
+    warn_case(cfg)                                     # une fois (pas à chaque point)
     values = parse_values(values)
     out = Path(out_dir or cfg.get("output", {}).get("directory", "results/balayage"))
     out.mkdir(parents=True, exist_ok=True)
@@ -124,6 +126,11 @@ def _point_cfg(cfg, key, v, prev, prev_v, continuation):
     """Cas du point `v` ; continuation : départ des champs du point précédent `prev`."""
     c = copy.deepcopy(cfg)
     set_key(c, key, v)
+    # nu et reynolds s'excluent (nu prioritaire) : balayer l'un retire l'autre, sinon un
+    # balayage de Reynolds sur un cas donné en nu calculait tous les points avec le même ν
+    other = {"physics.reynolds": "nu", "physics.nu": "reynolds"}.get(key)
+    if other:
+        c["physics"].pop(other, None)
     c.setdefault("output", {})
     c["output"]["plots"] = False
     if continuation and prev is not None:
@@ -165,7 +172,7 @@ def _run_serial(cfg, key, values, base_dir, out, continuation, verbose, callback
         if verbose:
             print(f"=== {key} = {v:g} ===")
         summary = run_case(c, base_dir=base_dir, out_dir=sub, verbose=verbose, plot=False,
-                           callback=cb, mesh=mesh)
+                           callback=cb, mesh=mesh, check=False)
         row = _row(key, v, summary)
         rows.append(row)
         prev, prev_v = sub / "checkpoint.npz", v
@@ -217,7 +224,8 @@ def _run_point(c, base_dir, sub, key, v, verbose):
             st.enter_context(contextlib.redirect_stdout(
                 st.enter_context(open(sub / "journal.txt", "w", encoding="utf-8"))))
         summary = run_case(c, base_dir=base_dir, out_dir=sub, verbose=verbose, plot=False,
-                           callback=lambda s, n: stop.is_set(), mesh=_WORKER["mesh"])
+                           callback=lambda s, n: stop.is_set(), mesh=_WORKER["mesh"],
+                           check=False)
     return _row(key, v, summary), summary.get("wall_time_s", 0.0)
 
 

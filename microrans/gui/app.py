@@ -943,8 +943,18 @@ class MainWindow(QMainWindow):
         except Exception as exc:                     # noqa: BLE001
             QMessageBox.warning(self, "TOML invalide", str(exc))
             return
+        from ..fv2d.validate import check_case
+        try:
+            warn = check_case(cfg)
+        except ValueError as exc:
+            QMessageBox.warning(self, "Fichier de cas incorrect", str(exc))
+            return
         self.load_cfg(cfg)
         self.statusBar().showMessage("Cas mis à jour depuis le TOML", 4000)
+        if warn and not self.quiet:
+            QMessageBox.information(self, "Réglages non reconnus",
+                                    "Le cas est chargé, mais ces réglages seront ignorés :"
+                                    "\n\n• " + "\n• ".join(warn))
 
     def new_case(self):
         self.case_path = None
@@ -1109,6 +1119,8 @@ class MainWindow(QMainWindow):
             p = Path(cfg["mesh"].get("path", ""))
             if not p.is_absolute() and self.case_path is None:
                 cfg["mesh"]["path"] = str(p.resolve())
+        if not self._case_ok(cfg, mesh_only=True):
+            return
 
         def job(worker):
             from ..mesh2d.builder import build_mesh
@@ -1687,6 +1699,8 @@ class MainWindow(QMainWindow):
         self._store_forms()
         cfg = copy.deepcopy(self.cfg)
         cfg.setdefault("output", {})["directory"] = str(self.out_dir())
+        if not self._case_ok(cfg):
+            return
         if cfg.get("solver", {}).get("mode", "steady") != "steady":
             QMessageBox.information(self, "Balayage", "Le balayage fonctionne aussi en "
                                     "instationnaire, mais chaque point est alors long. "
@@ -1758,12 +1772,34 @@ class MainWindow(QMainWindow):
             return
         self.run_2d(restart=ck)
 
+    def _case_ok(self, cfg, mesh_only=False) -> bool:
+        """Vérification du cas avant maillage ou calcul (validate.py) : structure impossible
+        -> message ; clés inconnues ou sans effet -> confirmation. False : ne pas lancer."""
+        from ..fv2d.validate import check_case
+        try:
+            warn = check_case(cfg, mesh_only)
+        except ValueError as exc:
+            self.errors.append(str(exc))
+            if not self.quiet:
+                QMessageBox.warning(self, "Fichier de cas incorrect", str(exc))
+            return False
+        if not warn or self.quiet:
+            return True
+        r = QMessageBox.question(
+            self, "Réglages non reconnus",
+            "Ces réglages du cas seront ignorés :\n\n• " + "\n• ".join(warn)
+            + "\n\nCorriger : onglet « Fichier de cas (TOML) ». Lancer quand même ?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+        return r == QMessageBox.StandardButton.Yes
+
     def run_2d(self, restart=None):
         self._store_forms()
         cfg = copy.deepcopy(self.cfg)
         cfg.setdefault("output", {})["directory"] = str(self.out_dir())
         if restart:
             cfg.setdefault("initial", {})["restart"] = str(restart)
+        if not self._case_ok(cfg):
+            return
         self._it0 = None
         mesh = self.mesh
         base = self.base_dir()

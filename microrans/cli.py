@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+import warnings
 from pathlib import Path
 
 from .models import MODELS, TURBULENT_MODELS, canonical_name
@@ -130,6 +131,8 @@ def cmd_mesh(args) -> int:
         cfg = load_config(args.config)
         if args.type:
             cfg.setdefault("mesh", {})["type"] = args.type
+        from .fv2d.validate import warn_case
+        warn_case(cfg, mesh_only=True)
         mesh = build_mesh(cfg, base_dir=Path(args.config).parent, verbose=args.verbose)
         name = Path(args.config).stem
     else:
@@ -438,11 +441,17 @@ def _utf8_console():
                 pass
 
 
+def _show_warning(message, category, filename, lineno, file=None, line=None):
+    print(f"ATTENTION : {message}", file=sys.stderr)
+
+
 def main(argv=None) -> int:
     _utf8_console()
     args = build_parser().parse_args(argv)
     try:
-        return args.func(args)
+        with warnings.catch_warnings():             # « ATTENTION : … » (sans fichier:ligne)
+            warnings.showwarning = _show_warning
+            return args.func(args)
     except (ValueError, RuntimeError, FloatingPointError) as exc:
         print(f"Erreur : {exc}", file=sys.stderr)
         return 2

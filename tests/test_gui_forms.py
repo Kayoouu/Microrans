@@ -207,3 +207,26 @@ def test_mesh_failure_dialog(win, monkeypatch):
     title, text = shown[0]
     assert title == "Le maillage n'a pas pu aboutir"
     assert text.startswith("Géométrie « cylinder » : radius doit être > 0") and "Journal" in text
+
+
+def test_toml_typo_reported(win, monkeypatch):
+    """Audit C4 : une clé mal orthographiée dans l'onglet TOML était ignorée en silence."""
+    from PySide6.QtWidgets import QMessageBox
+
+    from microrans.tomlio import dumps
+    shown = []
+    monkeypatch.setattr(QMessageBox, "information", lambda *a: shown.append(a[1:3]))
+    monkeypatch.setattr(win, "quiet", False)
+    win.new_case()
+    cfg = dict(win.cfg)
+    cfg["solver"] = {**cfg.get("solver", {}), "max_iters": 50}
+    win.toml_edit.setPlainText(dumps(cfg))
+    win._apply_toml()
+    assert len(shown) == 1 and shown[0][0] == "Réglages non reconnus"
+    assert "vouliez-vous dire « max_iter » ?" in shown[0][1]
+    # cas de l'interface, sans faute : aucune fenêtre
+    shown.clear()
+    win.new_case()
+    win.toml_edit.setPlainText(dumps(win.cfg))
+    win._apply_toml()
+    assert shown == []
