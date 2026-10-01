@@ -879,6 +879,7 @@ class MainWindow(QMainWindow):
         self._load_bodies()
         self._mesh_type_changed()
         self._nu_mode_changed()
+        self._show_derived_nu()
         self._mode_changed()
         self.energy_on.setChecked("energy" in cfg)
         for _, wdg in self.energy_fields:
@@ -942,6 +943,7 @@ class MainWindow(QMainWindow):
             ph.pop("reynolds", None)
         else:
             ph.pop("nu", None)
+        self._show_derived_nu()
         self._prune_mesh_keys()
 
     def _prune_mesh_keys(self):
@@ -1243,6 +1245,22 @@ class MainWindow(QMainWindow):
         self.re_edit.setEnabled(not by_nu)
         if not self._syncing:
             self._form_changed()
+
+    def _show_derived_nu(self):
+        """Champ grisé : ν = U L / Re en mode Reynolds, Re = U L / ν sinon (avant : valeur
+        périmée, ex. ν = 0.01 affichée pour Re = 20). Changer de mode garde donc la même
+        viscosité."""
+        ph = self.cfg.get("physics", {})
+        try:
+            UL = float(ph.get("reference_velocity", 1.0)) * float(ph.get("reference_length",
+                                                                         1.0))
+        except (TypeError, ValueError):
+            return
+        by_nu = self.nu_mode.currentData() == "nu"
+        given = ph.get("nu" if by_nu else "reynolds")
+        ok = isinstance(given, (int, float)) and given > 0
+        (self.re_edit if by_nu else self.nu_edit).set_value(float(f"{UL / given:.6g}") if ok
+                                                            else None)
 
     def _energy_toggled(self, on=None):
         on = self.energy_on.isChecked()

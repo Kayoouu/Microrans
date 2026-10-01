@@ -314,3 +314,24 @@ def test_bc_table_shows_only_useful_cells(win):
     # thermique activée : colonnes T et q affichées
     win.load_cfg({**cfg, "energy": {"Pr": 0.7}})
     assert shown() == ["Frontière", "Type", "Ux", "Uy", "p", "T", "flux q", "débit Q"]
+
+
+def test_derived_viscosity_shown(win):
+    """Audit U3 : en mode « Nombre de Reynolds », le champ ν grisé affichait 0.01 (valeur
+    par défaut) pour Re = 20 ; changer de mode doit garder la même viscosité."""
+    import tomllib
+
+    from microrans.cli import examples_dir
+    cfg = tomllib.loads((examples_dir() / "cylindre_re20.toml").read_text(encoding="utf-8"))
+    ph = cfg["physics"]
+    assert "reynolds" in ph and "nu" not in ph
+    win.load_cfg(cfg)
+    UL = ph.get("reference_velocity", 1.0) * ph.get("reference_length", 1.0)
+    assert win.nu_edit.value() == pytest.approx(UL / ph["reynolds"], rel=1e-5)
+    assert not win.nu_edit.isEnabled()
+    win.re_edit.setText("40")                       # Re modifié : ν suit
+    assert win.nu_edit.value() == pytest.approx(UL / 40, rel=1e-5)
+    win.nu_mode.setCurrentIndex(win.nu_mode.findData("nu"))
+    assert win.cfg["physics"]["nu"] == pytest.approx(UL / 40, rel=1e-5)
+    assert "reynolds" not in win.cfg["physics"]
+    assert win.re_edit.value() == pytest.approx(40) and not win.re_edit.isEnabled()
