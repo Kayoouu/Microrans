@@ -1,10 +1,12 @@
 """Solveur incompressible en 3D (même Solver2D, 3 composantes) : solution exacte de la
-conduite carrée, équivalence exacte avec le 2D sur un cas extrudé, options refusées."""
+conduite carrée, écoulement ABC instationnaire exact, canal turbulent périodique, équivalence
+exacte avec le 2D sur un cas extrudé, options refusées."""
 import numpy as np
 import pytest
 
+from microrans.cases import run_rans_channel
 from microrans.fv2d.solver import Settings, Solver2D
-from microrans.mesh2d import Circle, cavity_mesh, o_grid
+from microrans.mesh2d import Circle, cavity_mesh, channel_mesh, o_grid
 from microrans.mesh3d import box_mesh, extrude
 
 
@@ -44,6 +46,89 @@ def test_square_duct_matches_exact_series_second_order():
     d = [np.sum(S.U[:, 0] * S.mesh.cell_volumes) / S.mesh.cell_volumes.sum() / u_mean - 1
          for S in (S8, S16)]
     assert 0 < d[1] < 0.016 and d[0] / d[1] > 3.8
+
+
+def _abc(n, scheme, nu=0.1, dt=0.05, t_end=1.0):
+    """Écoulement ABC (Arnold-Beltrami-Childress) dans le cube périodique [0, 2π]³ : solution
+    exacte de Navier-Stokes 3D, u = u₀ e^{−νt}, p = −|u|²/2 (champ de Beltrami, ω = u)."""
+    L = 2 * np.pi
+    m = box_mesh(0, L, 0, L, 0, L, n, n, n,
+                 periodic=[("left", "right"), ("bottom", "top"), ("back", "front")])
+
+    def u0(C):
+        x, y, z = C.T
+        return np.column_stack([np.sin(z) + np.cos(y), np.sin(x) + np.cos(z),
+                                np.sin(y) + np.cos(x)])
+
+    S = Solver2D(m, nu, {}, settings=Settings(time_scheme=scheme))
+    S.U = u0(m.cell_centers)
+    S.F_i = np.sum(S.fvm.interp(S.U) * S.fvm.Si, axis=1)
+    S.run_transient(dt, t_end)
+    ue = u0(m.cell_centers) * np.exp(-nu * t_end)
+    eu = np.sqrt(np.mean(np.sum((S.U - ue) ** 2, axis=1)) / np.mean(np.sum(ue ** 2, axis=1)))
+    pe = -0.5 * np.sum(ue ** 2, axis=1)
+    ep = np.sqrt(np.mean(((S.p - S.p.mean()) - (pe - pe.mean())) ** 2)) / np.ptp(pe)
+    return eu, ep
+
+
+def test_abc_flow_pimple_matches_exact_solution():
+    """PIMPLE 3D instationnaire : erreurs mesurées (backward, Δt = 0.05, t = 1) U 5.8e-2,
+    6.8e-3, 5.7e-4 et p 2.6e-2, 7.7e-3, 2.5e-3 sur 8³, 16³, 32³ ; Δt = 0.025 ne change pas
+    16³ (erreur spatiale dominante)."""
+    e8, _ = _abc(8, "backward")
+    e16, p16 = _abc(16, "backward")
+    assert e16 < 8e-3 and p16 < 1e-2
+    assert e8 / e16 > 4.0
+    e16_rk3, _ = _abc(16, "rk3")                        # mesuré : 5.2e-3
+    assert e16_rk3 < 7e-3
+
+
+@pytest.mark.parametrize("model", ["sa", "sst_gamma"])
+def test_periodic_turbulent_channel_3d_identical_to_2d(model):
+    """Canal Re_τ = 395 extrudé sur 2 couches, périodique en x et en z : même solution que le
+    2D (sst_gamma passe par le gradient normal 3D de la transition) ; SA comparé au 1D."""
+    re_tau = 395.0
+    m2 = channel_mesh(1.0, 2.0, 2, 96, first_height=0.4 / re_tau)
+    m3 = extrude(m2, 0.0, 0.5, 2, names={"back": "z0", "front": "z1"},
+                 periodic=[("z0", "z1")])
+    walls = {"bottom": {"type": "wall"}, "top": {"type": "wall"}}
+    ub = []
+    for m in (m2, m3):
+        z = (0.0,) * (m.dim - 2)
+        S = Solver2D(m, 1 / re_tau, walls, model=model, body_force=(1.0, 0.0) + z,
+                     initial_U=(15.0, 0.0) + z,
+                     turbulence_inflow={"intensity": 0.05, "viscosity_ratio": 50.0})
+        assert S.run_steady(max_iter=4000, tol=1e-6)
+        ub.append(np.sum(S.U[:, 0] * m.cell_volumes) / np.sum(m.cell_volumes))
+    assert ub[1] == pytest.approx(ub[0], rel=1e-5)      # mesuré : 1.9e-7 (sa), 3.0e-6
+    assert np.abs(S.U[:, 2]).max() < 1e-12
+    for p in walls:
+        assert S.wall_shear(p)[1].mean() == pytest.approx(1.0, abs=2e-3)
+    if model == "sa":
+        r1 = run_rans_channel("sa", re_tau, n_cells=256, y1_plus=0.2).summary
+        assert ub[1] == pytest.approx(r1["Ub_plus"] * r1["u_tau"], rel=1e-3)
+
+
+def test_turbulent_square_duct_converges():
+    """Conduite carrée turbulente établie (4 parois, coins), SST, Re_τ = 180 : converge, pas
+    d'écoulement secondaire (attendu : un modèle à viscosité turbulente linéaire ne prédit pas
+    les écoulements secondaires de 2e espèce), coefficient de perte de charge proche de Blasius
+    (contrôle d'ordre de grandeur seulement : mesuré λ = 0.0419 contre 0.0410)."""
+    from microrans.mesh2d.blocks import grading_for_first_cell
+    re_tau, n = 180.0, 32
+    r = grading_for_first_cell(n // 2, 0.5 / re_tau)
+    g = [(0.5, 0.5, r), (0.5, 0.5, 1 / r)]
+    m = box_mesh(0, 0.5, -1, 1, -1, 1, 2, n, n, grading=(1.0, g, g),
+                 names={"left": "in", "right": "out"}, periodic=[("in", "out")])
+    bcs = {k: {"type": "wall"} for k in ("bottom", "top", "back", "front")}
+    S = Solver2D(m, 1 / re_tau, bcs, model="sst", body_force=(1.0, 0.0, 0.0),
+                 initial_U=(15.0, 0.0, 0.0),
+                 turbulence_inflow={"intensity": 0.05, "viscosity_ratio": 50.0})
+    assert S.run_steady(max_iter=4000, tol=1e-6)
+    ub = np.sum(S.U[:, 0] * m.cell_volumes) / m.cell_volumes.sum()
+    lam, re = 8 * 0.5 / ub ** 2, ub * 2.0 * re_tau     # τ_w moyen = f·A/P = 0.5
+    assert lam == pytest.approx(0.316 * re ** -0.25, rel=0.1)
+    assert np.abs(S.U[:, 1:]).max() < 1e-10
 
 
 def _pair(m2, bcs2, nu):
