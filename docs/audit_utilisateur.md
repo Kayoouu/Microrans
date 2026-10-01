@@ -25,6 +25,12 @@ erreur, voir « Corps superposés »). Vérifié sur les 22 exemples : chargés 
 enregistrés par l'interface, ils ne reçoivent plus que des valeurs égales aux défauts du
 solveur. Durées des exemples remesurées un calcul à la fois (les campagnes 1 et 2
 lançaient 4 calculs en parallèle sur 4 cœurs : durées 2 à 6 fois trop longues).
+Campagnes de l'interface relancées après le lot 3 : exemples 20 / 22 sans erreur (les 2
+exemples de maillage seul, maillés puis lancés, partaient avant avec un ν inventé par
+l'interface ; ils sont refusés avec l'explication) ; combinaisons : mêmes erreurs
+volontaires qu'au lot 2, sauf les corps ajoutés en maillage hybride (le cercle ajouté
+passe ; un corps ajouté puis changé de type passe aussi, au lieu d'un maillage faux ou
+d'un refus « non manifold ») ; aucun plantage ; suite de tests : 375 réussis, 1 ignoré.
 
 L'interface est pilotée hors écran en simulant les actions de l'utilisateur (choix dans
 les listes, frappe dans les champs) ; les boîtes de dialogue sont interceptées et
