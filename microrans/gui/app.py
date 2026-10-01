@@ -2110,10 +2110,17 @@ class MainWindow(QMainWindow):
         try:
             warn = check_case(cfg, mesh_only)
         except ValueError as exc:
-            self.errors.append(str(exc))
+            msg = str(exc)
+            if not mesh_only and getattr(self, "_mesh_only_file", False):
+                # avant U11, ν = 0.01 inventé par l'interface : calcul lancé sans physique
+                msg += ("\n\nLe fichier ouvert ne décrivait qu'un maillage (exemple mesh_*) : "
+                        "renseigner la physique (page « 3. Physique » : ν ou Re) et les "
+                        "conditions limites (page « 4 ») avant de lancer, ou ouvrir un "
+                        "exemple de calcul (page « Accueil »).")
+            self.errors.append(msg)
             if not self.quiet:
                 QMessageBox.warning(self, "Réglages à corriger",
-                                    f"{exc}\n\n(Noms des réglages tels qu'écrits dans l'onglet "
+                                    f"{msg}\n\n(Noms des réglages tels qu'écrits dans l'onglet "
                                     "« Fichier de cas (TOML) ».)")
             return False
         if not warn or self.quiet:

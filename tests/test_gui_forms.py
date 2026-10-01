@@ -453,3 +453,23 @@ def test_sweep_section_loaded(win):
     win.load_cfg(tomllib.loads((examples_dir() / "cavite_re100.toml").read_text(
         encoding="utf-8")))
     assert win.run_info.text() == ""
+
+
+def test_mesh_only_example_after_meshing_explained(win, monkeypatch):
+    """Exemple de maillage seul, maillage généré puis « Lancer » : la physique manque (avant
+    U11, l'interface inventait ν = 0.01 et lançait un calcul) ; le refus dit quoi faire."""
+    import copy
+
+    from PySide6.QtWidgets import QMessageBox
+
+    from microrans.cli import examples_dir
+    shown = []
+    monkeypatch.setattr(QMessageBox, "warning", lambda *a: shown.append(a[1:3]))
+    monkeypatch.setattr(win, "quiet", False)
+    win.open_case(examples_dir() / "mesh_cylindre_hybride.toml")
+    cfg = copy.deepcopy(win.cfg)
+    cfg["boundary"] = {"cylinder": {"type": "wall"}}            # frontières après maillage
+    assert not win._case_ok(cfg)
+    assert shown[-1][0] == "Réglages à corriger"
+    assert "donner la viscosité nu" in shown[-1][1]
+    assert "ne décrivait qu'un maillage" in shown[-1][1]
