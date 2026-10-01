@@ -194,3 +194,29 @@ def test_cli_mesh_preset(tmp_path):
     assert main(["mesh", "--preset", "cavity", "-o", str(tmp_path), "-f", "msh", "su2", "-q"]) == 0
     assert (tmp_path / "cavity.msh").exists() and (tmp_path / "cavity.png").exists()
     assert (tmp_path / "quality.json").exists()
+
+
+def test_shape_errors_are_explained(tmp_path):
+    """Audit M1/M7/C5 : corps sans type, paramètre manquant, dimensions impossibles,
+    contour sans fichier : messages clairs au lieu de KeyError / IsADirectoryError ou d'un
+    maillage absurde accepté en silence."""
+    import pytest
+
+    from microrans.mesh2d.builder import build_mesh
+    from microrans.mesh2d.geometry import shape_from_dict
+    bad = [({"radius": 0.5}, "sans « type »"),
+           ({"type": "circle"}, "manquant.*radius"),
+           ({"type": "circle", "radius": -0.5}, "radius doit être > 0"),
+           ({"type": "ellipse", "a": 1.0, "b": 0.0}, "b doit être > 0"),
+           ({"type": "rectangle", "x0": 1, "x1": 0, "y0": 0, "y1": 1}, "x0 < x1"),
+           ({"type": "file", "path": ""}, "manquant.*path"),
+           ({"type": "file", "path": "absent.dat"}, "introuvable"),
+           ({"type": "carre"}, "inconnu")]
+    for spec, msg in bad:
+        with pytest.raises(ValueError, match=msg):
+            shape_from_dict(spec, tmp_path)
+    # [domain] sans type : rectangle par défaut (interface)
+    cfg = {"mesh": {"type": "unstructured", "h_max": 4.0, "h_surface": 0.5},
+           "domain": {"x0": -4.0, "x1": 8.0, "y0": -4.0, "y1": 4.0},
+           "bodies": [{"type": "circle", "radius": 0.5, "name": "c"}]}
+    assert build_mesh(cfg).n_cells > 0

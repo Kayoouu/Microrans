@@ -187,3 +187,18 @@ def test_coupled_rejected_on_gpu():
     with pytest.raises(ValueError, match="CPU seulement"):
         Solver2D(m, 0.01, {"lid": {"type": "wall", "U": [1, 0]}, "walls": {"type": "wall"}},
                  settings=Settings(backend="fakegpu", algorithm="coupled"))
+
+
+def test_gpu_backends_explained_in_executable(monkeypatch):
+    """Audit M6 : dans l'exécutable (PyInstaller), les cartes graphiques ne peuvent pas
+    fonctionner ; le message ne conseille plus un « pip install » impossible."""
+    import sys
+
+    from microrans.backend import available
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+    assert available("cpu") and not available("cuda") and not available("intel")
+    for name in ("cuda", "rocm", "intel"):
+        with pytest.raises(RuntimeError, match="exécutable calcule uniquement sur le processeur"):
+            get_backend(name)
+    with pytest.raises(ValueError, match="Backend inconnu"):
+        get_backend("gpu2")

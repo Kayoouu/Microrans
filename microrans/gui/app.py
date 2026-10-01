@@ -10,6 +10,7 @@ from __future__ import annotations
 import copy
 import json
 import os
+import re
 import sys
 from pathlib import Path
 
@@ -92,6 +93,30 @@ DEFAULT_CASE = {
     "solver": {"mode": "steady", "max_iter": 2000, "tol": 1e-6},
     "output": {"directory": "results/nouveau_cas"},
 }
+
+
+# erreurs dont le message est écrit pour l'utilisateur (validation des cas, conditions…)
+_USER_ERRORS = ("ValueError", "RuntimeError", "FileNotFoundError", "FloatingPointError",
+                "TOMLDecodeError", "MemoryError")
+
+
+def user_message(msg: str) -> str:
+    """Message d'erreur lisible à partir de « Type : message\n\ntrace » (Worker)."""
+    head = msg.split("\n\n")[0].strip()
+    m = re.match(r"^(\w+)\s*:\s*(.*)$", head, re.S)
+    kind, text = (m.group(1), m.group(2)) if m else ("", head)
+    if kind == "MemoryError":
+        text = ("mémoire insuffisante : réduire le nombre de cellules (ou fermer d'autres "
+                "programmes).")
+    elif kind == "KeyError":
+        text = (f"paramètre manquant dans le cas : {text}. Vérifier l'onglet « Fichier de "
+                "cas (TOML) » ou repartir d'un exemple.")
+    elif kind not in _USER_ERRORS:
+        text = (f"erreur interne inattendue ({head}). Ce n'est probablement pas une erreur "
+                "de votre part : merci de la signaler (GitHub → Issues) avec le contenu de "
+                "l'onglet « Journal ».")
+    text = text[:1].upper() + text[1:]
+    return f"{text}\n\nDétails techniques : onglet « Journal »."
 
 
 def results_root() -> Path:
@@ -637,22 +662,31 @@ class MainWindow(QMainWindow):
         sol = [(s, s) for s in SOLVERS]
         f.addRow("Solveur pression", B.combo(("solver", "solver_p"), sol, "auto"))
         f.addRow("Solveur vitesse / turbulence", B.combo(("solver", "solver_U"), sol, "auto"))
-        f.addRow("Matériel de calcul", B.combo(("solver", "backend"), [
+        self.backend_combo = B.combo(("solver", "backend"), [
             ("cpu", "CPU (NumPy / SciPy)"),
             ("cuda", "Carte NVIDIA (CuPy, expérimental)"),
             ("rocm", "Carte AMD, Linux (CuPy-ROCm, expérimental)"),
             ("intel", "Carte / puce Intel Arc, Iris, UHD (dpnp oneAPI, expérimental)")],
-            "cpu"))
-        f.addRow(_note("Cartes graphiques : version Python + bibliothèque à installer (CuPy "
-                       "ou dpnp), double précision (FP64) indispensable. Gain seulement pour "
-                       "les gros maillages, et PAS garanti (puce intégrée : mémoire partagée "
-                       "avec le processeur). Mesurer sur votre machine : microrans devices, "
-                       "puis microrans bench --backend intel. Voir le README § 5.3."))
+            "cpu")
+        from ..backend import available, frozen
+        for i in range(self.backend_combo.count()):
+            if not available(self.backend_combo.itemData(i)):
+                item = self.backend_combo.model().item(i)
+                item.setEnabled(False)
+                item.setText(item.text() + (" — absent de l'exécutable" if frozen()
+                                            else " — bibliothèque non installée"))
+        f.addRow("Matériel de calcul", self.backend_combo)
+        f.addRow(_note("L'exécutable calcule uniquement sur le processeur (CPU)." if frozen()
+                       else "Cartes graphiques : bibliothèque à installer (CuPy ou dpnp), "
+                       "double précision (FP64) indispensable. Gain seulement pour les gros "
+                       "maillages, et PAS garanti (puce intégrée : mémoire partagée avec le "
+                       "processeur). Mesurer sur votre machine : microrans devices, puis "
+                       "microrans bench --backend intel. Voir le README § 5.3."))
         lay.addWidget(box)
         box, f = _form("Sorties")
         f.addRow("Dossier de résultats", B.text(("output", "directory"), "results/cas"))
         f.addRow(_note(f"Chemin relatif : placé dans {results_root()}"))
-        self.probes_edit = B.text(("output", "probes"), "")
+        self.probes_edit = B.points(("output", "probes"))
         self.probes_edit.setPlaceholderText("x y ; x y …  (vide : aucune)")
         f.addRow("Sondes (Ux, Uy, p à chaque itération)", self.probes_edit)
         f.addRow("Moyennes temporelles à partir de t =",
@@ -985,7 +1019,8 @@ class MainWindow(QMainWindow):
         self.body_list.blockSignals(True)
         self.body_list.clear()
         for b in self.cfg.get("bodies", []):
-            self.body_list.addItem(f"{b.get('name', b['type'])} ({b['type']})")
+            kind = b.get("type") or "type manquant"     # cas écrit à la main (TOML)
+            self.body_list.addItem(f"{b.get('name', kind)} ({kind})")
         self.body_list.blockSignals(False)
         if self.cfg.get("bodies"):
             self.body_list.setCurrentRow(0)
@@ -1079,7 +1114,7 @@ class MainWindow(QMainWindow):
             from ..mesh2d.builder import build_mesh
             print("Génération du maillage…")
             return build_mesh(cfg, base_dir=base, verbose=True)
-        self._start(job, self._mesh_done, "Maillage en cours…")
+        self._start(job, self._mesh_done, "Maillage en cours…", what="Le maillage")
 
     def _mesh_done(self, mesh):
         self.mesh = mesh
@@ -1585,7 +1620,7 @@ class MainWindow(QMainWindow):
         self._toml_timer.start()
 
     # ================================================================== exécution
-    def _start(self, job, on_done, message, on_progress=None):
+    def _start(self, job, on_done, message, on_progress=None, what="Le calcul"):
         if self.thread is not None:
             QMessageBox.information(self, "Occupé", "Un calcul est déjà en cours.")
             return
@@ -1595,6 +1630,7 @@ class MainWindow(QMainWindow):
         self.thread.started.connect(self.worker.run)
         # méthodes liées (pas de lambda) : Qt les exécute dans le fil de l'interface
         self._on_done = on_done
+        self._what = what                   # titre en cas d'échec
         self.worker.log.connect(self.log)
         if on_progress:
             self.worker.progress.connect(on_progress)
@@ -1631,7 +1667,7 @@ class MainWindow(QMainWindow):
         self.log(msg)
         self.statusBar().showMessage("Échec", 5000)
         if not self.quiet:
-            QMessageBox.warning(self, "Erreur", msg.split("\n\n")[0])
+            QMessageBox.warning(self, f"{self._what} n'a pas pu aboutir", user_message(msg))
 
     def stop(self):
         if self.worker is not None:
@@ -1671,7 +1707,8 @@ class MainWindow(QMainWindow):
         self.tabs.setCurrentIndex(0)
         self.canvas.message(f"Balayage : {len(values)} calculs…")
         self.sweep_btn.setEnabled(False)
-        self._start(job, self._sweep_done, "Balayage en cours…", self._sweep_progress)
+        self._start(job, self._sweep_done, "Balayage en cours…", self._sweep_progress,
+                    what="Le balayage")
 
     def _sweep_progress(self, row):
         from ..fv2d.sweep import plot_sweep
@@ -1957,7 +1994,7 @@ class MainWindow(QMainWindow):
             code = main(argv)
             return out, models, mode, code
         self.c1d_status.setText("Calcul en cours…")
-        self._start(job, self._run_1d_done, "Calcul 1D en cours…")
+        self._start(job, self._run_1d_done, "Calcul 1D en cours…", what="Le calcul 1D")
 
     def _run_1d_done(self, res):
         out, models, mode, code = res

@@ -489,6 +489,36 @@ class _TransformedLeaf(Shape):
 
 
 # ------------------------------------------------------------ construction depuis un dict
+# paramètres obligatoires de chaque type de géométrie
+_SHAPE_KEYS = {"circle": ("radius",), "rectangle": ("x0", "y0", "x1", "y1"),
+               "ellipse": ("a", "b"), "polygon": ("points",), "naca": (),
+               "spline": ("points",), "file": ("path",)}
+
+
+def _describe(spec: dict) -> str:
+    return ", ".join(f"{k} = {v!r}" for k, v in list(spec.items())[:4]) or "vide"
+
+
+def _check_dimensions(kind: str, name: str, spec: dict):
+    """Dimensions impossibles refusées avant le maillage (message compréhensible)."""
+    def num(key):
+        try:
+            return float(spec[key])
+        except (TypeError, ValueError):
+            raise ValueError(f"Géométrie « {name} » : {key} = {spec[key]!r} n'est pas un "
+                             "nombre.") from None
+    for key in {"circle": ("radius",), "ellipse": ("a", "b")}.get(kind, ()):
+        if num(key) <= 0:
+            raise ValueError(f"Géométrie « {name} » : {key} doit être > 0 ({spec[key]}).")
+    if kind == "naca" and spec.get("chord") is not None and num("chord") <= 0:
+        raise ValueError(f"Géométrie « {name} » : chord doit être > 0 ({spec['chord']}).")
+    if kind == "rectangle":
+        if num("x1") <= num("x0") or num("y1") <= num("y0"):
+            raise ValueError(f"Rectangle « {name} » : il faut x0 < x1 et y0 < y1 (reçu x0 = "
+                             f"{spec['x0']}, x1 = {spec['x1']}, y0 = {spec['y0']}, "
+                             f"y1 = {spec['y1']}).")
+
+
 def shape_from_dict(spec: dict, base_dir=".") -> Shape:
     """Construit un objet depuis une description (fichier de configuration TOML/JSON).
 
@@ -501,8 +531,18 @@ def shape_from_dict(spec: dict, base_dir=".") -> Shape:
     from .io import read_curve
 
     spec = dict(spec)
-    kind = spec.pop("type").lower()
+    if not spec.get("type"):
+        raise ValueError(f"Géométrie sans « type » ({_describe(spec)}). Types : "
+                         f"{', '.join(_SHAPE_KEYS)}.")
+    kind = str(spec.pop("type")).lower()
     name = spec.pop("name", kind)
+    if kind in _SHAPE_KEYS:
+        missing = [k for k in _SHAPE_KEYS[kind] if spec.get(k) is None or spec.get(k) == ""]
+        if missing:
+            raise ValueError(f"Géométrie « {name} » ({kind}) : paramètre(s) manquant(s) "
+                             f"{', '.join(missing)} (attendus : "
+                             f"{', '.join(_SHAPE_KEYS[kind]) or 'aucun'}).")
+        _check_dimensions(kind, name, spec)
     patch_type = spec.pop("patch_type", None)
     angle = spec.pop("angle", 0.0) - spec.pop("incidence", 0.0)
     rot_center = spec.pop("rotation_center", (0.0, 0.0))
@@ -527,10 +567,13 @@ def shape_from_dict(spec: dict, base_dir=".") -> Shape:
         path = Path(spec["path"])
         if not path.is_absolute():
             path = Path(base_dir) / path
+        if not path.is_file():
+            raise ValueError(f"Géométrie « {name} » : fichier de contour introuvable : {path}")
         s = Polygon(read_curve(path), name=name,
                     sharp_angle=spec.get("sharp_angle", 60.0))
     else:
-        raise ValueError(f"Type de géométrie inconnu : {kind}")
+        raise ValueError(f"Type de géométrie inconnu : {kind} (types : "
+                         f"{', '.join(_SHAPE_KEYS)}).")
     if patch_type:
         s.patch_type = patch_type
     if angle or scale != 1.0 or any(translate):

@@ -71,6 +71,30 @@ def register(name: str, backend: Backend):
     _custom[name] = backend
 
 
+def frozen() -> bool:
+    """Exécutable autonome (PyInstaller) : pas de bibliothèque de carte graphique."""
+    import sys
+    return bool(getattr(sys, "frozen", False))
+
+
+_FROZEN_HINT = ("l'exécutable calcule uniquement sur le processeur (CPU) : les bibliothèques "
+                "de cartes graphiques (CuPy, dpnp) n'y sont pas incluses. Choisir « CPU », ou "
+                "installer la version Python (README § 2 et § 5.3) pour essayer une carte.")
+
+
+def available(name: str) -> bool:
+    """La bibliothèque du backend est-elle installée ? (test rapide, sans l'importer ;
+    ne garantit pas qu'une carte compatible soit présente)."""
+    import importlib.util
+    name = name.lower()
+    if name == "cpu" or name in _custom:
+        return True
+    if frozen():
+        return False
+    mod = "dpnp" if name.startswith(("intel", "dpnp")) else "cupy"
+    return importlib.util.find_spec(mod) is not None
+
+
 def get_backend(name: str | Backend | None = "cpu") -> Backend:
     if isinstance(name, Backend):
         return name
@@ -79,6 +103,10 @@ def get_backend(name: str | Backend | None = "cpu") -> Backend:
         return CPU
     if name in _custom:
         return _custom[name]
+    if name not in BACKENDS + ("gpu", "cupy") and not name.startswith(("intel", "dpnp")):
+        raise ValueError(f"Backend inconnu '{name}'. Choix : {', '.join(BACKENDS)}")
+    if frozen():
+        raise RuntimeError(f"Backend {name} indisponible : {_FROZEN_HINT}")
     if name in ("gpu", "cuda", "cupy", "rocm"):
         amd = name == "rocm"
         try:

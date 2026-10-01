@@ -7,23 +7,27 @@ import io
 import time
 import traceback
 
-from PySide6.QtCore import QObject, QTimer, Signal, Slot
-from PySide6.QtGui import QDoubleValidator
+from PySide6.QtCore import QObject, QRegularExpression, QTimer, Signal, Slot
+from PySide6.QtGui import QRegularExpressionValidator
 from PySide6.QtWidgets import (QCheckBox, QComboBox, QHBoxLayout, QLineEdit, QSpinBox,
                                QVBoxLayout, QWidget)
 
 # ----------------------------------------------------------------------------- saisie
 
 
+# nombre réel, point OU virgule décimale, exposant facultatif ; états partiels (« 1e »,
+# « -0, ») acceptés pendant la frappe. QDoubleValidator suit la langue du système : en
+# français il supprimait le point en silence (« 0.5 » tapé → 5).
+_NUMBER = QRegularExpression(r"^[+-]?(\d*([.,]\d*)?)([eE][+-]?\d*)?$")
+
+
 class SciEdit(QLineEdit):
-    """Nombre réel en notation libre (1e-6, 0.25...) ; valeur vide = None."""
+    """Nombre réel en notation libre (1e-6, 0.25 ou 0,25...) ; valeur vide = None."""
     valueChanged = Signal()
 
     def __init__(self, value=None, allow_empty=False, placeholder="", parent=None):
         super().__init__(parent)
-        v = QDoubleValidator(self)
-        v.setNotation(QDoubleValidator.ScientificNotation)
-        self.setValidator(v)
+        self.setValidator(QRegularExpressionValidator(_NUMBER, self))
         self.allow_empty = allow_empty
         self.setPlaceholderText(placeholder)
         self.set_value(value)
@@ -99,7 +103,8 @@ class Binder(QObject):
     def _add(self, path, widget, default, kind):
         self.items.append((tuple(path), widget, default, kind))
         sig = {"sci": "valueChanged", "vec": "valueChanged", "int": "valueChanged",
-               "combo": "currentIndexChanged", "check": "toggled", "text": "textChanged"}[kind]
+               "combo": "currentIndexChanged", "check": "toggled", "text": "textChanged",
+               "points": "textChanged"}[kind]
         getattr(widget, sig).connect(lambda *_: self.changed.emit())
         return widget
 
@@ -128,6 +133,10 @@ class Binder(QObject):
     def text(self, path, default=""):
         w = QLineEdit(str(default))
         return self._add(path, w, default, "text")
+
+    def points(self, path):
+        """Liste de points [[x, y], ...] saisie « x y ; x y » (sondes)."""
+        return self._add(path, QLineEdit(), None, "points")
 
     # -------------------------------------------------------------------------
     @staticmethod
@@ -168,6 +177,8 @@ class Binder(QObject):
                 set_combo(w, v)
             elif kind == "check":
                 w.setChecked(bool(v))
+            elif kind == "points":
+                w.setText(_points_text(v))
             else:
                 w.setText("" if v is None else str(v))
             w.blockSignals(False)
@@ -186,9 +197,35 @@ class Binder(QObject):
                 v = w.currentData()
             elif kind == "check":
                 v = bool(w.isChecked())
+            elif kind == "points":
+                v = _points_value(w.text())
             else:
                 v = w.text().strip() or None
             self._set(cfg, path, v)
+
+
+def _points_text(v) -> str:
+    """[[x, y], ...] -> « x y ; x y » (texte laissé tel quel)."""
+    if v is None:
+        return ""
+    if isinstance(v, str):
+        return v
+    try:
+        return " ; ".join(f"{float(p[0]):g} {float(p[1]):g}" for p in v)
+    except (TypeError, ValueError, IndexError):
+        return str(v)
+
+
+def _points_value(text):
+    """« x y ; x y » -> [[x, y], ...] ; texte illisible conservé (erreur claire au calcul)."""
+    from ..fv2d.sampling import parse_points
+    t = text.strip()
+    if not t:
+        return None
+    try:
+        return [[float(x), float(y)] for x, y in parse_points(t)]
+    except ValueError:
+        return t
 
 
 # ----------------------------------------------------------------------------- tracés

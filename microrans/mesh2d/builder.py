@@ -39,6 +39,7 @@ def _outer(cfg) -> Rectangle:
     spec = dict(cfg.get("domain", {"type": "rectangle", "x0": -10, "y0": -10, "x1": 30, "y1": 10,
                                    "names": {"left": "inlet", "right": "outlet",
                                              "bottom": "bottom", "top": "top"}}))
+    spec.setdefault("type", "rectangle")      # [domain] sans type (interface) : rectangle
     return shape_from_dict(spec)
 
 

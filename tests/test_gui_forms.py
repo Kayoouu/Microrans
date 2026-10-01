@@ -115,3 +115,95 @@ def test_coupled_algorithm_roundtrip(win):
     win.load_cfg(cfg)
     win._store_forms()
     assert win.cfg["solver"]["algorithm"] == "coupled"
+
+
+def test_numbers_typed_with_dot_or_comma_in_french_locale(win):
+    """Audit C1 : avec Windows en français, QDoubleValidator supprimait le point en
+    silence (« 0.5 » tapé → 5). Le point et la virgule sont acceptés quelle que soit la
+    langue du système."""
+    from PySide6.QtCore import QLocale
+    from PySide6.QtTest import QTest
+
+    from microrans.gui.widgets import SciEdit
+    old = QLocale()
+    QLocale.setDefault(QLocale(QLocale.French, QLocale.France))
+    try:
+        for typed, value in (("0.5", 0.5), ("0,5", 0.5), ("-0.25", -0.25),
+                             ("2.5E-4", 2.5e-4), ("1,5e-3", 1.5e-3), ("1 000", 1000.0)):
+            e = SciEdit(1.0)
+            e.clear()
+            QTest.keyClicks(e, typed)
+            assert e.value() == pytest.approx(value), (typed, e.text())
+    finally:
+        QLocale.setDefault(old)
+
+
+def test_probe_points_roundtrip(win):
+    """Audit C2 : les sondes [[x, y], ...] d'un cas devenaient le texte « [[3.0, ... »
+    (4 exemples plantaient au lancement dans l'interface)."""
+    cfg = {"mesh": {"type": "rectangle", "x0": 0, "x1": 2, "y0": 0, "y1": 1, "nx": 8, "ny": 4},
+           "physics": {"nu": 0.01},
+           "boundary": {"left": {"type": "wall"}, "right": {"type": "wall"},
+                        "bottom": {"type": "wall"}, "top": {"type": "wall"}},
+           "output": {"probes": [[3.0, 0.0], [5.0, 1.5]]}}
+    win.load_cfg(cfg)
+    assert win.probes_edit.text() == "3 0 ; 5 1.5"
+    win._store_forms()
+    assert win.cfg["output"]["probes"] == [[3.0, 0.0], [5.0, 1.5]]
+    win.probes_edit.setText("0.5 0.25; 1 0.75")
+    win._store_forms()
+    assert win.cfg["output"]["probes"] == [[0.5, 0.25], [1.0, 0.75]]
+    win.probes_edit.setText("")
+    win._store_forms()
+    assert "probes" not in win.cfg["output"]
+
+
+def test_switch_to_triangles_from_rectangle_case_meshes(win):
+    """Audit C3 : passer un cas sans [domain] en « Triangles » écrivait [domain] sans
+    type → KeyError 'type' à la génération (signalé par un utilisateur)."""
+    from microrans.mesh2d.builder import build_mesh
+    win.new_case()
+    combo = win.mesh_type
+    combo.setCurrentIndex(combo.findData("unstructured"))      # comme un clic
+    win._store_forms()
+    cfg = win.cfg
+    assert "type" not in cfg.get("domain", {}) or cfg["domain"]["type"] == "rectangle"
+    cfg["mesh"].update(h_max=4.0, h_surface=0.4)
+    mesh = build_mesh(cfg)
+    names = {p.name for p in mesh.patches}
+    assert {"inlet", "outlet", "cylinder"} <= names
+
+
+def test_error_dialog_text_is_readable():
+    """Audit M3 : l'interface affichait l'exception brute (« KeyError : 'type' »)."""
+    from microrans.gui.app import user_message
+    assert user_message("ValueError : Le maillage en O demande exactement un corps.\n\nTB") \
+        .startswith("Le maillage en O demande exactement un corps.")
+    assert "paramètre manquant" in user_message("KeyError : 'path'\n\nTB").lower()
+    m = user_message("TypeError : unsupported operand\n\nTB")
+    assert "erreur interne" in m.lower() and "Journal" in m
+    assert "mémoire insuffisante" in user_message("MemoryError : \n\nTB").lower()
+
+
+def test_mesh_failure_dialog(win, monkeypatch):
+    """Audit M3 : un échec du maillage s'affichait comme une exception brute, sous le
+    titre « Erreur »."""
+    import time
+
+    from PySide6.QtWidgets import QApplication, QMessageBox
+    shown = []
+    monkeypatch.setattr(QMessageBox, "warning", lambda *a: shown.append(a[1:3]))
+    monkeypatch.setattr(win, "quiet", False)
+    win.new_case()
+    win.mesh_type.setCurrentIndex(win.mesh_type.findData("unstructured"))
+    win.cfg["bodies"][0]["radius"] = -0.5
+    win._load_bodies()
+    win.generate_mesh()
+    t0 = time.time()
+    while win.thread is not None and time.time() - t0 < 30:
+        QApplication.processEvents()
+        time.sleep(0.01)
+    assert len(shown) == 1
+    title, text = shown[0]
+    assert title == "Le maillage n'a pas pu aboutir"
+    assert text.startswith("Géométrie « cylinder » : radius doit être > 0") and "Journal" in text
