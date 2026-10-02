@@ -886,6 +886,7 @@ microrans/
 packaging/               PyInstaller (microrans.spec) : exécutables GUI + CLI
 tests/                   pytest (437 tests : vérification, validation, 3D, GUI hors écran, faux GPU)
 .github/workflows/       tests (Python 3.10 / 3.12) ; exécutables Windows / Linux
+CLAUDE.md, .claude/      consignes et mémoire de travail de l'assistant de développement
 ```
 
 **Ajouter un modèle de turbulence** : dériver `TurbulenceModel` (`models/base.py`), définir

@@ -12,4 +12,8 @@ results/
 *.key
 *.npz
 microrans_resultats/
-.claude/
+# .claude : seulement la configuration du projet et la mémoire de travail versionnées
+.claude/*
+!.claude/settings.json
+!.claude/memoire/
+!.claude/hooks/
