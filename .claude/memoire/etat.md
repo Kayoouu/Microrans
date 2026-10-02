@@ -6,8 +6,8 @@
   PySide6 et exécutables PyInstaller Windows / Linux (CI GitHub Actions).
 - Dernier lot terminé : **Lot E2 — distance à la paroi accélérée** (2026-10-02 ; voir
   journal). Avant : Lot E — 3D dans l'exécutable (f08fb62, b289a91).
-- Exécutables de b289a91 : run https://github.com/Kayoouu/Microrans/actions/runs/36941858951
-  (Windows : artefact 11201355109, Linux : 11201055273 ; expirent le 2026-12-30).
+- Exécutables de 3c50fb4 (lot E2) : run https://github.com/Kayoouu/Microrans/actions/runs/37043909908
+  (Windows : artefact 11243792229, Linux : 11243766987 ; expirent le 2026-12-31). CI verte.
 - Suite de tests : 442 (441 réussis, 1 ignoré), 5 à 8 min en série sur la machine de session.
 - Aucune release publiée depuis cet environnement (tag refusé) : c'est à l'utilisateur.
 - Autonomie : routine quotidienne `trig_01RCTjquBZw82GuKW83rPuSG` (cron `53 3 * * *` UTC,
