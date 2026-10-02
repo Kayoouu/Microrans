@@ -14,6 +14,7 @@ import warnings
 
 import numpy as np
 
+from ..mesh2d import bvh as _bvh
 from ..mesh2d.mesh import PATCH_TYPES, Patch
 
 # faces locales des cellules (numérotation VTK) ; l'orientation est corrigée ensuite
@@ -370,10 +371,16 @@ class Mesh3D:
         """(distance, vecteur point le plus proche → centre) aux faces des patches, exacte.
 
         Distance aux triangles (découpage des faces autour de la moyenne des sommets) des k
-        faces de centres les plus proches ; une face plus lointaine est à au moins
+        faces de centres les plus proches (arbre k-d) ; une face plus lointaine est à au moins
         d_k − R (d_k : distance au k-ième centre, R : plus grand rayon de face), donc le
-        résultat est exact si la meilleure distance trouvée est ≤ d_k − R. Sinon (faces très
-        allongées), les faces de centre à moins de d + R sont toutes examinées."""
+        résultat est exact si la meilleure distance trouvée est ≤ d_k − R. Sinon (cellules
+        loin d'une paroi plane : 91 % des cellules d'une cavité cubique 64³ ; parois mêlant
+        petites et grandes faces), arbre de boîtes englobantes des faces (`mesh2d/bvh.py`) : une
+        boîte n'est ouverte que si sa distance (borne inférieure exacte) est sous la
+        meilleure distance trouvée, une face n'est calculée que si sa propre borne
+        (`_face_lower_bound`) l'est aussi. Avant : toutes les faces de centre à moins de
+        d + R, ~40 par cellule à 64³ et jusqu'à ~1 300 sur une paroi à faces de tailles très
+        différentes (cylindre sur un fond maillé : 207 s pour 64 000 cellules)."""
         fns = [self.patch_face_nodes(n) for n in names]
         nc = self.n_cells
         if not fns or sum(len(f) for f in fns) == 0:
@@ -381,42 +388,77 @@ class Mesh3D:
             vec[:, 2] = 1e30
             return np.full(nc, 1e30), vec
         fn = np.vstack(fns)
-        fc, _ = face_geometry(self.points, fn)
+        fc, S = face_geometry(self.points, fn)
         kk = np.sum(fn >= 0, axis=1)
         fn0 = np.where(fn >= 0, fn, fn[:, :1])
         X = self.points[fn0]                                     # (nf, 4, 3)
-        xbar = np.sum(np.where((np.arange(4)[None, :] < kk[:, None])[..., None], X, 0.0),
-                      axis=1) / kk[:, None]
-        R = float(np.max(np.linalg.norm(X - fc[:, None, :], axis=2)))
+        valid = np.arange(4)[None, :] < kk[:, None]
+        xbar = np.sum(np.where(valid[..., None], X, 0.0), axis=1) / kk[:, None]
+        rf = np.max(np.linalg.norm(X - fc[:, None, :], axis=2), axis=1)   # rayon de face
+        R = float(rf.max())
+        magS = np.linalg.norm(S, axis=1)
+        nrm = np.where(magS[:, None] > 0, S / np.maximum(magS, 1e-300)[:, None], 0.0)
+        dev = np.max(np.abs(np.sum((X - fc[:, None, :]) * nrm[:, None, :], axis=2)), axis=1)
+        geo = (fc, nrm, dev, rf)                    # dev : écart des sommets au plan moyen
         from scipy.spatial import cKDTree
-        tree = cKDTree(fc)
+        C = self.cell_centers
         k = min(k, len(fn))
-        dk, cand = tree.query(self.cell_centers, k=k)
+        # tous les cœurs pour cette recherche (résultat identique ; 18.8 s → 8.3 s pour 10⁶
+        # cellules sur 4 cœurs)
+        dk, cand = cKDTree(fc).query(C, k=k, workers=-1)
         cand, dk = cand.reshape(nc, k), dk.reshape(nc, k)
-        best, vec = self._dist_to_faces(self.cell_centers, cand, X, xbar, kk)
-        unsure = np.nonzero(best > dk[:, -1] - R)[0] if k < len(fn) else np.zeros(0, int)
-        # toutes les faces de centre à moins de d + R, par paires (cellule, face) ; par paquets
-        # de cellules : les listes d'indices de query_ball_point (~150 entiers Python par
-        # cellule loin des parois) prenaient ~5 Go à 1 million de cellules
-        for u0 in range(0, len(unsure), 20_000):
-            uc = unsure[u0:u0 + 20_000]
-            balls = tree.query_ball_point(self.cell_centers[uc], best[uc] + R + 1e-12)
-            cnt = np.array([len(b) for b in balls])
-            cells = np.repeat(uc, cnt)
-            faces = np.fromiter((f for b in balls for f in b), dtype=np.int64,
-                                count=int(cnt.sum()))
-            del balls
-            step = 500_000
-            for s0 in range(0, len(cells), step):
-                c, f = cells[s0:s0 + step], faces[s0:s0 + step]
-                b, v = self._dist_to_faces(self.cell_centers[c], f[:, None], X, xbar, kk)
-                order = np.lexsort((b, c))                   # meilleure face par cellule
-                c, b, v = c[order], b[order], v[order]
+        best, vec = self._dist_to_faces(C, cand[:, :1], X, xbar, kk)
+        for j in range(1, k):                       # candidates suivantes, si utiles
+            f = cand[:, j]
+            sel = np.nonzero(self._face_lower_bound(C, f, geo) < best)[0]
+            if len(sel):
+                b, v = self._dist_to_faces(C[sel], f[sel, None], X, xbar, kk)
+                upd = b < best[sel]
+                best[sel[upd]], vec[sel[upd]] = b[upd], v[upd]
+        bound = dk[:, -1] - R - 1e-9 * (dk[:, -1] + R)   # marge d'arrondi, côté prudent
+        unsure = np.nonzero(best > bound)[0] if k < len(fn) else np.zeros(0, int)
+        if len(unsure):
+            lo_f = np.min(np.where(valid[..., None], X, np.inf), axis=1)
+            hi_f = np.max(np.where(valid[..., None], X, -np.inf), axis=1)
+            tree = _bvh.build(lo_f, hi_f)
+            for u0 in range(0, len(unsure), 100_000):  # mémoire bornée
+                self._bvh_search(C, unsure[u0:u0 + 100_000], best, vec, tree, X, xbar, kk,
+                                 geo)
+        return best, vec
+
+    def _bvh_search(self, C, cells, best, vec, tree, X, xbar, kk, geo):
+        """Faces plus proches que la meilleure distance connue, pour les cellules `cells`
+        (arbre de boîtes) : met best / vec à jour en place."""
+        def visit(c, f):
+            ok = self._face_lower_bound(C[c], f, geo) < best[c]
+            c, f = c[ok], f[ok]
+            if len(c):
+                b, v = self._dist_to_faces(C[c], f[:, None], X, xbar, kk)
+                srt = np.lexsort((b, c))                     # meilleure face par cellule
+                c, b, v = c[srt], b[srt], v[srt]
                 first = np.concatenate([[True], c[1:] != c[:-1]])
                 c, b, v = c[first], b[first], v[first]
                 upd = b < best[c]
                 best[c[upd]], vec[c[upd]] = b[upd], v[upd]
-        return best, vec
+        _bvh.search(C, cells, best, tree, visit)
+
+    @staticmethod
+    def _face_lower_bound(P, f, geo):
+        """Borne inférieure exacte de la distance des points P[i] aux faces f[i].
+
+        Tout point q d'une face (triangles autour de la moyenne des sommets : combinaisons
+        convexes des sommets) vérifie |n·(q − c)| ≤ δ et |q − c| ≤ r (c : centre, n : normale
+        unitaire, δ : plus grand écart d'un sommet au plan, r : rayon de la face), d'où
+        |p − q|² ≥ (|n·(p − c)| − δ)₊² + (|p − c|_plan − r)₊². Marge relative de 1e-9 pour
+        l'arrondi : la borne reste sous la vraie distance, aucune face utile n'est écartée."""
+        fc, nrm, dev, rf = geo
+        r = P - fc[f]
+        n = nrm[f]
+        h = np.sum(r * n, axis=1)
+        lat = np.linalg.norm(r - h[:, None] * n, axis=1)   # sans soustraction de carrés
+        a = np.maximum(np.abs(h) - dev[f], 0.0)
+        b = np.maximum(lat - rf[f], 0.0)
+        return np.sqrt(a * a + b * b) - 1e-9 * (np.linalg.norm(r, axis=1) + rf[f])
 
     @staticmethod
     def _dist_to_faces(C, cand, X, xbar, kk):

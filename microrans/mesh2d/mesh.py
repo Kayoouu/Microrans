@@ -13,6 +13,8 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from . import bvh
+
 PATCH_TYPES = ("wall", "patch", "symmetry", "empty")
 
 
@@ -318,7 +320,14 @@ class Mesh2D:
         return vec / np.maximum(d, 1e-300)[:, None]
 
     def _nearest_on_patches(self, names):
-        """(distance, vecteur point le plus proche → centre) aux segments des patches."""
+        """(distance, vecteur point le plus proche → centre) aux segments des patches, exacte.
+
+        Segments des k = 8 milieux les plus proches (arbre k-d) ; un segment plus lointain
+        est à au moins d_k − R (R : plus grande demi-longueur), donc le résultat est sûr si
+        la meilleure distance est < d_k − R ; sinon, arbre de boîtes des segments
+        (`bvh.py`). Même résultat, au bit près, que la comparaison à tous les segments
+        (en cas d'égalité, le segment de plus petit numéro), qui coûtait N_cellules ×
+        N_segments : 92 s pour 490 000 cellules et 2 800 segments."""
         segs = [self.face_nodes[self.patch(n).faces] for n in names]
         if not segs or sum(len(s) for s in segs) == 0:
             vec = np.zeros((self.n_cells, 2))
@@ -328,21 +337,47 @@ class Mesh2D:
         a, b = self.points[seg[:, 0]], self.points[seg[:, 1]]
         ab = b - a
         ab2 = np.maximum(np.sum(ab * ab, axis=1), 1e-300)
-        out = np.empty(self.n_cells)
-        vec = np.empty((self.n_cells, 2))
         C = self.cell_centers
-        chunk = max(1, 2_000_000 // max(len(seg), 1))
-        for s in range(0, self.n_cells, chunk):
-            q = C[s:s + chunk, None, :]
-            ap = q - a[None]
-            t = np.clip(np.sum(ap * ab[None], axis=2) / ab2[None], 0.0, 1.0)
-            r = ap - t[..., None] * ab[None]
-            d2 = np.sum(r ** 2, axis=2)
-            j = d2.argmin(axis=1)
-            rows = np.arange(len(j))
-            out[s:s + chunk] = np.sqrt(d2[rows, j])
-            vec[s:s + chunk] = r[rows, j]
-        return out, vec
+        nc, ns = self.n_cells, len(seg)
+
+        def dist2(c, s):                             # mêmes opérations que l'ancien calcul
+            ap = C[c] - a[s]
+            t = np.clip(np.sum(ap * ab[s], axis=1) / ab2[s], 0.0, 1.0)
+            r = ap - t[:, None] * ab[s]
+            return np.sum(r ** 2, axis=1), r
+
+        best2, bseg, vec = np.full(nc, np.inf), np.full(nc, ns), np.zeros((nc, 2))
+
+        def update(c, s, d2, r):                     # plus petit d², puis plus petit numéro
+            better = (d2 < best2[c]) | ((d2 == best2[c]) & (s < bseg[c]))
+            c, s, d2, r = c[better], s[better], d2[better], r[better]
+            best2[c], bseg[c], vec[c] = d2, s, r
+
+        from scipy.spatial import cKDTree
+        k = min(8, ns)
+        dk, cand = cKDTree(0.5 * (a + b)).query(C, k=k, workers=-1)
+        cand, dk = cand.reshape(nc, k), dk.reshape(nc, k)
+        cells = np.arange(nc)
+        for j in range(k):
+            update(cells, cand[:, j], *dist2(cells, cand[:, j]))
+        R = 0.5 * float(np.sqrt(ab2.max()))
+        bound = dk[:, -1] - R - 1e-9 * (dk[:, -1] + R)   # marge d'arrondi, côté prudent
+        unsure = np.nonzero(np.sqrt(best2) >= bound)[0] if k < ns else np.zeros(0, int)
+        if len(unsure):
+            tree = bvh.build(np.minimum(a, b), np.maximum(a, b))
+            best = np.sqrt(best2)                    # borne d'élagage, mise à jour avec best2
+
+            def visit(c, s):
+                d2, r = dist2(c, s)
+                srt = np.lexsort((s, d2, c))         # par cellule : meilleur d², puis numéro
+                c, s, d2, r = c[srt], s[srt], d2[srt], r[srt]
+                first = np.concatenate([[True], c[1:] != c[:-1]])
+                update(c[first], s[first], d2[first], r[first])
+                best[c] = np.sqrt(best2[c])
+
+            for u0 in range(0, len(unsure), 100_000):  # mémoire bornée
+                bvh.search(C, unsure[u0:u0 + 100_000], best, tree, visit)
+        return np.sqrt(best2), vec
 
     @property
     def first_cell_height(self) -> float:

@@ -4,11 +4,11 @@
 
 - microrans : outil RANS / URANS 1D, 2D, 3D (périmètre réduit) avec mailleur, interface
   PySide6 et exécutables PyInstaller Windows / Linux (CI GitHub Actions).
-- Dernier lot terminé : **Lot E — 3D dans l'exécutable** (interface et ligne de commande),
-  commits f08fb62 et b289a91. CI verte (tests + exécutables).
+- Dernier lot terminé : **Lot E2 — distance à la paroi accélérée** (2026-10-02 ; voir
+  journal). Avant : Lot E — 3D dans l'exécutable (f08fb62, b289a91).
 - Exécutables de b289a91 : run https://github.com/Kayoouu/Microrans/actions/runs/36941858951
   (Windows : artefact 11201355109, Linux : 11201055273 ; expirent le 2026-12-30).
-- Suite de tests : 436 réussis, 1 ignoré (437), ~8 min en série sur la machine de session.
+- Suite de tests : 442 (441 réussis, 1 ignoré), 5 à 8 min en série sur la machine de session.
 - Aucune release publiée depuis cet environnement (tag refusé) : c'est à l'utilisateur.
 - Autonomie : routine quotidienne `trig_01RCTjquBZw82GuKW83rPuSG` (cron `53 3 * * *` UTC,
   dans cette session), 1 lot par jour sauf exception ; première relance 2026-10-03.
@@ -22,15 +22,20 @@
 | Même cas, mesure antérieure (machine plus rapide ce jour-là) | 8.5 s / it, 2.9 Go, préparation 31 s + 172 s |
 | 3D 64³ (262 144) dans l'interface | maillage + vue 11.6 s, 3 it en 65.5 s (solveur 10 s), figures < 1 s, pic 1.19 Go |
 | fields.vtk ASCII 10⁶ cellules | 169 Mo |
+| Distance à la paroi 10⁶ cellules (E2, côte à côte) | 206 s → 25.5 s, identique au bit près |
+| Calcul complet 10⁶ cellules, 10 it (E2, côte à côte) | 375 s → 195 s (préparation 254 s → 78 s) |
+| Distance à la paroi 2D, 490 000 cellules | 91 s → 2.7 s |
 
-La préparation (distance à la paroi exacte) domine le temps des petits nombres
-d'itérations en 3D ; un calcul stationnaire 10⁶ cellules = quelques centaines d'itérations
-≈ 1 à 1.5 h.
+Préparation 3D maintenant dominée par la construction du maillage (~35 s à 10⁶) ; un
+calcul stationnaire 10⁶ cellules = quelques centaines d'itérations ≈ 1 à 1.5 h.
 
 ## Décisions prises (et pourquoi)
 
 - Pas de changement de langage : l'exécutable va aussi vite que Python (mesuré) ; le coût
   est dans les algorithmes (distance à la paroi, SIMPLE), pas dans l'emballage.
+- Distance à la paroi : exacte, k-d (8 voisins, `workers=-1`) + arbre de boîtes
+  (`mesh2d/bvh.py`) + borne par face ; une descente « vers la boîte la plus proche » sans
+  k-d a été essayée et rejetée (64³ : 228 s, vecteurs changés aux égalités).
 - Numba désactivé par défaut (`[solver] numba = false`) et exclu de l'exécutable : ~10 % de
   gain mesuré, multi-fil plus lent sur la machine de test.
 - 3D : figures en coupe z = constante (`mesh3d/slice.py`, maillages en couches selon z) ;

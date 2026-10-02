@@ -3,6 +3,28 @@
 Détail des chiffres : README (§ 6 validation, § 7 performances, § 8 limites) et messages de
 commit. Ce journal sert à retrouver ce qui a été fait, pourquoi, et ce qui a été constaté.
 
+## 2026-10-02 — Lot E2 : distance à la paroi accélérée
+
+- Profil (64³) : 91 % des cellules « incertaines » (test best ≤ d_k − R avec R = plus grand
+  rayon de face), ~43 faces calculées chacune ; 28 s sur 37 dans le point le plus proche
+  sur triangle. Pire : paroi à faces de tailles très différentes (cylindre extrudé sur un
+  fond maillé) : 112 s pour 24 576 cellules, 207 s pour 64 179 (82 M paires).
+- Fait : borne inférieure exacte par face (`_face_lower_bound` : écart au plan + écart dans
+  le plan, marge 1e-9), arbre de boîtes englobantes commun 2D / 3D (`mesh2d/bvh.py`) à la
+  place de query_ball_point, recherche k-d sur tous les cœurs (`workers=-1` : 18.8 s →
+  8.3 s à 10⁶, même résultat). 2D : k-d + arbre de boîtes au lieu de tous les segments,
+  égalités départagées comme avant (plus petit numéro).
+- Essayé et rejeté : supprimer la recherche k-d (première estimation par descente vers la
+  boîte la plus proche) → 64³ : 228 s (boîtes contenant le point, distance 0) et vecteurs
+  différents aux égalités (plan diagonal de la cavité).
+- Mesures côte à côte, même jour : distance 32³ 2.72 → 0.41 s, 64³ 34 → 3.7 s, 100³
+  206 → 25.5 s ; calcul complet 10⁶ cellules 10 it : 375 → 195 s ; fields.vtk et
+  history.csv identiques octet pour octet ; 2D 490 000 cellules 91 → 2.7 s.
+- Tests : `tests/test_wall_distance.py` (force brute sur faces gauches, tailles de faces
+  ×200, prismes + paroi courbe, 2D étirés, structure de l'arbre) ; ils passent tous par
+  l'arbre de boîtes (vérifié). Avertissement « gros maillage » : préparation ~1 à 2 min à
+  10⁶ (avant 3 à 5).
+
 ## 2026-10-02 — Mémoire persistante
 
 - `CLAUDE.md` (consignes, préférences, pièges), `.claude/memoire/` (état, liste de travail,

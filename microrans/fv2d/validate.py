@@ -813,10 +813,11 @@ def _size_warning(m: dict, mesh_type: str) -> str | None:
     if mesh_type == BOX or isinstance(m.get("extrude"), dict):
         # 3D mesuré (cavité cubique, 4 cœurs, machine virtuelle de charge variable) :
         # 10⁶ hexaèdres → pic 2.9 à 3.2 Go, 8.5 à 13.8 s par itération en laminaire (SST :
-        # +40 %), préparation 3.4 à 5.3 min (maillage + distance à la paroi exacte) ;
-        # exécutable et Python identiques à la mesure près
+        # +40 %), préparation et écriture 78 s (maillage ~35 s + distance à la paroi exacte
+        # 25 s, lot E2 ; avant : 3.4 à 5.3 min) ; exécutable et Python identiques à la
+        # mesure près
         gb, lo, hi = 0.3 + n * 2.9e-6, n * 8.5e-6, n * 14e-6
-        prep = f"{n * 2e-4 / 60:.0f} à {n * 3.2e-4 / 60:.0f}"
+        prep = f"{max(1, round(n * 6e-5 / 60))} à {max(2, round(n * 1.2e-4 / 60))}"
         return (f"[mesh] {count} cellules (3D) : prévoir ~{gb:.1f} Go de mémoire, ~{lo:.0f} à "
                 f"{hi:.0f} s par itération en laminaire (turbulent : ~40 % de plus) et ~{prep} "
                 "min de préparation (maillage et distance à la paroi) — ordre de grandeur "

@@ -708,19 +708,33 @@ l'arrondi près (~1e-13), et identiques quel que soit le nombre de fils.
 **3D** (cavité cubique Re = 100, hexaèdres, SIMPLEC + AMG, un processus, machine de test à
 4 cœurs ; pic mémoire de tout le calcul) :
 
-| Cellules | Maillage | Distance à la paroi | Par itération, laminaire | idem, SST | Mémoire | fields.vtk |
+| Cellules | Maillage | Distance à la paroi (avant → après E2) | Par itération, laminaire | idem, SST | Mémoire | fields.vtk |
 |---:|---:|---:|---:|---:|---:|---:|
-| 32 768 (32³) | 1.2 s | 2.5 s | 0.15 s (4.5 µs/cellule) | — | 0.45 Go | 5 Mo |
-| 262 144 (64³) | 6.1 s | 30 s | 1.5 s (5.7 µs/cellule) | 2.1 s | 0.9 Go | 47 Mo |
-| 1 000 000 (100³) | 31 s | 172 s | 8.5 s (8.5 µs/cellule) | — | 2.9 Go | 169 Mo |
+| 32 768 (32³) | 1.2 s | 2.7 s → 0.41 s | 0.15 s (4.5 µs/cellule) | — | 0.45 Go | 5 Mo |
+| 262 144 (64³) | 6.1 s | 34 s → 3.7 s | 1.5 s (5.7 µs/cellule) | 2.1 s | 0.9 Go | 47 Mo |
+| 1 000 000 (100³) | 31 s | 206 s → 25.5 s | 8.5 s (8.5 µs/cellule) | — | 2.9 Go | 169 Mo |
 
 Ces durées varient de plus de 50 % d'un jour à l'autre sur la même machine virtuelle :
 10⁶ cellules remesurées plus tard, exécutable Linux et Python côte à côte, dans les mêmes
 conditions : 13.8 s et 13.6 s par itération, pic 3.09 et 3.18 Go, 461 s et 456 s au total
 (préparation, 10 itérations, VTK) — **l'exécutable va aussi vite que Python**, c'est la
 machine qui était plus lente. Un calcul stationnaire demande quelques centaines
-d'itérations : ~1 à 1.5 h pour 10⁶ cellules en laminaire. La distance à la paroi est exacte (distance aux faces de paroi, pas aux
-centres) : elle domine la préparation et sert aussi aux sorties en laminaire. Deux défauts
+d'itérations : ~1 à 1.5 h pour 10⁶ cellules en laminaire.
+
+**Distance à la paroi** (exacte : distance aux faces de paroi, pas aux centres ; sert aussi
+aux sorties en laminaire), accélérée au lot E2 : 8 faces de centres les plus proches (arbre
+k-d, sur tous les cœurs), puis, pour les cellules dont ce résultat n'est pas prouvé exact,
+arbre de boîtes englobantes des faces et borne inférieure exacte par face (écart au plan,
+écart dans le plan) : seules les faces qui peuvent être plus proches sont calculées.
+Résultat identique au bit près à l'ancien calcul (distances, vecteurs, et `fields.vtk` d'un
+calcul de 10⁶ cellules identique octet pour octet). Colonne du tableau mesurée côte à côte,
+le même jour ; calcul complet de 10⁶ cellules (maillage, distance, 10 itérations, VTK) :
+375 s → 195 s (préparation et écriture 254 s → 78 s ; ce jour-là 12 s par itération).
+Parois dont les faces ont des tailles très différentes (cylindre extrudé sur un fond
+maillé) : 112 s → 0.46 s pour 24 576 cellules, 214 s → 2.5 s pour 64 179 cellules. En 2D,
+l'ancien calcul comparait chaque cellule à tous les segments de paroi : rectangle de
+490 000 cellules et 2 800 segments 91 s → 2.7 s (exemples fournis : 0.05 à 0.4 s →
+0.01 à 0.05 s). Deux défauts
 de coût corrigés pendant ces mesures : la distance à la paroi était calculée deux fois
 (le solveur réimposait les types de frontières et vidait le cache : +30 s à 64³, aussi en
 2D où elle est bon marché), et la géométrie des faces était calculée d'un bloc (pic de
@@ -732,7 +746,8 @@ de coût corrigés pendant ces mesures : la distance à la paroi était calculé
 
 1. **Taille des problèmes** : Python vectorisé ; ~10⁵ cellules restent raisonnables en
    stationnaire (minutes), l'instationnaire long est lent (cylindre Re = 100 : 2 à 16 min).
-   Un calcul n'utilise qu'un cœur (seuls les balayages / polaires sont parallèles ; noyaux
+   Un calcul n'utilise qu'un cœur (seuls les balayages / polaires sont parallèles, ainsi que
+   la recherche des faces de paroi voisines pour la distance à la paroi ; noyaux
    Numba facultatifs : ~10 % de gain mesuré, multi-fil plus lent sur la machine de test).
 2. **Cartes graphiques non testées sur matériel réel** (§ 5.3) ; exécutables CPU seulement.
 3. **SIMPLE** converge lentement sur les maillages très fins et étirés (O(N²) itérations) ;
@@ -814,7 +829,8 @@ de coût corrigés pendant ces mesures : la distance à la paroi était calculé
    - non disponibles : axisymétrique (sans objet), swirl, zones poreuses, disques
      actuateurs, solveur couplé, animations, compressible, profil de débit parabolique ;
    - coût (§ 7) : ~8.5 à 14 s par itération et ~3 Go pour 10⁶ cellules en laminaire, plus
-     ~3.5 à 5.5 min de préparation (maillage, distance à la paroi exacte) ; fichiers VTK ASCII
+     ~1.5 min de préparation et d'écriture (maillage ~35 s, distance à la paroi exacte
+     ~25 s) ; fichiers VTK ASCII
      volumineux (169 Mo pour 10⁶ cellules) ;
    - un écoulement plan calculé sur **plusieurs couches** en z n'est pas identique au 2D :
      la diffusion à travers les faces z intérieures entre dans a_P, donc dans
@@ -844,7 +860,7 @@ corrections de courbure et de rotation, loi de paroi thermique et k-ε haut-Reyn
 viscoélasticité ; compressible turbulent (RANS) et axisymétrique, écart transsonique ; solveur
 couplé : énergie et turbulence dans le système couplé, préconditionneur multigrille par blocs
 pour les grands maillages. 3D : mailleur général (tétraèdres, couches prismatiques), import
-Gmsh 3D, coupes x / y dans l'interface, distance à la paroi accélérée (Numba), VTK binaire.
+Gmsh 3D, coupes x / y dans l'interface, VTK binaire.
 
 ---
 
@@ -884,7 +900,7 @@ microrans/
   gui/                   interface PySide6 (app.py, widgets.py)
   examples/              cas fournis (microrans examples)
 packaging/               PyInstaller (microrans.spec) : exécutables GUI + CLI
-tests/                   pytest (437 tests : vérification, validation, 3D, GUI hors écran, faux GPU)
+tests/                   pytest (442 tests : vérification, validation, 3D, GUI hors écran, faux GPU)
 .github/workflows/       tests (Python 3.10 / 3.12) ; exécutables Windows / Linux
 CLAUDE.md, .claude/      consignes et mémoire de travail de l'assistant de développement
 ```
