@@ -64,6 +64,7 @@ jobs:
           ./dist/microrans/microrans run2d conduite_carree_3d -q --set mesh.ny=8 mesh.nz=8 solver.max_iter=30 -o smoke/cli3d || test $? -eq 1
           grep -q '"dimension": 3' smoke/cli3d/summary.json
           test -f smoke/cli3d/fields.vtk && test -f smoke/cli3d/U.png
+          head -c 60 smoke/cli3d/fields.vtk | grep -q '^BINARY'   # VTK binaire par défaut (lot E3)
           ./dist/microrans/microrans mesh cavite_cubique_re100_3d -q --no-plot -o smoke/mesh3d
           test -f smoke/mesh3d/*.vtk
       - name: Auto-test de l'interface (Windows, affichage natif comme chez l'utilisateur)

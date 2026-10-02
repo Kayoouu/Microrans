@@ -8,7 +8,7 @@ from microrans.fv2d.restart import load_checkpoint, save_checkpoint
 from microrans.fv2d.sampling import Sampler, locate, parse_points
 from microrans.fv2d.validate import check_case
 from microrans.mesh2d import Circle, Rectangle
-from microrans.mesh2d.io import write_mesh, write_vtk
+from microrans.mesh2d.io import read_vtk, write_mesh, write_vtk
 from microrans.mesh2d.unstructured import triangulate
 from microrans.mesh3d import box_mesh, extrude
 
@@ -39,28 +39,20 @@ def test_box_and_extrude_from_case_file():
     assert m.dim == 3 and m.n_cells == 2 * 64 * 64
 
 
-def _read_vtk_cells(path):
-    lines = path.read_text().splitlines()
-    i = next(k for k, ln in enumerate(lines) if ln.startswith("CELLS"))
-    n = int(lines[i].split()[1])
-    cells = [[int(v) for v in ln.split()[1:]] for ln in lines[i + 1:i + 1 + n]]
-    types = [int(v) for v in lines[i + 2 + n:i + 2 + 2 * n]]
-    return cells, types
-
-
 def test_vtk_output_of_hexahedra_and_prisms(tmp_path):
     """Numérotation VTK des sommets (volumes recalculés par la bibliothèque VTK 9.7 égaux
-    aux nôtres à 1e-8, précision du fichier ASCII : vérifié hors des tests, VTK n'étant pas
-    une dépendance)."""
+    aux nôtres à 1e-8 avec le fichier texte : vérifié hors des tests ; lecture par VTK :
+    tests/test_vtk.py, ignorée si VTK n'est pas installé)."""
     m2 = triangulate(Rectangle(0, 0, 2, 1) - Circle((1, .5), .2).as_wall(), 0.2, [])
     for m in (box_mesh(0, 1, 0, 1, 0, 1, 2, 3, 4), extrude(m2, 0, 1, 2)):
         U = m.cell_centers.copy()
-        write_vtk(m, tmp_path / "f.vtk", {"U": U, "p": m.cell_volumes})
-        cells, types = _read_vtk_cells(tmp_path / "f.vtk")
-        assert [list(c) for c in m.cells_as_lists()] == cells
-        assert set(types) == ({12} if m.n_cells == 24 else {13})
-        txt = (tmp_path / "f.vtk").read_text()
-        assert f"POINTS {m.n_points} double" in txt and "VECTORS U double" in txt
+        for binary in (True, False):
+            write_vtk(m, tmp_path / "f.vtk", {"U": U, "p": m.cell_volumes}, binary=binary)
+            r = read_vtk(tmp_path / "f.vtk")
+            flat = np.concatenate([[len(c), *c] for c in m.cells_as_lists()])
+            assert np.array_equal(r["cells"], flat)
+            assert set(r["cell_types"]) == ({12} if m.n_cells == 24 else {13})
+            assert r["points"].shape == (m.n_points, 3) and r["cell_data"]["U"].shape[1] == 3
     with pytest.raises(ValueError, match="Maillage 3D : export .su2 non disponible"):
         write_mesh(m, tmp_path / "f.su2")
 
@@ -220,10 +212,11 @@ def test_run_case_3d_transient_vtk_and_averages(tmp_path):
     s = run_case(cfg, out_dir=tmp_path, verbose=False, plot=False)
     assert s["steps"] == 5 and sorted(p.name for p in tmp_path.glob("fields_*.vtk")) == [
         "fields_000002.vtk", "fields_000004.vtk"]
-    assert "VECTORS U double" in (tmp_path / "fields.vtk").read_text()
+    names = read_vtk(tmp_path / "fields.vtk")["cell_data"]
+    assert names["U"].shape[1] == 3
     head = (tmp_path / "history.csv").read_text().splitlines()[0]
     assert "Cs_cylinder" in head and "probe1_Uz" in head
-    assert "SCALARS Uz_mean double 1" in (tmp_path / "fields.vtk").read_text()
+    assert names["Uz_mean"].ndim == 1
 
 
 def test_cli_mesh_3d_writes_vtk_only(tmp_path, capsys):

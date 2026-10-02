@@ -471,6 +471,7 @@ Contenu libre, sous la forme `nom = valeur`.
 | `checkpoint` | écrit checkpoint.npz (défaut true) |  |
 | `checkpoint_minutes` | sauvegarde périodique (min, défaut 5) |  |
 | `vtk` | écrit fields.vtk (défaut true) |  |
+| `vtk_format` | binary (défaut : binaire, valeurs exactes, 30 à 50 fois plus rapide à écrire, ~30 % plus petit) \| ascii (texte, 10 chiffres) |  |
 | `plots` | figures (défaut true) |  |
 | `average_from` | instationnaire : moyennes à partir de t | incompressible seulement |
 | `animate` | instationnaire : grandeur animée (vorticity, U_mag, p…) | incompressible seulement |

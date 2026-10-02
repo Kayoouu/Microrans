@@ -259,7 +259,10 @@ SCHEMA = Table({
                            "l'axe z)"),
         "checkpoint": K("écrit checkpoint.npz (défaut true)"),
         "checkpoint_minutes": K("sauvegarde périodique (min, défaut 5)"),
-        "vtk": K("écrit fields.vtk (défaut true)"), "plots": K("figures (défaut true)"),
+        "vtk": K("écrit fields.vtk (défaut true)"),
+        "vtk_format": K("binary (défaut : binaire, valeurs exactes, 30 à 50 fois plus rapide "
+                        "à écrire, ~30 % plus petit) | ascii (texte, 10 chiffres)"),
+        "plots": K("figures (défaut true)"),
         "average_from": K("instationnaire : moyennes à partir de t", INC),
         "animate": K("instationnaire : grandeur animée (vorticity, U_mag, p…)", INC),
         "animate_every": K("une image tous les N pas", INC),
@@ -733,6 +736,11 @@ def _check_values(cfg: dict, kind: str, mesh_type: str, mesh_only: bool, errors:
     V.num("solver", sc, "tol", ge=0)
     V.num("solver", sc, "monitor_tol", gt=0)
     V.num("solver", sc, "monitor_window", ge=1, integer=True)
+    oc = cfg.get("output") if isinstance(cfg.get("output"), dict) else {}
+    vf = oc.get("vtk_format", "binary")
+    if str(vf).lower() not in ("binary", "ascii"):
+        errors.append(f"[output] vtk_format = {vf!r} inconnu : binary (défaut, valeurs exactes) "
+                      "ou ascii (texte).")
     V.num("solver", sc, "log_every", ge=1, integer=True)
     if kind == INC:
         for k in ("relax_U", "relax_p", "relax_turb", "relax_T", "relax_scalar"):

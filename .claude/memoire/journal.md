@@ -3,6 +3,30 @@
 Détail des chiffres : README (§ 6 validation, § 7 performances, § 8 limites) et messages de
 commit. Ce journal sert à retrouver ce qui a été fait, pourquoi, et ce qui a été constaté.
 
+## 2026-10-02 — Lot E3 : VTK binaire
+
+- Fait : `write_vtk(..., binary=True)` (VTK legacy BINARY, gros-boutiste, `>f8` points et
+  champs, `>i4` connectivité ; en-têtes UTF-8 comme le texte), ancien texte gardé dans
+  `_write_vtk_ascii` (identique octet pour octet à l'ancien code sur 5 maillages, polygones
+  compris), `read_vtk` (texte et binaire), `[output] vtk_format = binary | ascii` (valeur
+  inconnue refusée avant calcul), `write_mesh(binary=)`. Interface : clé conservée (le
+  formulaire n'écrit que ses champs).
+- Mesures côte à côte, mêmes champs (cavité cubique, U + 4 scalaires) : 10⁶ cellules
+  14.0–15.1 s / 173 Mo → 0.31–0.35 s / 121 Mo ; 64³ 1.9 s / 48 Mo → 0.07 s / 32 Mo ; 32³
+  5.6 → 4.0 Mo. Gain en taille limité (~30 %) : double précision gardée (exactitude).
+- Vérifié avec le lecteur officiel VTK 9.7 (vtkUnstructuredGridReader, installé dans le
+  conteneur, pas une dépendance) : triangles, quads, polygones (type 7), hexaèdres,
+  prismes + hexa, vecteurs 2D complétés, noms accentués ; valeurs et points au bit près ;
+  volumes VTK / solveur 1.7e-14 (2e-8 en texte).
+- Défaut trouvé à la relecture du diff : nom de champ accentué (scalaire passif nommé par
+  l'utilisateur) → UnicodeEncodeError en binaire (en-tête encodé ASCII) ; corrigé (UTF-8)
+  et testé.
+- Constat annexe : hexaèdres à faces gauches → volumes VTK ≠ volumes du solveur par cellule
+  (proportionnel au gauchissement, total égal) ; nos maillages actuels ont des faces planes ;
+  noté pour la tâche « import 3D ».
+- Tests : `tests/test_vtk.py` (8), `test_case3d` / `test_mesh2d` relisent par `read_vtk` ;
+  CI exécutables : en-tête « BINARY » vérifié sur le calcul 3D.
+
 ## 2026-10-02 — Lot E2 : distance à la paroi accélérée
 
 - Profil (64³) : 91 % des cellules « incertaines » (test best ≤ d_k − R avec R = plus grand

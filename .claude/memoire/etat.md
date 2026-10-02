@@ -4,8 +4,8 @@
 
 - microrans : outil RANS / URANS 1D, 2D, 3D (périmètre réduit) avec mailleur, interface
   PySide6 et exécutables PyInstaller Windows / Linux (CI GitHub Actions).
-- Dernier lot terminé : **Lot E2 — distance à la paroi accélérée** (2026-10-02 ; voir
-  journal). Avant : Lot E — 3D dans l'exécutable (f08fb62, b289a91).
+- Dernier lot terminé : **Lot E3 — VTK binaire** (2026-10-02 ; voir journal). Avant :
+  E2 distance à la paroi (3c50fb4), E — 3D dans l'exécutable (f08fb62, b289a91).
 - Exécutables de 3c50fb4 (lot E2) : run https://github.com/Kayoouu/Microrans/actions/runs/37043909908
   (Windows : artefact 11243792229, Linux : 11243766987 ; expirent le 2026-12-31). CI verte.
 - Suite de tests : 442 (441 réussis, 1 ignoré), 5 à 8 min en série sur la machine de session.
@@ -21,7 +21,7 @@
 | Même cas en Python, côte à côte | 13.6 s / it, 3.18 Go, 456 s → **exe = Python** |
 | Même cas, mesure antérieure (machine plus rapide ce jour-là) | 8.5 s / it, 2.9 Go, préparation 31 s + 172 s |
 | 3D 64³ (262 144) dans l'interface | maillage + vue 11.6 s, 3 it en 65.5 s (solveur 10 s), figures < 1 s, pic 1.19 Go |
-| fields.vtk ASCII 10⁶ cellules | 169 Mo |
+| fields.vtk 10⁶ cellules (E3, côte à côte) | texte 14.0–15.1 s, 173 Mo → binaire 0.31–0.35 s, 121 Mo |
 | Distance à la paroi 10⁶ cellules (E2, côte à côte) | 206 s → 25.5 s, identique au bit près |
 | Calcul complet 10⁶ cellules, 10 it (E2, côte à côte) | 375 s → 195 s (préparation 254 s → 78 s) |
 | Distance à la paroi 2D, 490 000 cellules | 91 s → 2.7 s |
@@ -41,6 +41,9 @@ calcul stationnaire 10⁶ cellules = quelques centaines d'itérations ≈ 1 à 1
 - 3D : figures en coupe z = constante (`mesh3d/slice.py`, maillages en couches selon z) ;
   champs complets dans `fields.vtk` (ParaView). Compressible, couplé, poreux, swirl, disques,
   animations, axisymétrique : refusés en 3D avec message.
+- VTK : binaire par défaut (`[output] vtk_format = "ascii"` = ancien texte, identique
+  octet pour octet) ; `read_vtk` dans `mesh2d/io.py` (lecteur minimal, tests) ; pas de
+  dépendance à VTK/meshio (test avec le lecteur VTK officiel ignoré s'il est absent).
 - Extrusion multi-couches ≠ 2D exact (Rhie-Chow : diffusion z dans a_P) ; une couche entre
   deux plans de symétrie = 2D exact. Documenté (README § 8, limite 17).
 

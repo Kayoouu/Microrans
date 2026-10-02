@@ -278,9 +278,9 @@ def read_mesh(path, patch_types: dict | None = None) -> Mesh2D:
     raise ValueError(f"Format de maillage non supporté en lecture : {ext} (msh, su2)")
 
 
-def write_mesh(mesh: Mesh2D, path, cell_data: dict | None = None):
+def write_mesh(mesh: Mesh2D, path, cell_data: dict | None = None, binary: bool = True):
     """Écrit selon l'extension : .msh, .su2, .vtk ; un dossier (ou 'foam') -> polyMesh OpenFOAM.
-    Maillage 3D : .vtk seulement."""
+    Maillage 3D : .vtk seulement. binary : .vtk binaire (défaut) ou texte."""
     path = Path(path)
     ext = path.suffix.lower()
     if getattr(mesh, "dim", 2) == 3 and ext != ".vtk":
@@ -291,7 +291,7 @@ def write_mesh(mesh: Mesh2D, path, cell_data: dict | None = None):
     elif ext == ".su2":
         write_su2(mesh, path)
     elif ext == ".vtk":
-        write_vtk(mesh, path, cell_data)
+        write_vtk(mesh, path, cell_data, binary=binary)
     elif ext in ("", ".foam"):
         write_openfoam(mesh, path.with_suffix(""))
     else:
@@ -460,23 +460,69 @@ def read_su2(path, patch_types: dict | None = None) -> Mesh2D:
 
 
 # --- VTK ---------------------------------------------------------------------------------
-def write_vtk(mesh: Mesh2D, path, cell_data: dict | None = None, title: str = "microrans"):
-    """VTK legacy ASCII (UNSTRUCTURED_GRID), lisible par ParaView ; maillage 2D (z = 0) ou
-    3D (hexaèdres, prismes, pyramides, tétraèdres)."""
+def write_vtk(mesh: Mesh2D, path, cell_data: dict | None = None, title: str = "microrans",
+              binary: bool = True):
+    """VTK legacy (UNSTRUCTURED_GRID), lisible par ParaView ; maillage 2D (z = 0) ou 3D
+    (hexaèdres, prismes, pyramides, tétraèdres).
+
+    binary = True (défaut) : données binaires gros-boutistes (format « BINARY » du VTK
+    legacy), double précision, relecture exacte ; binary = False : texte, 10 chiffres
+    significatifs. Mesuré (10⁶ hexaèdres, U + 4 champs scalaires, machine de test) : texte
+    14.0 à 15.1 s et 173 Mo, binaire 0.31 à 0.35 s et 121 Mo (README § 7)."""
     dim = getattr(mesh, "dim", 2)
     pts = mesh.points if dim == 3 else np.column_stack([mesh.points, np.zeros(mesh.n_points)])
+    nv_all = np.asarray(mesh.cell_nv)
+    if dim == 3:
+        from ..mesh3d.mesh import VTK_TYPES as types
+    else:
+        types = {3: 5, 4: 9}                         # triangle, quadrilatère ; sinon polygone
+    if not binary:
+        _write_vtk_ascii(mesh, path, cell_data, title, pts, nv_all, types, dim)
+        return
+    nc = mesh.n_cells
+    cn = np.asarray(mesh.cell_nodes)
+    keep = np.arange(cn.shape[1])[None, :] < nv_all[:, None]
+    conn = np.column_stack([nv_all, cn])[np.column_stack([np.ones(nc, bool), keep])]
+    if conn.size >= 2 ** 31:
+        raise ValueError("Maillage trop grand pour le format VTK legacy (entiers 32 bits).")
+    lut = {int(k): types.get(int(k), 7) for k in np.unique(nv_all)}
+    ctypes = np.array([lut[int(k)] for k in nv_all], dtype=">i4") if nc else np.zeros(0, ">i4")
+
+    def block(f, head, arr, dtype):
+        f.write(head.encode("utf-8") + b"\n")        # noms accentués : comme le texte
+        f.write(np.ascontiguousarray(arr, dtype=dtype).tobytes())
+        f.write(b"\n")
+
+    with open(path, "wb") as f:
+        f.write(f"# vtk DataFile Version 3.0\n{title}\nBINARY\nDATASET UNSTRUCTURED_GRID\n"
+                .encode("utf-8"))
+        block(f, f"POINTS {mesh.n_points} double", pts, ">f8")
+        block(f, f"CELLS {nc} {conn.size}", conn, ">i4")
+        block(f, f"CELL_TYPES {nc}", ctypes, ">i4")
+        if cell_data:
+            f.write(f"CELL_DATA {nc}\n".encode("utf-8"))
+            for name, arr in cell_data.items():
+                arr = np.asarray(arr, float)
+                safe = re.sub(r"\W", "_", name)
+                if arr.ndim == 1:
+                    block(f, f"SCALARS {safe} double 1\nLOOKUP_TABLE default", arr, ">f8")
+                else:
+                    v3 = arr[:, :3] if arr.shape[1] >= 3 else np.column_stack(
+                        [arr, np.zeros((len(arr), 3 - arr.shape[1]))])
+                    block(f, f"VECTORS {safe} double", v3, ">f8")
+
+
+def _write_vtk_ascii(mesh, path, cell_data, title, pts, nv_all, types, dim):
+    """Format texte (avant le lot E3 : seul format ; inchangé)."""
     lines = ["# vtk DataFile Version 3.0", title, "ASCII", "DATASET UNSTRUCTURED_GRID",
              f"POINTS {mesh.n_points} double"]
     lines += [f"{x:.10g} {y:.10g} {z:.10g}" for x, y, z in pts]
-    nv_all = mesh.cell_nv
     total = int(np.sum(nv_all + 1))
     lines.append(f"CELLS {mesh.n_cells} {total}")
     if dim == 3:
-        from ..mesh3d.mesh import VTK_TYPES as types
         rows = mesh.cells_as_lists()
     else:
         rows = [row[:nv] for row, nv in zip(mesh.cell_nodes, nv_all)]
-        types = {3: 5, 4: 9}                         # triangle, quadrilatère ; sinon polygone
     lines += [f"{len(row)} " + " ".join(str(v) for v in row) for row in rows]
     lines.append(f"CELL_TYPES {mesh.n_cells}")
     lines += [str(types.get(int(nv), 7)) for nv in nv_all]
@@ -494,6 +540,67 @@ def write_vtk(mesh: Mesh2D, path, cell_data: dict | None = None, title: str = "m
                     [arr, np.zeros((len(arr), 3 - arr.shape[1]))])
                 lines += [f"{a:.10g} {b:.10g} {c:.10g}" for a, b, c in v3]
     Path(path).write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def read_vtk(path) -> dict:
+    """Relit un fichier VTK legacy UNSTRUCTURED_GRID écrit par `write_vtk` (texte ou binaire) :
+    {"title", "binary", "points" (n, 3), "cells" (connectivité à plat : n, i0, … par
+    cellule), "cell_types", "cell_data" {nom: tableau}}. Lecteur minimal (tests, contrôle des
+    sorties) ; ParaView lit les deux formats."""
+    raw = Path(path).read_bytes()
+    pos = 0
+
+    def line() -> str:
+        nonlocal pos
+        end = raw.find(b"\n", pos)
+        end = len(raw) if end < 0 else end
+        out = raw[pos:end].decode("utf-8", errors="replace").strip()
+        pos = end + 1
+        return out
+
+    line()                                           # « # vtk DataFile Version … »
+    res = {"title": line(), "cell_data": {}}
+    fmt = line().upper()
+    if fmt not in ("ASCII", "BINARY"):
+        raise ValueError(f"{path} : format VTK {fmt!r} inconnu (ASCII ou BINARY attendu).")
+    binary = res["binary"] = fmt == "BINARY"
+
+    def values(count, big_endian, kind):
+        nonlocal pos
+        if binary:
+            dt = np.dtype(big_endian)
+            arr = np.frombuffer(raw, dtype=dt, count=count, offset=pos).astype(kind)
+            pos += count * dt.itemsize
+            if raw[pos:pos + 1] == b"\n":
+                pos += 1
+            return arr
+        toks: list[str] = []
+        while len(toks) < count:
+            toks += line().split()
+        return np.array(toks[:count], dtype=kind)
+
+    nc = 0
+    while pos < len(raw):
+        words = line().split()
+        if not words or words[0] == "DATASET":
+            continue
+        kw = words[0]
+        if kw == "POINTS":
+            res["points"] = values(3 * int(words[1]), ">f8", float).reshape(-1, 3)
+        elif kw == "CELLS":
+            res["cells"] = values(int(words[2]), ">i4", np.int64)
+        elif kw == "CELL_TYPES":
+            res["cell_types"] = values(int(words[1]), ">i4", np.int64)
+        elif kw == "CELL_DATA":
+            nc = int(words[1])
+        elif kw == "SCALARS":
+            line()                                   # LOOKUP_TABLE default
+            res["cell_data"][words[1]] = values(nc, ">f8", float)
+        elif kw == "VECTORS":
+            res["cell_data"][words[1]] = values(3 * nc, ">f8", float).reshape(-1, 3)
+        else:
+            raise ValueError(f"{path} : section VTK {kw!r} non prise en charge.")
+    return res
 
 
 # --- OpenFOAM ----------------------------------------------------------------------------

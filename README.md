@@ -116,8 +116,10 @@ microrans schemes -o docs                       # étude précision / coût des 
 ```
 
 Sorties d'un calcul 2D : `summary.json` (convergence, Cd, Cl, y⁺, Strouhal, Nusselt),
-`history.csv`, `wall_<patch>.csv` (Cp, Cf, y⁺, T, flux), `fields.vtk` (ParaView), figures,
-`checkpoint.npz` (sauvegarde pour reprise).
+`history.csv`, `wall_<patch>.csv` (Cp, Cf, y⁺, T, flux), `fields.vtk` (ParaView ; VTK
+« legacy » binaire, valeurs exactes en double précision ; `[output] vtk_format = "ascii"`
+pour l'ancien format texte à 10 chiffres), figures, `checkpoint.npz` (sauvegarde pour
+reprise).
 
 **Sauvegarde et reprise** : `checkpoint.npz` est écrit à la fin, à l'arrêt demandé et toutes
 les 5 minutes (`[output] checkpoint_minutes`). Sur le **même maillage**, la reprise est
@@ -246,6 +248,7 @@ moment_center = [0.25, 0.0]   # Cm autour du quart de corde (positif = cabrer)
 nusselt = "bulk"           # conduites : Nu local sur la température de mélange
 probes = [[1.0, 0.0], [2.0, 0.5]]   # sondes : Ux, Uy, p à chaque itération (history.csv)
 average_from = 50.0        # instationnaire : moyennes et écarts-types (Ux_mean, p_rms…)
+vtk_format = "binary"      # fields.vtk binaire (défaut) ou "ascii" (texte)
 animate = "vorticity"      # instationnaire : animation_vorticity.gif (~100 images)
 [[output.lines]]           # profil le long d'une ligne : line_sillage.csv / .png
 name = "sillage"
@@ -619,7 +622,7 @@ Plus : conduction pure (profil linéaire exact à 1e-8), flux imposé (T paroi =
 | Cavité, cylindre extrudés sur une couche entre plans de symétrie | champs ; C_d | identiques au 2D (1e-12 ; 1e-10) | même cas en 2D |
 | Canal Re_τ = 395 extrudé, périodique en x et z, SA / SST / k-ω / k-ε / SST-γ | U_b | écart au 2D ≤ 3e-6 ; SA 17.6402, τ_w = 1.000 | 2D ; 1D 17.6398 |
 | Conduite carrée turbulente, SST, Re_τ = 180 (2 048 cellules) | λ ; écoulement secondaire | 0.0419 ; nul (1e-14) | Blasius 0.0410 (ordre de grandeur) ; non nul en réalité (limite des modèles, § 8) |
-| Sortie VTK (hexaèdres, prismes) | volumes recalculés par la bibliothèque VTK 9.7 | égaux à 1e-8 (précision ASCII) | volumes du solveur |
+| Sortie VTK (hexaèdres, prismes) | volumes recalculés par la bibliothèque VTK 9.7 | égaux à 2e-14 (binaire ; 2e-8 en texte) | volumes du solveur |
 
 ### 1D (canal plan, 192 mailles, y1⁺ = 0.2)
 
@@ -708,11 +711,11 @@ l'arrondi près (~1e-13), et identiques quel que soit le nombre de fils.
 **3D** (cavité cubique Re = 100, hexaèdres, SIMPLEC + AMG, un processus, machine de test à
 4 cœurs ; pic mémoire de tout le calcul) :
 
-| Cellules | Maillage | Distance à la paroi (avant → après E2) | Par itération, laminaire | idem, SST | Mémoire | fields.vtk |
+| Cellules | Maillage | Distance à la paroi (avant → après E2) | Par itération, laminaire | idem, SST | Mémoire | fields.vtk (texte → binaire) |
 |---:|---:|---:|---:|---:|---:|---:|
-| 32 768 (32³) | 1.2 s | 2.7 s → 0.41 s | 0.15 s (4.5 µs/cellule) | — | 0.45 Go | 5 Mo |
-| 262 144 (64³) | 6.1 s | 34 s → 3.7 s | 1.5 s (5.7 µs/cellule) | 2.1 s | 0.9 Go | 47 Mo |
-| 1 000 000 (100³) | 31 s | 206 s → 25.5 s | 8.5 s (8.5 µs/cellule) | — | 2.9 Go | 169 Mo |
+| 32 768 (32³) | 1.2 s | 2.7 s → 0.41 s | 0.15 s (4.5 µs/cellule) | — | 0.45 Go | 5.6 → 4.0 Mo |
+| 262 144 (64³) | 6.1 s | 34 s → 3.7 s | 1.5 s (5.7 µs/cellule) | 2.1 s | 0.9 Go | 48 → 32 Mo |
+| 1 000 000 (100³) | 31 s | 206 s → 25.5 s | 8.5 s (8.5 µs/cellule) | — | 2.9 Go | 173 → 121 Mo |
 
 Ces durées varient de plus de 50 % d'un jour à l'autre sur la même machine virtuelle :
 10⁶ cellules remesurées plus tard, exécutable Linux et Python côte à côte, dans les mêmes
@@ -739,6 +742,14 @@ de coût corrigés pendant ces mesures : la distance à la paroi était calculé
 (le solveur réimposait les types de frontières et vidait le cache : +30 s à 64³, aussi en
 2D où elle est bon marché), et la géométrie des faces était calculée d'un bloc (pic de
 5.2 Go au maillage de 10⁶ cellules, 1.6 Go maintenant).
+
+**Écriture de `fields.vtk`** (lot E3) : VTK « legacy » binaire par défaut (gros-boutiste,
+double précision : valeurs relues au bit près ; lu par ParaView, vérifié avec le lecteur de
+la bibliothèque VTK 9.7 sur triangles, quadrilatères, polygones, hexaèdres, prismes). Mêmes
+champs écrits côte à côte : 10⁶ cellules (U + 4 champs) 14.0 à 15.1 s → 0.31 à 0.35 s,
+173 → 121 Mo ; 64³ 1.9 s → 0.07 s. Le fichier ne rétrécit que de 30 % : les nombres restent
+en double précision (le texte n'en gardait que 10 chiffres). `[output] vtk_format = "ascii"`
+redonne l'ancien fichier texte, identique octet pour octet.
 
 ---
 
@@ -830,8 +841,7 @@ de coût corrigés pendant ces mesures : la distance à la paroi était calculé
      actuateurs, solveur couplé, animations, compressible, profil de débit parabolique ;
    - coût (§ 7) : ~8.5 à 14 s par itération et ~3 Go pour 10⁶ cellules en laminaire, plus
      ~1.5 min de préparation et d'écriture (maillage ~35 s, distance à la paroi exacte
-     ~25 s) ; fichiers VTK ASCII
-     volumineux (169 Mo pour 10⁶ cellules) ;
+     ~25 s) ; `fields.vtk` de 121 Mo pour 10⁶ cellules (binaire, écrit en ~0.3 s) ;
    - un écoulement plan calculé sur **plusieurs couches** en z n'est pas identique au 2D :
      la diffusion à travers les faces z intérieures entre dans a_P, donc dans
      l'interpolation de Rhie-Chow (cylindre Re = 20 extrudé sur 2 couches : C_d 2.17561 au
@@ -860,7 +870,7 @@ corrections de courbure et de rotation, loi de paroi thermique et k-ε haut-Reyn
 viscoélasticité ; compressible turbulent (RANS) et axisymétrique, écart transsonique ; solveur
 couplé : énergie et turbulence dans le système couplé, préconditionneur multigrille par blocs
 pour les grands maillages. 3D : mailleur général (tétraèdres, couches prismatiques), import
-Gmsh 3D, coupes x / y dans l'interface, VTK binaire.
+Gmsh 3D, coupes x / y dans l'interface.
 
 ---
 

@@ -339,7 +339,8 @@ def run_case(cfg: dict, base_dir=".", out_dir=None, verbose=True, plot=True, cal
             if recorder is not None:
                 recorder.record(s, n0 + n)
             if vtk_every and (n0 + n) % vtk_every == 0:
-                write_vtk(s.mesh, out / f"fields_{n0 + n:06d}.vtk", s.fields())
+                write_vtk(s.mesh, out / f"fields_{n0 + n:06d}.vtk", s.fields(),
+                          binary=str(oc.get("vtk_format", "binary")).lower() != "ascii")
             autosave(s)
             return callback(s, n) if callback else None
         hist = solver.series_restart + solver.run_transient(
@@ -457,7 +458,8 @@ def run_case(cfg: dict, base_dir=".", out_dir=None, verbose=True, plot=True, cal
                                                  ensure_ascii=False),
                                       encoding="utf-8")
     if oc.get("vtk", True):
-        write_vtk(solver.mesh, out / "fields.vtk", solver.fields())
+        write_vtk(solver.mesh, out / "fields.vtk", solver.fields(),
+                  binary=str(oc.get("vtk_format", "binary")).lower() != "ascii")
     if plot and oc.get("plots", True):
         from .post import plot_case
         plot_case(solver, hist, out, mode, force_patches, qdyn)

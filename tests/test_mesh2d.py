@@ -9,7 +9,7 @@ from microrans.mesh2d import (NACA4, Circle, Rectangle, Spline, backward_facing_
                               block_mesh, cavity_mesh, channel_mesh, grading_distribution,
                               hybrid_mesh, o_grid, read_curve, read_mesh, rectangle_mesh,
                               shape_from_dict, triangle_quality, triangulate, write_mesh)
-from microrans.mesh2d.io import write_openfoam
+from microrans.mesh2d.io import read_vtk, write_openfoam
 
 
 def closed_cells(mesh):
@@ -181,7 +181,7 @@ def test_mesh_roundtrip(tmp_path, ext):
 def test_vtk_and_openfoam_export(tmp_path):
     m = channel_mesh(1.0, 2.0, 3, 8)
     write_mesh(m, tmp_path / "m.vtk", {"a": m.cell_volumes, "c": m.cell_centers})
-    assert "CELL_TYPES 24" in (tmp_path / "m.vtk").read_text()
+    assert len(read_vtk(tmp_path / "m.vtk")["cell_types"]) == 24
     d = write_openfoam(m, tmp_path / "case")
     b = (d / "boundary").read_text()
     assert "cyclic" in b and "neighbourPatch  outlet" in b and "empty" in b

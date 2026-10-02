@@ -438,7 +438,8 @@ def run_compressible_case(cfg: dict, base_dir=".", out_dir=None, verbose=True, p
                                                  ensure_ascii=False, default=float),
                                       encoding="utf-8")
     if oc.get("vtk", True):
-        write_vtk(solver.mesh, out / "fields.vtk", solver.fields())
+        write_vtk(solver.mesh, out / "fields.vtk", solver.fields(),
+                  binary=str(oc.get("vtk_format", "binary")).lower() != "ascii")
     if plot and oc.get("plots", True):
         plot_compressible(solver, hist, out, mode, force_patches, qinf)
     if verbose:                                     # avant : JSON brut de ~60 lignes

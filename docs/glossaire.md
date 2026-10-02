@@ -184,7 +184,8 @@ poursuivre (« Continuer », `--continue`) ou de repartir sur un autre maillage
 l'affiche dans l'onglet « Fichier de cas (TOML) ».
 
 **VTK** — `fields.vtk` : champs du calcul, à ouvrir dans ParaView pour des visualisations
-avancées.
+avancées. Binaire par défaut (valeurs exactes) ; `[output] vtk_format = "ascii"` pour un
+fichier texte lisible dans un éditeur.
 
 **summary.json** — toutes les valeurs du résumé de fin de calcul (efforts, convergence,
 sondes…), lisibles par un script.
