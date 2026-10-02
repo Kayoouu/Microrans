@@ -10,6 +10,10 @@ commit. Ce journal sert à retrouver ce qui a été fait, pourquoi, et ce qui a 
   `a_faire.md` ; Stop bloque une fois si du code a été commité après la dernière mise à jour
   de la mémoire.
 - `.gitignore` : `.claude/*` reste ignoré sauf `settings.json`, `memoire/`, `hooks/`.
+- Autonomie : l'utilisateur a choisi « 1 lot par jour sauf exception » → routine
+  `trig_01RCTjquBZw82GuKW83rPuSG`, tous les jours à 03h53 UTC dans cette session.
+- Non vérifiable dans le tour : les hooks du projet ne sont chargés qu'au démarrage d'une
+  session (ou relance du conteneur) ; scripts testés à la main (pipe-test), JSON validé.
 
 ## 2026-10-01 — Lot E : 3D dans l'exécutable (f08fb62, b289a91)
 

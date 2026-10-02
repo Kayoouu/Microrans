@@ -35,6 +35,13 @@ est à lire quand il faut retrouver le détail d'un lot passé.
 
 ## Autonomie
 
+Rythme choisi par l'utilisateur : « 1 lot par jour sauf exception ». Une relance
+quotidienne programmée (routine `trig_01RCTjquBZw82GuKW83rPuSG`, 03h53 UTC) réveille la
+session ; chaque relance = un lot. Exceptions : lot fini tôt et suivant petit (< 1 h) →
+l'enchaîner ; CI rouge → la corriger d'abord ; décision qui revient à l'utilisateur →
+s'arrêter et demander. Si l'utilisateur demande d'arrêter : désactiver la routine
+(`update_trigger`, enabled = false) et le noter dans `etat.md`.
+
 Sans demander : les tâches de `a_faire.md` dans l'ordre, corrections de bugs, tests,
 documentation, mesures, relance de la construction des exécutables (workflow_dispatch).
 Réordonner la liste est permis si une mesure le justifie (noter la raison dans le journal).

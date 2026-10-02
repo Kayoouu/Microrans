@@ -10,6 +10,8 @@
   (Windows : artefact 11201355109, Linux : 11201055273 ; expirent le 2026-12-30).
 - Suite de tests : 436 réussis, 1 ignoré (437), ~8 min en série sur la machine de session.
 - Aucune release publiée depuis cet environnement (tag refusé) : c'est à l'utilisateur.
+- Autonomie : routine quotidienne `trig_01RCTjquBZw82GuKW83rPuSG` (cron `53 3 * * *` UTC,
+  dans cette session), 1 lot par jour sauf exception ; première relance 2026-10-03.
 
 ## Chiffres mesurés de référence (machine virtuelle 4 cœurs, ±50 % selon le jour)
 
