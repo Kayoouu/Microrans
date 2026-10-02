@@ -6,9 +6,10 @@
   PySide6 et exécutables PyInstaller Windows / Linux (CI GitHub Actions).
 - Dernier lot terminé : **Lot E3 — VTK binaire** (2026-10-02 ; voir journal). Avant :
   E2 distance à la paroi (3c50fb4), E — 3D dans l'exécutable (f08fb62, b289a91).
-- Exécutables de 3c50fb4 (lot E2) : run https://github.com/Kayoouu/Microrans/actions/runs/37043909908
-  (Windows : artefact 11243792229, Linux : 11243766987 ; expirent le 2026-12-31). CI verte.
-- Suite de tests : 442 (441 réussis, 1 ignoré), 5 à 8 min en série sur la machine de session.
+- Exécutables de a4693bd (lot E3) : run https://github.com/Kayoouu/Microrans/actions/runs/37076055233
+  (Windows : artefact 11256343045, Linux : 11257185492 ; expirent le 2026-12-31). CI verte
+  (tests https://github.com/Kayoouu/Microrans/actions/runs/37076055218).
+- Suite de tests : 450 (449 réussis, 1 ignoré), 5 à 8 min en série sur la machine de session.
 - Aucune release publiée depuis cet environnement (tag refusé) : c'est à l'utilisateur.
 - Autonomie : routine quotidienne `trig_01RCTjquBZw82GuKW83rPuSG` (cron `53 3 * * *` UTC,
   dans cette session), 1 lot par jour sauf exception ; première relance 2026-10-03.

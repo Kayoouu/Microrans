@@ -26,6 +26,9 @@ commit. Ce journal sert à retrouver ce qui a été fait, pourquoi, et ce qui a 
   noté pour la tâche « import 3D ».
 - Tests : `tests/test_vtk.py` (8), `test_case3d` / `test_mesh2d` relisent par `read_vtk` ;
   CI exécutables : en-tête « BINARY » vérifié sur le calcul 3D.
+- Commit a4693bd ; CI verte (tests 3.10 / 3.12, exécutables Windows et Linux, run
+  37076055233). Titre du commit « 40 fois » : vrai à 10⁶ cellules (40 à 49), 27 fois à 64³
+  (corps du message exact ; historique non réécrit).
 
 ## 2026-10-02 — Lot E2 : distance à la paroi accélérée
 
