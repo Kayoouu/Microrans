@@ -214,6 +214,7 @@ maillage suffisait. Ce contrôle est à faire pour tout nouveau cas.
   2D en 3D » ; dans un fichier de cas, `[mesh.extrude]` (`z0`, `z1`, `nz`) sous un maillage
   2D, ou `[mesh] type = "box"` ; les vecteurs prennent 3 composantes. Exemples :
   `conduite_carree_3d` (solution exacte), `canal_turbulent_3d`, `cavite_cubique_re100_3d`.
-  Les figures montrent un plan z = constante (page Résultats : « Plan de coupe z ») ; le
-  champ complet est dans `fields.vtk` (ParaView). Ce qui n'existe pas en 3D : README, § 8,
+  Les figures montrent un plan x, y ou z = constante (page Résultats : « Plan de coupe »,
+  axe puis cote ; vide : plan médian) — pour une conduite selon x, le plan x = cte montre la
+  section ; le champ complet est dans `fields.vtk` (ParaView). Ce qui n'existe pas en 3D : README, § 8,
   limite 17.

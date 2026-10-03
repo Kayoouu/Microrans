@@ -3,6 +3,32 @@
 Détail des chiffres : README (§ 6 validation, § 7 performances, § 8 limites) et messages de
 commit. Ce journal sert à retrouver ce qui a été fait, pourquoi, et ce qui a été constaté.
 
+## 2026-10-03 — Lot E4 : coupes x / y dans l'interface 3D
+
+- Relance quotidienne (routine) ; CI verte au départ.
+- Fait : `PlaneSlice` (`mesh3d/slice.py`) : cellules coupées repérées par le signe de
+  x − c aux sommets, intersection des arêtes (tableaux par type : hexa 12 arêtes, prisme 9,
+  pyramide 8, tétraèdre 6), points en double fusionnés (plan par un sommet), polygones
+  d'aire nulle écartés, sommets rangés par angle autour du barycentre ; plan sur une face :
+  cellule du dessus (comme ZSlice), face extrême haute : cellule du bord. `slice_mesh` :
+  ZSlice pour z (inchangé), PlaneSlice pour x / y.
+- Interface : « Plan de coupe (3D) » = axe (z / x / y) + cote ; vecteurs = composantes
+  dans le plan ; vorticité = composante normale au plan (ω_x, ω_y, ω_z) ; axes nommés ;
+  zoom sur les corps seulement en coupe z ; vue du maillage : plan dessiné en perspective.
+  `_selftest` : coupe x de la conduite (titre « plan x = 0.25 », axe horizontal y).
+- Vérifié : somme des aires = aire exacte de la section à 1e-15 près (pavé gradué, plans par
+  les nœuds et les faces extrêmes ; extrusion autour d'un cylindre : épaisseur × longueur de
+  la droite dans le maillage 2D ; 1 296 tétraèdres de Kuhn déformés ; 6 pyramides, plan par
+  le sommet commun) ; coupe z PlaneSlice = ZSlice (mêmes cellules, mêmes aires). Coût 10⁶
+  hexaèdres : 0.35 à 0.41 s (ZSlice 0.65 s).
+- Captures regardées : conduite carrée x = cte (section, U_x max au centre), cavité cubique
+  x = 0.5 (écoulement secondaire), y = 0.5 ω_y (antisymétrique par rapport à z = 0.5,
+  attendu), vue du maillage avec le plan (plan gris discret mais visible).
+- Défauts trouvés en route : numérotation des sommets cumulée par ligne au lieu de
+  globalement (aire 4.13 au lieu de 3 : vue par le contrôle des aires) ; variable de boucle
+  `w` qui écrasait la page Résultats (Qt : « QVBoxLayout already deleted », vue par les
+  tests). Corrigés avant commit.
+
 ## 2026-10-02 — Lot E3 : VTK binaire
 
 - Fait : `write_vtk(..., binary=True)` (VTK legacy BINARY, gros-boutiste, `>f8` points et

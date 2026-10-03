@@ -940,11 +940,22 @@ class MainWindow(QMainWindow):
         self.mesh_check = self._check("Superposer le maillage", False)
         self.vec_check = self._check("Vecteurs vitesse", False)
         f.addRow("Grandeur", self.field_combo)
-        self.slice_z = SciEdit(None, allow_empty=True, placeholder="plan médian")
-        self.slice_z.setToolTip("Cas 3D : cote z du plan de coupe des figures (vide : plan "
-                                "médian). Champs complets : fields.vtk dans ParaView.")
-        self.slice_z.setEnabled(False)
-        f.addRow("Plan de coupe z (3D)", self.slice_z)
+        # cas 3D : plan de coupe des figures (axe, cote ; vide : plan médian)
+        self.slice_axis = combo([("z", "z ="), ("x", "x ="), ("y", "y =")])
+        self.slice_axis.setMinimumContentsLength(4)
+        self.slice_axis.setToolTip("Cas 3D : plan de coupe des figures — z = cte (vue x, y), "
+                                   "x = cte (vue y, z), y = cte (vue x, z).")
+        self.slice_value = SciEdit(None, allow_empty=True, placeholder="plan médian")
+        self.slice_value.setToolTip("Cas 3D : cote du plan de coupe (vide : plan médian). "
+                                    "Champs complets : fields.vtk dans ParaView.")
+        row = QWidget()
+        hl = QHBoxLayout(row)
+        hl.setContentsMargins(0, 0, 0, 0)
+        hl.addWidget(self.slice_axis)
+        hl.addWidget(self.slice_value, 1)
+        for wid in (self.slice_axis, self.slice_value):
+            wid.setEnabled(False)
+        f.addRow("Plan de coupe (3D)", row)
         f.addRow("Palette", self.cmap_combo)
         f.addRow(self.zoom_check)
         f.addRow(self.mesh_check)
@@ -1290,10 +1301,11 @@ class MainWindow(QMainWindow):
         for _, w, _, kind in self.binder.items:
             if kind == "vec" and getattr(w, "follow_dim", False) and w is not self.grading_edit:
                 w.set_dim(dim)
-        if hasattr(self, "slice_z"):                 # page Résultats construite
+        if hasattr(self, "slice_value"):             # page Résultats construite
             for w in (self.line_start, self.line_end):
                 w.set_dim(dim)
-            self.slice_z.setEnabled(dim == 3)
+            self.slice_axis.setEnabled(dim == 3)
+            self.slice_value.setEnabled(dim == 3)
         if hasattr(self, "bc_table"):
             self._style_bc_table()
 
@@ -1564,12 +1576,15 @@ class MainWindow(QMainWindow):
         self.tabs.setCurrentIndex(0)
 
     def _slice(self, mesh=None):
-        """Coupe du maillage 3D au plan z choisi (page Résultats ; vide : plan médian)."""
-        from ..mesh3d.slice import ZSlice
-        return ZSlice(mesh or self.mesh, self.slice_z.value())
+        """Coupe du maillage 3D au plan choisi (page Résultats : axe x, y ou z, cote ; vide :
+        plan médian)."""
+        from ..mesh3d.slice import slice_mesh
+        return slice_mesh(mesh or self.mesh, self.slice_axis.currentData() or "z",
+                          self.slice_value.value())
 
     def _draw_mesh_3d(self, zoom):
-        """Maillage 3D : vue d'ensemble des frontières (perspective) et coupe z = cte."""
+        """Maillage 3D : vue d'ensemble des frontières (perspective) avec le plan, et coupe
+        x, y ou z = cte (page Résultats)."""
         from ..mesh2d.plot import plot_mesh
         m = self.mesh
         q = m.quality()
@@ -1604,8 +1619,19 @@ class MainWindow(QMainWindow):
             ax2.text(0.5, 0.5, "Coupe impossible :\n" + textwrap.fill(str(exc), 32),
                      ha="center", va="center", fontsize=10, color="#52514e")
         else:
-            plot_mesh(sl, ax=ax2, zoom=zoom, linewidth=0.25 if sl.n_cells < 30000 else 0.1,
-                      show_patches=False, title=f"Coupe z = {sl.z:.4g}")
+            # plan de coupe dans la vue en perspective (repère visuel)
+            a = "xyz".index(sl.axis)
+            u, v = [k for k in range(3) if k != a]
+            corners = np.zeros((4, 3))
+            corners[:, a] = sl.value
+            corners[:, u] = [lo[u], hi[u], hi[u], lo[u]]
+            corners[:, v] = [lo[v], lo[v], hi[v], hi[v]]
+            ax1.add_collection3d(Poly3DCollection([corners], facecolor="#52514e", alpha=0.15,
+                                                  edgecolor="#0b0b0b", linewidths=0.8))
+            plot_mesh(sl, ax=ax2, zoom=zoom if sl.axis == "z" else None,
+                      linewidth=0.25 if sl.n_cells < 30000 else 0.1,
+                      show_patches=False, title=f"Coupe {sl.axis} = {sl.value:.4g}")
+            ax2.set(xlabel=sl.labels[0], ylabel=sl.labels[1])
         self.canvas.draw()
         self.tabs.setCurrentIndex(0)
 
@@ -2485,25 +2511,31 @@ class MainWindow(QMainWindow):
             return
         key = self.field_combo.currentData() or "U_mag"
         f = s.fields()
+        d3 = getattr(s.mesh, "dim", 2) == 3
+        axis = (self.slice_axis.currentData() or "z") if d3 else "z"
+        label = FIELD_LABELS.get(key, key)
         if key in ("Ux", "Uy", "Uz"):
             val = s.U[:, "xyz".index(key[1])]
-        elif key == "vorticity":
+        elif key == "vorticity":                     # composante normale au plan de la figure
             g = s.grad_U(s.U)
-            val = g[:, 1, 0] - g[:, 0, 1]
+            i, j = {"x": (2, 1), "y": (0, 2), "z": (1, 0)}[axis]
+            val = g[:, i, j] - g[:, j, i]
+            label = f"vorticité ω_{axis}"
         else:
             val = f[key]
         val = np.asarray(val)
-        zoom = self._zoom() if self.zoom_check.isChecked() else None
+        zoom = self._zoom() if self.zoom_check.isChecked() and axis == "z" else None
         mesh, sel, plane, U = s.mesh, slice(None), "", s.U
-        if getattr(s.mesh, "dim", 2) == 3:          # 3D : plan z = cte
+        if d3:                                       # 3D : plan x, y ou z = cte
             try:
                 mesh = self._slice(s.mesh)
             except ValueError as exc:
                 self.canvas.message(f"Coupe impossible : {exc}\nChamps complets : "
                                     "fields.vtk (ParaView).")
                 return
-            sel, plane = mesh.cells, f" — plan z = {mesh.z:.4g}"
-            val, U = val[sel], np.asarray(s.U)[sel][:, :2]
+            sel, plane = mesh.cells, f" — plan {mesh.axis} = {mesh.value:.4g}"
+            uv = ["xyz".index(c) for c in mesh.labels]           # composantes dans le plan
+            val, U = val[sel], np.asarray(s.U)[sel][:, uv]
         vmin = vmax = None
         if key == "vorticity":
             _, L = _body_size(s)
@@ -2519,12 +2551,14 @@ class MainWindow(QMainWindow):
         if s.axisymmetric:                           # image miroir par rapport à l'axe
             mirror = -1 if key in ("Uy", "vorticity") else 1
         plot_field(mesh, val, ax=ax, cmap=cmap, zoom=zoom, vmin=vmin, vmax=vmax,
-                   title=FIELD_LABELS.get(key, key) + plane,
+                   title=label + plane,
                    vectors=U if self.vec_check.isChecked() else None, mirror=mirror)
         if self.mesh_check.isChecked():
             plot_mesh(mesh, ax=ax, zoom=zoom, linewidth=0.15, show_patches=False,
-                      title=FIELD_LABELS.get(key, key) + plane)
+                      title=label + plane)
             ax.collections[-1].set_facecolor("none")
+        if d3:
+            ax.set(xlabel=mesh.labels[0], ylabel=mesh.labels[1])
         self.canvas.draw()
         self.tabs.setCurrentIndex(0)
 
@@ -2746,6 +2780,13 @@ def _selftest(win: MainWindow, app, shot: str | None) -> int:
     for i in range(len(keys)):
         win.field_combo.setCurrentIndex(i)
         win.plot_field()
+    # coupe x = cte (section de la conduite, vue y, z), vecteurs dans le plan
+    win.slice_axis.setCurrentIndex(win.slice_axis.findData("x"))
+    win.vec_check.setChecked(True)
+    win.field_combo.setCurrentIndex(win.field_combo.findData("Ux"))
+    win.plot_field()
+    ax = win.canvas.fig.axes[0]
+    d3 = d3 and "plan x = 0.25" in ax.get_title() and ax.get_xlabel() == "y"
     win.draw_mesh()
     app.processEvents()
     ok = ok and comp and d3 and not errors

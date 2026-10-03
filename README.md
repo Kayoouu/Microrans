@@ -21,9 +21,9 @@ Outil de simulation d'écoulements **incompressibles** (laminaires ou turbulents
 - **3D, périmètre réduit** : maillages hexaédriques (pavé, ou extrusion selon z de
   n'importe quel maillage 2D : hexaèdres et prismes), incompressible laminaire et turbulent
   (mêmes modèles qu'en 2D), stationnaire (SIMPLE/SIMPLEC) et instationnaire (PIMPLE,
-  Runge-Kutta), sortie VTK (ParaView) ; interface graphique et ligne de commande (figures
-  dans un plan z = constante ; pas de mailleur 3D général : voir § 3 « Cas 3D » et les
-  limites § 8) ;
+  Runge-Kutta), sortie VTK (ParaView) ; interface graphique (figures dans un plan x, y ou
+  z = constante) et ligne de commande (plan z médian) ; pas de mailleur 3D général : voir
+  § 3 « Cas 3D » et les limites § 8 ;
 - **1D** : canal plan turbulent intégré jusqu'à la paroi (RANS et URANS pulsé), très rapide,
   idéal pour comparer les modèles ;
 - **modèles de turbulence** : Spalart-Allmaras, k-ε (Launder-Sharma), k-ω (Wilcox 2006),
@@ -171,9 +171,13 @@ compressible, profil de débit parabolique.
 Dans l'interface graphique : type de maillage « Pavé 3D », ou case « Extruder le maillage
 2D en 3D » (cadre « 3D : extrusion selon z ») sous n'importe quel maillage 2D ; les vitesses
 prennent alors une composante z (colonne `Uz` des conditions limites). Page Résultats :
-champs (`Uz` compris) dans un plan z = constante au choix (vide : plan médian), profils
-entre deux points `x, y, z` ; la vue du maillage montre les frontières en perspective et la
-coupe. Les coupes x = cte ou y = cte et les isosurfaces se font dans ParaView
+champs (`Uz` compris) dans un plan x, y ou z = constante au choix (« Plan de coupe » : axe
+et cote ; vide : plan médian) ; la figure montre les composantes de la vitesse dans le plan
+et la vorticité normale au plan (ω_x, ω_y ou ω_z) ; plan x = cte vu selon (y, z), y = cte
+selon (x, z). Profils entre deux points `x, y, z` ; la vue du maillage montre les frontières
+en perspective, le plan et la coupe. Coupe x / y : polygone d'intersection de chaque cellule
+(hexaèdres, prismes, et aussi tétraèdres, pyramides), 0.4 s pour 10⁶ cellules ; somme des
+aires égale à l'aire exacte de la section (tests). Isosurfaces, plans obliques : ParaView
 (`fields.vtk`).
 
 ### Format de cas (TOML, extrait)
@@ -835,8 +839,9 @@ redonne l'ancien fichier texte, identique octet pour octet.
 17. **3D (périmètre réduit)** :
    - maillages : pavés et extrusions seulement (hexaèdres, prismes) ; pas de mailleur 3D
      général, pas d'import de maillage 3D (Gmsh, OpenFOAM), export VTK seulement ;
-     incompressible seulement ; figures (interface et ligne de commande) dans un plan
-     z = constante seulement (coupes x ou y, isosurfaces : ParaView) ;
+     incompressible seulement ; figures dans un plan x, y ou z = constante (interface) ou
+     dans le plan z médian (ligne de commande) ; plans obliques et isosurfaces : ParaView ;
+     le « Zoom sur les corps » ne s'applique qu'aux coupes z ;
    - non disponibles : axisymétrique (sans objet), swirl, zones poreuses, disques
      actuateurs, solveur couplé, animations, compressible, profil de débit parabolique ;
    - coût (§ 7) : ~8.5 à 14 s par itération et ~3 Go pour 10⁶ cellules en laminaire, plus
@@ -870,7 +875,7 @@ corrections de courbure et de rotation, loi de paroi thermique et k-ε haut-Reyn
 viscoélasticité ; compressible turbulent (RANS) et axisymétrique, écart transsonique ; solveur
 couplé : énergie et turbulence dans le système couplé, préconditionneur multigrille par blocs
 pour les grands maillages. 3D : mailleur général (tétraèdres, couches prismatiques), import
-Gmsh 3D, coupes x / y dans l'interface.
+Gmsh 3D, choix du plan des figures en ligne de commande.
 
 ---
 
@@ -889,7 +894,7 @@ microrans/
   grid.py numerics.py flow.py solver.py cases.py   solveur 1D (canal) et ses schémas en temps
   models/                modèles de turbulence (communs 1D/2D), transition γ
   mesh2d/                géométrie CSG, blocs, O-grid, triangles, hybride, E/S, qualité, tracés
-  mesh3d/                maillage 3D (hexaèdres, prismes…), pavé, extrusion, coupe en z
+  mesh3d/                maillage 3D (hexaèdres, prismes…), pavé, extrusion, coupes planes
   fv2d/
     fvm.py               opérateurs volumes finis, assemblage CSR
     solver.py            SIMPLE(C), PIMPLE, projection RK/AB2, thermique, CL, efforts

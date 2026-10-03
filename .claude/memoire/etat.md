@@ -1,11 +1,12 @@
-# État du projet (mis à jour le 2026-10-02)
+# État du projet (mis à jour le 2026-10-03)
 
 ## Où on en est
 
 - microrans : outil RANS / URANS 1D, 2D, 3D (périmètre réduit) avec mailleur, interface
   PySide6 et exécutables PyInstaller Windows / Linux (CI GitHub Actions).
-- Dernier lot terminé : **Lot E3 — VTK binaire** (2026-10-02 ; voir journal). Avant :
-  E2 distance à la paroi (3c50fb4), E — 3D dans l'exécutable (f08fb62, b289a91).
+- Dernier lot terminé : **Lot E4 — coupes x / y dans l'interface 3D** (2026-10-03 ; voir
+  journal). Avant : E3 VTK binaire (a4693bd), E2 distance à la paroi (3c50fb4), E — 3D dans
+  l'exécutable (f08fb62, b289a91).
 - Exécutables de a4693bd (lot E3) : run https://github.com/Kayoouu/Microrans/actions/runs/37076055233
   (Windows : artefact 11256343045, Linux : 11257185492 ; expirent le 2026-12-31). CI verte
   (tests https://github.com/Kayoouu/Microrans/actions/runs/37076055218).
@@ -39,8 +40,10 @@ calcul stationnaire 10⁶ cellules = quelques centaines d'itérations ≈ 1 à 1
   k-d a été essayée et rejetée (64³ : 228 s, vecteurs changés aux égalités).
 - Numba désactivé par défaut (`[solver] numba = false`) et exclu de l'exécutable : ~10 % de
   gain mesuré, multi-fil plus lent sur la machine de test.
-- 3D : figures en coupe z = constante (`mesh3d/slice.py`, maillages en couches selon z) ;
-  champs complets dans `fields.vtk` (ParaView). Compressible, couplé, poreux, swirl, disques,
+- 3D : figures en coupe plane — interface : x, y ou z = cte (`mesh3d/slice.py` :
+  `PlaneSlice` polygones d'intersection, tous types de cellules, 0.4 s à 10⁶ ; `ZSlice`
+  inchangé pour z, maillages en couches) ; ligne de commande : plan z médian ; champs
+  complets dans `fields.vtk` (ParaView). Compressible, couplé, poreux, swirl, disques,
   animations, axisymétrique : refusés en 3D avec message.
 - VTK : binaire par défaut (`[output] vtk_format = "ascii"` = ancien texte, identique
   octet pour octet) ; `read_vtk` dans `mesh2d/io.py` (lecteur minimal, tests) ; pas de
@@ -53,14 +56,15 @@ calcul stationnaire 10⁶ cellules = quelques centaines d'itérations ≈ 1 à 1
 - Un calcul = un cœur ; SIMPLE lent sur maillages fins étirés.
 - C_l NACA 0012 transsonique ~4.5 % bas, non expliqué (tâche #30).
 - Transition γ validée seulement sur plaques sans gradient de pression.
-- 3D : pas de mailleur général ni d'import 3D ; coupes x / y absentes de l'interface.
+- 3D : pas de mailleur général ni d'import 3D ; plan des figures non réglable en ligne de
+  commande (z médian).
 
 ## Fichiers clés
 
 - Solveur incompressible 2D/3D : `microrans/fv2d/solver.py` ; cas : `fv2d/case.py` ;
   vérification des cas : `fv2d/validate.py` ; compressible : `fv2d/compressible*.py`.
 - Maillage 2D : `microrans/mesh2d/` ; 3D : `microrans/mesh3d/` (`mesh.py` dont distance à
-  la paroi, `generators.py` pavé et extrusion, `slice.py` coupe z).
+  la paroi, `generators.py` pavé et extrusion, `slice.py` coupes planes).
 - Interface : `microrans/gui/app.py` (auto-test `_selftest`, lancé par la CI sur les exe),
   `gui/widgets.py`. Exemples : `microrans/examples/*.toml`, catalogue `microrans/catalog.py`.
 - CI : `.github/workflows/tests.yml`, `build.yml` ; spec PyInstaller dans `packaging/`.

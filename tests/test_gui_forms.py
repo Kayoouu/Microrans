@@ -591,7 +591,7 @@ def test_3d_case_meshed_run_and_plotted(win, monkeypatch, tmp_path):
     _wait(win)
     assert not win.errors and win.summary["iterations"] == 3
     keys = [win.field_combo.itemData(i) for i in range(win.field_combo.count())]
-    assert "Uz" in keys and win.slice_z.isEnabled()
+    assert "Uz" in keys and win.slice_value.isEnabled() and win.slice_axis.isEnabled()
     for i in range(len(keys)):
         win.field_combo.setCurrentIndex(i)
         win.plot_field()
@@ -599,10 +599,31 @@ def test_3d_case_meshed_run_and_plotted(win, monkeypatch, tmp_path):
     win.line_start.set_value((0.5, 0.0, 0.5))
     win.line_end.set_value((0.5, 1.0, 0.5))
     win.plot_line()
-    win.slice_z.set_value(5.0)
+    win.slice_value.set_value(5.0)
     win.plot_field()
     texts = [t.get_text() for t in win.canvas.fig.axes[0].texts]
     assert any("hors du domaine" in t for t in texts)
     win.draw_mesh()
-    win.slice_z.set_value(None)
+    win.slice_value.set_value(None)
+    # lot E4 : coupes x = cte et y = cte (vue y, z et x, z), vorticité normale au plan
+    for axis, labels in (("x", ("y", "z")), ("y", ("x", "z"))):
+        win.slice_axis.setCurrentIndex(win.slice_axis.findData(axis))
+        win.slice_value.set_value(0.3)
+        win.vec_check.setChecked(True)
+        for key in ("U_mag", "vorticity"):
+            win.field_combo.setCurrentIndex(win.field_combo.findData(key))
+            win.plot_field()
+            ax = win.canvas.fig.axes[0]
+            assert f"plan {axis} = 0.3" in ax.get_title()
+            assert (ax.get_xlabel(), ax.get_ylabel()) == labels
+        assert f"ω_{axis}" in ax.get_title()
+        win.draw_mesh()
+        assert any(f"Coupe {axis} = 0.3" in a.get_title() for a in win.canvas.fig.axes)
+    win.slice_value.set_value(-1.0)
+    win.plot_field()
+    texts = [t.get_text() for t in win.canvas.fig.axes[0].texts]
+    assert any("plan y = -1 hors du domaine" in t for t in texts)
+    win.vec_check.setChecked(False)
+    win.slice_axis.setCurrentIndex(0)
+    win.slice_value.set_value(None)
     assert not win.errors

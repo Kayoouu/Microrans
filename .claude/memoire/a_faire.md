@@ -1,4 +1,4 @@
-# Liste de travail (ordre = priorité ; mise à jour le 2026-10-02 ; E3 fait)
+# Liste de travail (ordre = priorité ; mise à jour le 2026-10-03 ; E4 fait)
 
 Méthode pour chaque tâche : mesurer d'abord (profil, chiffres de départ), changer, mesurer
 côte à côte dans les mêmes conditions, tests, docs (README, chiffres), commit, CI verte,
@@ -11,27 +11,26 @@ inutile (mesure à l'appui), l'écrire dans le journal et passer à la suivante.
 
 ## À faire
 
-1. **E4 — Coupes x = cte et y = cte dans l'interface (3D).** Au moins pour les pavés
-   (cellules alignées) ; coupe générale d'hexaèdres / prismes par un plan si le coût reste
-   raisonnable. Fait quand : choix de l'axe et de la cote dans la page Résultats, tests hors
-   écran, étape ajoutée à `_selftest`, captures regardées.
-2. **#30 — Écart transsonique NACA 0012 (C_l ~4.5 % bas).** Pistes déjà écartées dans
+1. **#30 — Écart transsonique NACA 0012 (C_l ~4.5 % bas).** Pistes déjà écartées dans
    `docs/compressible.md` § 3.5. Limiter à une journée de travail ; conclure même si l'écart
    reste inexpliqué (dire ce qui a été vérifié).
-3. **Import de maillage 3D (Gmsh .msh).** `Mesh3D` connaît déjà tétraèdres, pyramides,
+2. **Import de maillage 3D (Gmsh .msh).** `Mesh3D` connaît déjà tétraèdres, pyramides,
    prismes, hexaèdres (`VTK_TYPES`) ; vérifier par des tests que le solveur les traite
    (seuls hexaèdres et prismes sont validés aujourd'hui). Frontières depuis les groupes physiques.
+   Les coupes des figures (`PlaneSlice`) gèrent déjà tétraèdres et pyramides (testé) ; la
+   coupe z de l'interface utilise `ZSlice` (maillages en couches) : passer à PlaneSlice pour z
+   si le maillage n'est pas en couches.
    Attention (mesuré au lot E3) : sur des hexaèdres à faces gauches, les volumes de VTK
    diffèrent des nôtres par cellule (1.4 % pour un gauchissement de 0.5 % de la maille,
    proportionnel ; total égal) : découpage différent des faces, pas une erreur ; à
    documenter si l'import amène de tels maillages.
    Fait quand : lecture testée sur un petit fichier versionné, calcul court, doc.
-4. **Un calcul sur plusieurs cœurs.** Numba multi-fil mesuré plus lent sur la machine de
+3. **Un calcul sur plusieurs cœurs.** Numba multi-fil mesuré plus lent sur la machine de
    test : mesurer d'abord où part le temps (AMG pyamg mono-fil, assemblage) avant de choisir.
    Ne rien promettre sans mesure.
-5. **Maillage en C pour les profils + comparaison NASA TMR** (vérifier d'abord que les
+4. **Maillage en C pour les profils + comparaison NASA TMR** (vérifier d'abord que les
    données TMR sont accessibles depuis l'environnement ; sinon le noter et passer).
-6. **Étude de convergence en maillage (GCI)** sur 2 ou 3 cas de validation du README.
+5. **Étude de convergence en maillage (GCI)** sur 2 ou 3 cas de validation du README.
 
 ## Plus tard (feuille de route du README § 9, non prioritaire)
 
@@ -40,6 +39,9 @@ thermique, k-ε haut-Reynolds, compressible turbulent et axisymétrique, couplé
 turbulence, viscoélasticité.
 
 ## Petits travaux
+
+- Ligne de commande : figures 3D toujours dans le plan z médian ; une clé `[output]` pour
+  choisir le plan (x / y / z, cote) serait simple (`slice_mesh`) si un utilisateur le demande.
 
 - Erreur ruff E731 préexistante `tests/test_mesh2d.py:74` (lambda assignée).
 
