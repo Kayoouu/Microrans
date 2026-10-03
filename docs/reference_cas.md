@@ -120,6 +120,7 @@ Exemples complets : `microrans examples` ; tutoriel : `docs/tutoriel.md`.
 | `chord` | naca : corde (défaut 1) |  |
 | `n` | naca, spline : nombre de points du contour |  |
 | `closed_te` | naca : bord de fuite fermé (défaut true) |  |
+| `trailing_edge` | naca : closed (défaut, −0.1036, workshops High-Order CFD) \| open (équation d'origine, bord de fuite épais) \| sharp (prolongée jusqu'à épaisseur nulle, Vassberg & Jameson 2010) ; prioritaire sur closed_te |  |
 | `path` | file : fichier de contour (.dat Selig/Lednicer, .csv, .dxf) |  |
 | `sharp_angle` | file : angle (°) au-delà duquel un sommet est un coin (défaut 60) |  |
 | `angle` | rotation (°, sens trigonométrique) |  |
@@ -165,6 +166,7 @@ Exemples complets : `microrans examples` ; tutoriel : `docs/tutoriel.md`.
 | `chord` | naca : corde (défaut 1) |  |
 | `n` | naca, spline : nombre de points du contour |  |
 | `closed_te` | naca : bord de fuite fermé (défaut true) |  |
+| `trailing_edge` | naca : closed (défaut, −0.1036, workshops High-Order CFD) \| open (équation d'origine, bord de fuite épais) \| sharp (prolongée jusqu'à épaisseur nulle, Vassberg & Jameson 2010) ; prioritaire sur closed_te |  |
 | `path` | file : fichier de contour (.dat Selig/Lednicer, .csv, .dxf) |  |
 | `sharp_angle` | file : angle (°) au-delà duquel un sommet est un coin (défaut 60) |  |
 | `angle` | rotation (°, sens trigonométrique) |  |
@@ -202,6 +204,7 @@ Exemples complets : `microrans examples` ; tutoriel : `docs/tutoriel.md`.
 | `chord` | naca : corde (défaut 1) |  |
 | `n` | naca, spline : nombre de points du contour |  |
 | `closed_te` | naca : bord de fuite fermé (défaut true) |  |
+| `trailing_edge` | naca : closed (défaut, −0.1036, workshops High-Order CFD) \| open (équation d'origine, bord de fuite épais) \| sharp (prolongée jusqu'à épaisseur nulle, Vassberg & Jameson 2010) ; prioritaire sur closed_te |  |
 | `path` | file : fichier de contour (.dat Selig/Lednicer, .csv, .dxf) |  |
 | `sharp_angle` | file : angle (°) au-delà duquel un sommet est un coin (défaut 60) |  |
 | `angle` | rotation (°, sens trigonométrique) |  |
@@ -456,7 +459,7 @@ Contenu libre, sous la forme `nom = valeur`.
 | `time_scheme` | auto \| euler \| backward \| crankNicolson \| rk1 \| rk2 \| rk3 \| rk4 \| ab2 | `auto` |  | incompressible seulement |
 | `tol` | critère de convergence sur les résidus | 1e-05 | 1e-06 |  |
 | `turbulence_every_outer` | turbulence à chaque boucle externe (défaut false) | false |  | incompressible seulement |
-| `venkat_k` | seuil du limiteur de Venkatakrishnan (défaut 0.05) |  | 0.05 | compressible seulement |
+| `venkat_k` | seuil du limiteur de Venkatakrishnan (défaut 0.05 ; profils transsoniques : 0.3, le défaut limite aussi hors des chocs, voir docs/compressible.md § 3.5) |  | 0.05 | compressible seulement |
 | `viscous_factor` | coefficient du pas de temps visqueux |  | 2 | compressible seulement |
 | `wall_treatment` | resolved (défaut) \| wall_function | `resolved` |  | incompressible seulement |
 

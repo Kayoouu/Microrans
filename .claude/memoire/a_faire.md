@@ -1,4 +1,4 @@
-# Liste de travail (ordre = priorité ; mise à jour le 2026-10-03 ; E4 fait)
+# Liste de travail (ordre = priorité ; mise à jour le 2026-10-03 ; #30 fait)
 
 Méthode pour chaque tâche : mesurer d'abord (profil, chiffres de départ), changer, mesurer
 côte à côte dans les mêmes conditions, tests, docs (README, chiffres), commit, CI verte,
@@ -11,10 +11,7 @@ inutile (mesure à l'appui), l'écrire dans le journal et passer à la suivante.
 
 ## À faire
 
-1. **#30 — Écart transsonique NACA 0012 (C_l ~4.5 % bas).** Pistes déjà écartées dans
-   `docs/compressible.md` § 3.5. Limiter à une journée de travail ; conclure même si l'écart
-   reste inexpliqué (dire ce qui a été vérifié).
-2. **Import de maillage 3D (Gmsh .msh).** `Mesh3D` connaît déjà tétraèdres, pyramides,
+1. **Import de maillage 3D (Gmsh .msh).** `Mesh3D` connaît déjà tétraèdres, pyramides,
    prismes, hexaèdres (`VTK_TYPES`) ; vérifier par des tests que le solveur les traite
    (seuls hexaèdres et prismes sont validés aujourd'hui). Frontières depuis les groupes physiques.
    Les coupes des figures (`PlaneSlice`) gèrent déjà tétraèdres et pyramides (testé) ; la
@@ -25,12 +22,12 @@ inutile (mesure à l'appui), l'écrire dans le journal et passer à la suivante.
    proportionnel ; total égal) : découpage différent des faces, pas une erreur ; à
    documenter si l'import amène de tels maillages.
    Fait quand : lecture testée sur un petit fichier versionné, calcul court, doc.
-3. **Un calcul sur plusieurs cœurs.** Numba multi-fil mesuré plus lent sur la machine de
+2. **Un calcul sur plusieurs cœurs.** Numba multi-fil mesuré plus lent sur la machine de
    test : mesurer d'abord où part le temps (AMG pyamg mono-fil, assemblage) avant de choisir.
    Ne rien promettre sans mesure.
-4. **Maillage en C pour les profils + comparaison NASA TMR** (vérifier d'abord que les
+3. **Maillage en C pour les profils + comparaison NASA TMR** (vérifier d'abord que les
    données TMR sont accessibles depuis l'environnement ; sinon le noter et passer).
-5. **Étude de convergence en maillage (GCI)** sur 2 ou 3 cas de validation du README.
+4. **Étude de convergence en maillage (GCI)** sur 2 ou 3 cas de validation du README.
 
 ## Plus tard (feuille de route du README § 9, non prioritaire)
 
@@ -40,10 +37,13 @@ turbulence, viscoélasticité.
 
 ## Petits travaux
 
+- Seuil du limiteur compressible par défaut (`venkat_k` 0.05) : remesurer Sod, rampe M = 2,
+  plaque avec 0.1 et 0.3 ; changer le défaut seulement si ces cas restent bons (lot #30 :
+  0.05 donne deux solutions stationnaires et biaise C_l sur le NACA).
+
 - Ligne de commande : figures 3D toujours dans le plan z médian ; une clé `[output]` pour
   choisir le plan (x / y / z, cote) serait simple (`slice_mesh`) si un utilisateur le demande.
 
-- Erreur ruff E731 préexistante `tests/test_mesh2d.py:74` (lambda assignée).
 
 ## Décisions qui appartiennent à l'utilisateur (ne pas trancher seul)
 

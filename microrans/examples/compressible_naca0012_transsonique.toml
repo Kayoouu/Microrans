@@ -43,6 +43,11 @@ order = 2
 limiter = "venkatakrishnan"   # NON gelé : un limiteur gelé avant que le choc soit en place
                              # fausse la solution convergée (limiter_freeze = 200 : C_l
                              # −3.4 % avec des résidus pourtant tombés à 1e-10)
+venkat_k = 0.3               # seuil du limiteur ; avec le défaut 0.05, le limiteur agit
+                             # aussi hors du choc : 96 × 32 : C_l −5 % et deux solutions
+                             # stationnaires (implicite 0.3139, RK3 0.3162) ; 0.3 : solution
+                             # unique, à 0.02 % de celle sans limiteur (docs/compressible.md
+                             # § 3.5)
 steady_scheme = "implicit"
 cfl = 5.0
 cfl_max = 100.0

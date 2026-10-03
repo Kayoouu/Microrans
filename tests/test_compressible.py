@@ -386,6 +386,33 @@ def test_implicit_cfl_cap_kept_during_transonic_startup():
     assert max(s.history[-1][k] for k in ("rho", "rhoU", "rhoV", "rhoE")) < 1e-2
 
 
+def test_transonic_example_limiter_threshold_matches_unlimited_solution():
+    """Tâche #30 : NACA 0012, M = 0.8, 96 × 32. Avec le seuil de Venkatakrishnan par défaut
+    (K = 0.05), le limiteur agit hors du choc : C_l = 0.3139 en implicite, 0.3162 en RK3
+    (deux solutions stationnaires), contre 0.3308 sans limiteur. L'exemple utilise K = 0.3 :
+    même solution que sans limiteur (mesuré : 0.33076 / 0.33082 ; RK3 identique)."""
+    from microrans.cli import examples_dir
+    from microrans.fv2d.compressible_case import build_compressible_solver
+    from microrans.mesh2d.builder import load_config
+    cl = {}
+    for name, opts in (("exemple", {}), ("sans limiteur", {"limiter": "none"}),
+                       ("K = 0.05", {"venkat_k": 0.05})):
+        cfg = load_config(examples_dir() / "compressible_naca0012_transsonique.toml")
+        cfg["mesh"].update(n_around=96, n_radial=32, first_height=4e-3)
+        cfg["solver"].update(max_iter=800, tol=1e-8, monitor_tol=None, **opts)
+        s = build_compressible_solver(cfg, examples_dir())
+        assert s.run_steady()
+        s._last = {}                                 # efforts de l'état final
+        el = np.array([-s.fs.v, s.fs.u]) / s.fs.speed
+        q = 0.5 * s.fs.rho * s.fs.speed ** 2
+        cl[name] = float(s.forces(["airfoil"])["airfoil"]["total"] @ el / q)
+    ex = load_config(examples_dir() / "compressible_naca0012_transsonique.toml")
+    assert ex["solver"]["venkat_k"] == 0.3
+    assert cl["exemple"] == pytest.approx(cl["sans limiteur"], abs=3e-4)
+    assert cl["sans limiteur"] == pytest.approx(0.3308, abs=5e-4)
+    assert cl["K = 0.05"] < 0.32
+
+
 def test_unphysical_state_gives_measured_tips(tmp_path):
     # audit D2 : rampe Mach 2 en RK3 à cfl = 4 → arrêt à la 9e itération ; l'arrêt
     # propose le schéma implicite (même solution à cfl 8, 6 fois plus rapide)

@@ -4,13 +4,13 @@
 
 - microrans : outil RANS / URANS 1D, 2D, 3D (périmètre réduit) avec mailleur, interface
   PySide6 et exécutables PyInstaller Windows / Linux (CI GitHub Actions).
-- Dernier lot terminé : **Lot E4 — coupes x / y dans l'interface 3D** (2026-10-03 ; voir
-  journal). Avant : E3 VTK binaire (a4693bd), E2 distance à la paroi (3c50fb4), E — 3D dans
-  l'exécutable (f08fb62, b289a91).
+- Dernier lot terminé : **#30 — écart transsonique NACA 0012 expliqué** (2026-10-03, à la
+  demande « Envoie la purée pour un lot entier » ; voir journal). Avant : E4 coupes x / y
+  (c1747e2), E3 VTK binaire (a4693bd), E2 distance à la paroi (3c50fb4).
 - Exécutables de c1747e2 (lot E4) : run https://github.com/Kayoouu/Microrans/actions/runs/37095760981
   (Windows : artefact 11264835328, Linux : 11264840329 ; expirent le 2027-01-01). CI verte
   (tests https://github.com/Kayoouu/Microrans/actions/runs/37095758193).
-- Suite de tests : 453 (452 réussis, 1 ignoré), 5 à 8 min en série sur la machine de session.
+- Suite de tests : 455 (454 réussis, 1 ignoré), 5 à 8 min en série sur la machine de session.
 - Aucune release publiée depuis cet environnement (tag refusé) : c'est à l'utilisateur.
 - Autonomie : routine quotidienne `trig_01RCTjquBZw82GuKW83rPuSG` (cron `53 3 * * *` UTC,
   dans cette session), 1 lot par jour sauf exception ; première relance 2026-10-03.
@@ -27,6 +27,8 @@
 | Distance à la paroi 10⁶ cellules (E2, côte à côte) | 206 s → 25.5 s, identique au bit près |
 | Calcul complet 10⁶ cellules, 10 it (E2, côte à côte) | 375 s → 195 s (préparation 254 s → 78 s) |
 | Distance à la paroi 2D, 490 000 cellules | 91 s → 2.7 s |
+| NACA 0012 Euler M = 0.8, exemple (venkat_k 0.3), résidus < 1e-8 | 192 × 64 : 452 it, 50 s ; 384 × 128 : 868 it, 409 s (avant, K 0.05 : 1 011 it / 112 s ; ~13 min) |
+| Même cas, C_l ; C_d (384 × 128, bord de fuite fermé) | 0.3333 ; 0.02178 (référence hp-DG lue dans un résumé : 0.333 ; 0.02135) |
 
 Préparation 3D maintenant dominée par la construction du maillage (~35 s à 10⁶) ; un
 calcul stationnaire 10⁶ cellules = quelques centaines d'itérations ≈ 1 à 1.5 h.
@@ -48,13 +50,18 @@ calcul stationnaire 10⁶ cellules = quelques centaines d'itérations ≈ 1 à 1
 - VTK : binaire par défaut (`[output] vtk_format = "ascii"` = ancien texte, identique
   octet pour octet) ; `read_vtk` dans `mesh2d/io.py` (lecteur minimal, tests) ; pas de
   dépendance à VTK/meshio (test avec le lecteur VTK officiel ignoré s'il est absent).
+- Compressible : seuil du limiteur `venkat_k` = 0.3 dans l'exemple NACA (0.05 = défaut du
+  solveur, comme SU2 : deux solutions stationnaires et C_l −5 % sur 96 × 32) ; défaut non
+  changé (rampe M = 2, Sod non remesurés). NACA : `trailing_edge = closed | open | sharp`.
 - Extrusion multi-couches ≠ 2D exact (Rhie-Chow : diffusion z dans a_P) ; une couche entre
   deux plans de symétrie = 2D exact. Documenté (README § 8, limite 17).
 
 ## Limites ouvertes importantes (détail : README § 8)
 
 - Un calcul = un cœur ; SIMPLE lent sur maillages fins étirés.
-- C_l NACA 0012 transsonique ~4.5 % bas, non expliqué (tâche #30).
+- NACA 0012 transsonique : ancien « −4.5 % » expliqué (référence d'une autre géométrie +
+  seuil du limiteur) ; restent C_d +2 % et une valeur citée de Vassberg & Jameson (≈ 0.347,
+  bord de fuite pointu) 3.7 % au-dessus, non vérifiable ici (articles bloqués par le proxy).
 - Transition γ validée seulement sur plaques sans gradient de pression.
 - 3D : pas de mailleur général ni d'import 3D ; plan des figures non réglable en ligne de
   commande (z médian).

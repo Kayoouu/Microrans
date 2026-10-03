@@ -3,6 +3,39 @@
 Détail des chiffres : README (§ 6 validation, § 7 performances, § 8 limites) et messages de
 commit. Ce journal sert à retrouver ce qui a été fait, pourquoi, et ce qui a été constaté.
 
+## 2026-10-03 — Lot #30 : écart transsonique NACA 0012 expliqué
+
+- Demande : « Envoie la purée pour un lot entier ». Budget : une journée.
+- Références : accès aux articles bloqué par le proxy (Stanford, scispace, arXiv, NASA
+  GRC, su2code.github.io) ; non contourné. Valeurs trouvées seulement dans des résumés de
+  moteur de recherche : Dolejší & Roskovec (DG hp-adaptatif, arXiv 2007.06840)
+  C_l = 0.333, C_d = 0.02135 ; Vassberg & Jameson 2010 (profil pointu) « C_L ≈ 0.347 »,
+  « C_D = 0.022453440 » ; workshop High-Order CFD : profil fermé −0.1036 (= le nôtre),
+  chocs ≈ 0.6 et 0.35.
+- Mesures (192 × 64 sauf mention, résidus < 1e-8) :
+  - bord de fuite (K = 0.3) : closed 0.3337 / sharp 0.3343 / open 0.3460 ; 384 × 128 :
+    0.3333 / 0.3340 / 0.3477. « ≈ 0.35 » = profil ouvert (AGARD).
+  - limiteur : K = 0.05 → implicite 0.3139, RK3 0.3162 (96 × 32) : deux solutions ; K ≥ 0.1
+    ou sans limiteur → une seule ; sans limiteur 0.3308 / 0.3332 / 0.3330 (96/192/384) ;
+    K = 0.3 0.3308 / 0.3337 / 0.3333 ; dépassement C_p au choc 0.04 (K 0.05) → 0.23 (0.3)
+    → 0.29 (sans) ; K = 0.1 : 0.10, C_l 0.3267 (96) / 0.3348 (192).
+  - J'avais d'abord conclu à un effet géométrique (sharp −2.2 %) : faux, artefact de
+    K = 0.05 (avec 0.3 : +0.2 %). Corrigé avant d'écrire la doc.
+  - sans effet notable : 128 mailles radiales (−0.04 %), valeur de paroi des gradients
+    extrapolée (+0.25 %, essai non retenu).
+  - entropie parasite dans la 1re maille de paroi : 6.3e-3 (K 0.05), 3.8e-3 (sans limiteur),
+    née au bord d'attaque ; amont < 3e-8. C_d +2 % (+0.0004) non expliqué (traînée parasite
+    subsonique 384 × 128 : 0.00013, un tiers).
+  - M = 0.5 : K = 0.05 abaisse C_l de 0.2-0.5 % et augmente la traînée parasite de 31-57 %.
+  - méthode des panneaux (Hess-Smith, vérifiée Joukowski / Kármán-Trefftz) : C_l
+    incompressible 0.15093 ; corrections de compressibilité trop dispersées (0.174-0.182 à
+    M = 0.5) pour un contrôle fin.
+- Fait : `trailing_edge = closed | open | sharp` (NACA, défaut inchangé, testé), exemple
+  `venkat_k = 0.3`, test `test_transonic_example_limiter_threshold_matches_unlimited_solution`
+  (22.6 s), figure régénérée, docs (compressible § 2, 3.5, 4, 5 ; README), E731 corrigée.
+- Chronométré machine libre : exemple 192 × 64 50 s (452 it) contre 112 s (1 011 it) avec
+  K = 0.05 ; 384 × 128 409 s (868 it).
+
 ## 2026-10-03 — Lot E4 : coupes x / y dans l'interface 3D
 
 - Relance quotidienne (routine) ; CI verte au départ.

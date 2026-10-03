@@ -64,6 +64,9 @@ _SHAPE = {
     "chord": K("naca : corde (défaut 1)"),
     "n": K("naca, spline : nombre de points du contour"),
     "closed_te": K("naca : bord de fuite fermé (défaut true)"),
+    "trailing_edge": K("naca : closed (défaut, −0.1036, workshops High-Order CFD) | open "
+                       "(équation d'origine, bord de fuite épais) | sharp (prolongée jusqu'à "
+                       "épaisseur nulle, Vassberg & Jameson 2010) ; prioritaire sur closed_te"),
     "path": K("file : fichier de contour (.dat Selig/Lednicer, .csv, .dxf)"),
     "sharp_angle": K("file : angle (°) au-delà duquel un sommet est un coin (défaut 60)"),
     "angle": K("rotation (°, sens trigonométrique)"),
@@ -322,7 +325,8 @@ _SOLVER_DOC = {
     # compressible (fv2d/compressible.py, CompressibleSettings)
     "flux": "roe (défaut) | hllc", "order": "1 | 2 (défaut)",
     "limiter": "venkatakrishnan (défaut) | barth_jespersen | none",
-    "venkat_k": "seuil du limiteur de Venkatakrishnan (défaut 0.05)",
+    "venkat_k": "seuil du limiteur de Venkatakrishnan (défaut 0.05 ; profils transsoniques : "
+                "0.3, le défaut limite aussi hors des chocs, voir docs/compressible.md § 3.5)",
     "limiter_freeze": "limiteur gelé après N itérations (défaut 0 : jamais)",
     "entropy_fix": "correction d'entropie de Harten (défaut 0.1)",
     "cfl": "nombre CFL", "steady_scheme": "rk3 (défaut) | rk5 | implicit",
@@ -844,6 +848,12 @@ def _check_bodies(cfg: dict, mesh_type: str, errors: list, warns: list):
     (avant : hybride refusé après 6 à 20 s « non manifold », ou maillage faux avec des
     couches dans un solide ; non structuré : corps disparu en silence)."""
     bodies = cfg.get("bodies")
+    from ..mesh2d.geometry import NACA_TE
+    for b in bodies if isinstance(bodies, list) else []:
+        te = b.get("trailing_edge") if isinstance(b, dict) else None
+        if te is not None and str(te).lower() not in NACA_TE:
+            errors.append(f"[[bodies]] « {b.get('name', b.get('type'))} » : trailing_edge = "
+                          f"{te!r} inconnu (" + ", ".join(NACA_TE) + ").")
     if mesh_type == OGRID and (not isinstance(bodies, list) or len(bodies) != 1):
         errors.append(f"[[bodies]] : le maillage en O entoure exactement un corps "
                       f"({len(bodies) if isinstance(bodies, list) else 0} donné(s)). "

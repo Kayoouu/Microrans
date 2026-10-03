@@ -506,15 +506,30 @@ maillages, mêmes fichiers de cas et mêmes sorties que l'incompressible. Exempl
 `compressible_plaque_laminaire`, `compressible_naca0012_transsonique`. Méthodes, validation
 complète et limites : **`docs/compressible.md`**.
 
-Deux réglages ont été corrigés après mesure (NACA 0012, M = 0.8, 12 288 cellules) :
+Trois réglages ont été corrigés après mesure (NACA 0012, M = 0.8, 12 288 cellules) :
 
 - **Limiteur gelé trop tôt = solution fausse** : `limiter_freeze = 200` gelait le limiteur
   avant que le choc soit en place ; les résidus tombaient à 1e-10, mais vers C_l = 0.3238
-  au lieu de 0.3353 (−3.4 %). L'exemple ne gèle plus le limiteur.
+  au lieu de 0.3353 (−3.4 % ; ces deux valeurs avec `venkat_k = 0.05`, voir plus bas).
+  L'exemple ne gèle plus le limiteur.
 - **Pilotage du CFL implicite** : le plafond de CFL était divisé par 2 dès que les résidus
   stagnaient, ce qui arrive normalement au démarrage (choc qui se déplace) ; CFL bloqué à
   6.25, pas de convergence en 3 000 itérations. Il n'est plus réduit que si la solution
   oscille (cycle limite) : C_l stable dès l'itération 250, résidus < 1e-6 à 510.
+- **Seuil du limiteur trop bas** (`venkat_k = 0.05`, défaut du solveur, comme SU2) : le
+  limiteur agit aussi hors du choc ; sur 96 × 32, C_l = 0.3139 au lieu de 0.3308 (sans
+  limiteur), et implicite et RK3 convergent vers deux solutions différentes. L'exemple
+  utilise `venkat_k = 0.3` : C_l à moins de 0.15 % de la solution sans limiteur, une seule
+  solution quel que soit le schéma, moitié moins d'itérations ; en contrepartie, une maille
+  en dépassement juste avant le choc (C_p −1.34 au lieu de −1.14 ; `venkat_k = 0.1` : choc
+  plus net, C_l biaisé de −1.2 % sur le maillage le plus grossier).
+
+L'« écart de 4.5 % » au C_l publié signalé dans les versions précédentes venait de la
+référence (≈ 0.35 = profil à bord de fuite **ouvert** ; ce code donne 0.346 sur ce profil)
+et de ce seuil ; sur le profil fermé, C_l = 0.3333 contre 0.333 publié (Galerkin
+discontinu hp-adaptatif). Détail et limites de cette vérification : `docs/compressible.md`
+§ 3.5. `[[bodies]] trailing_edge = "closed" | "open" | "sharp"` choisit la définition du
+bord de fuite du NACA (elle change C_l de près de 4 % en transsonique).
 
 ---
 
@@ -549,7 +564,7 @@ Deux réglages ont été corrigés après mesure (NACA 0012, M = 0.8, 12 288 cel
 | Plaque plane laminaire M = 0.2, Re = 1e5 | C_f moyen sur 0.1 < x < 0.95 ; C_d | écart 0.8 % ; 0.004231 | Blasius ; 0.00420 |
 | Couette avec dissipation visqueuse | u ; T ; τ_w, q_w | 1e-8 ; 0.2 % de ΔT ; 3e-8 | solution exacte |
 | NACA 0012 Euler, M = 0.5, α = 1.25° | C_l (96×32 → 384×128) ; C_d parasite | 0.1715 → 0.1791 ; 0.0028 → 0.00017 | C_d = 0 (Euler subsonique) |
-| NACA 0012 Euler, M = 0.8, α = 1.25° | C_l ; C_d (384×128) | 0.3345 ; 0.0219 | ≈ 0.35 ; ≈ 0.022-0.023 : **C_l 4.5 % trop bas, non expliqué** |
+| NACA 0012 Euler, M = 0.8, α = 1.25° (bord de fuite fermé) | C_l ; C_d (384×128) | 0.3333 ; 0.02178 | 0.333 ; 0.02135 (Galerkin discontinu hp-adaptatif, valeurs lues dans un résumé, voir `docs/compressible.md` § 3.5) |
 
 ### 2D axisymétrique
 
@@ -678,8 +693,9 @@ Utile pour les écoulements laminaires ou à recirculation ; quasi inutile pour 
 limites turbulentes, dont la convergence est dominée par les équations de turbulence.
 
 **Compressible** (implicite) : ~8-9 µs par itération et par cellule ; NACA 0012
-transsonique convergé (résidus < 1e-8) en ~1 min 40 s pour 12 288 cellules, ~13 min pour
-49 152 cellules. Détails : `docs/compressible.md` § 4.
+transsonique convergé (résidus < 1e-8) en 50 s pour 12 288 cellules (452 itérations), 6 min
+50 s pour 49 152 cellules (868 itérations), avec `venkat_k = 0.3` (avant : 1 min 50 s et
+~13 min avec 0.05, deux fois plus d'itérations). Détails : `docs/compressible.md` § 4.
 
 **Balayages et polaires en parallèle** (`--jobs N`, `[sweep] jobs`, interface « Calculs en
 parallèle ») : un point par processus (4 cœurs, détails `docs/multicoeur.md`).
@@ -773,9 +789,12 @@ redonne l'ancien fichier texte, identique octet pour octet.
    cellules non testée. SIMPLEC : les efforts convergés dépendent un peu de `relax_U`
    (NACA : C_d −0.6 % entre 0.7 et 0.5), pas le couplé. Sur maillages non orthogonaux,
    les résidus plafonnent souvent vers 1e-5 — utiliser `monitor_tol`.
-4. **Compressible sans turbulence** (Euler ou laminaire, 2D plan, CPU) ; C_l du NACA 0012
-   transsonique ~4.5 % sous les valeurs publiées, écart non expliqué (convergence, maillage,
-   flux, limiteur et champ lointain écartés : `docs/compressible.md` § 3.5). Pas de LES/DES.
+4. **Compressible sans turbulence** (Euler ou laminaire, 2D plan, CPU) ; NACA 0012
+   transsonique : C_l à 0.1 % et C_d à +2 % d'une référence publiée (même géométrie), mais
+   cette référence n'a été lue que dans un résumé, et une autre valeur citée (Vassberg &
+   Jameson, bord de fuite pointu) s'en écarte de 4 % sans explication
+   (`docs/compressible.md` § 3.5) ; seuil du limiteur à choisir (`venkat_k` : 0.05 par
+   défaut, trop bas pour un profil). Pas de LES/DES.
    **Transition (`sst_gamma`)** : validée
    seulement sur plaques planes sans gradient de pression ; début de transition bien placé
    (T3A +3 %, T3A- −6 %) mais transition **trop raide** (mi-transition T3A 16 % trop tôt,
@@ -872,7 +891,7 @@ Maillage en C et validation NASA TMR (profils) ; étude de convergence en mailla
 parallélisme multi-cœur (Numba) ou CuPy validé sur carte ; transition avec gradient de
 pression et décollement laminaire (T3C, profils à bas Reynolds), rugosité, crossflow ;
 corrections de courbure et de rotation, loi de paroi thermique et k-ε haut-Reynolds ;
-viscoélasticité ; compressible turbulent (RANS) et axisymétrique, écart transsonique ; solveur
+viscoélasticité ; compressible turbulent (RANS) et axisymétrique ; solveur
 couplé : énergie et turbulence dans le système couplé, préconditionneur multigrille par blocs
 pour les grands maillages. 3D : mailleur général (tétraèdres, couches prismatiques), import
 Gmsh 3D, choix du plan des figures en ligne de commande.

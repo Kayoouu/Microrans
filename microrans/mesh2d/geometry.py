@@ -287,12 +287,30 @@ class Ellipse(Polygon):
         super().__init__(pts, name=name)
 
 
+# bord de fuite « sharp » : l'équation d'origine (−0.1015) s'annule en x = 1.008930411365
+# (Vassberg & Jameson 2010, J. Aircraft 47(4)) ; le profil prolongé est ramené à la corde
+NACA_SHARP_XTE = 1.008930411365
+NACA_TE = ("closed", "open", "sharp")
+
+
 def naca4_points(code: str = "0012", chord: float = 1.0, n: int = 201,
-                 closed_te: bool = True) -> np.ndarray:
+                 closed_te: bool = True, trailing_edge: str | None = None) -> np.ndarray:
     """Profil NACA 4 chiffres (répartition en cosinus, bord d'attaque raffiné).
 
     Retourne un contour fermé : extrados du bord de fuite vers le bord d'attaque, puis intrados.
+    trailing_edge (prioritaire sur closed_te) :
+    - "closed" (défaut) : coefficient −0.1036 au lieu de −0.1015, bord de fuite fermé
+      (définition des workshops « High-Order CFD ») ;
+    - "open" : équation d'origine, bord de fuite épais (0.252 % de corde pour 12 %) ;
+    - "sharp" : équation d'origine prolongée jusqu'à épaisseur nulle (x = 1.00893) puis
+      ramenée à la corde (Vassberg & Jameson 2010) : épaisseur relative 11.90 % pour « 12 ».
+    En transsonique (NACA 0012, M = 0.8, α = 1.25°, 192 × 64, venkat_k = 0.3), C_l vaut
+    0.3337 / 0.3343 / 0.3460 pour closed / sharp / open (docs/compressible.md § 3.5).
     """
+    te = str(trailing_edge).lower() if trailing_edge else ("closed" if closed_te else "open")
+    if te not in NACA_TE:
+        raise ValueError(f"NACA : trailing_edge = {trailing_edge!r} inconnu ("
+                         + ", ".join(NACA_TE) + ").")
     code = str(code).strip()
     if len(code) != 4 or not code.isdigit():
         raise ValueError("Code NACA 4 chiffres attendu, ex. '0012' ou '2412'.")
@@ -300,8 +318,12 @@ def naca4_points(code: str = "0012", chord: float = 1.0, n: int = 201,
     npts = max(n // 2, 20)
     beta = np.linspace(0.0, np.pi, npts)
     x = 0.5 * (1.0 - np.cos(beta))
-    a4 = -0.1036 if closed_te else -0.1015
-    yt = 5 * t * (0.2969 * np.sqrt(x) - 0.1260 * x - 0.3516 * x ** 2 + 0.2843 * x ** 3 + a4 * x ** 4)
+    a4 = -0.1036 if te == "closed" else -0.1015
+    xs = x * NACA_SHARP_XTE if te == "sharp" else x
+    yt = 5 * t * (0.2969 * np.sqrt(xs) - 0.1260 * xs - 0.3516 * xs ** 2 + 0.2843 * xs ** 3
+                  + a4 * xs ** 4)
+    if te == "sharp":
+        yt = np.maximum(yt, 0.0) / NACA_SHARP_XTE
     if m > 0 and p > 0:
         yc = np.where(x < p, m / p ** 2 * (2 * p * x - x ** 2),
                       m / (1 - p) ** 2 * ((1 - 2 * p) + 2 * p * x - x ** 2))
@@ -315,21 +337,25 @@ def naca4_points(code: str = "0012", chord: float = 1.0, n: int = 201,
     upper = np.column_stack([xu, yu])[::-1]          # BF -> BA
     lower = np.column_stack([xl, yl])[1:]            # BA -> BF (sans doubler le BA)
     pts = np.vstack([upper, lower]) * chord
-    if closed_te:
+    if te != "open":
         pts = pts[:-1]                               # le BF de l'intrados = BF de l'extrados
     return pts
 
 
 class NACA4(Polygon):
     def __init__(self, code: str = "0012", chord: float = 1.0, n: int = 201,
-                 closed_te: bool = True, name: str = "airfoil"):
+                 closed_te: bool = True, name: str = "airfoil",
+                 trailing_edge: str | None = None):
         self.code, self.chord, self.closed_te = code, chord, closed_te
-        super().__init__(naca4_points(code, chord, n, closed_te), name=name, sharp_angle=60.0)
+        self.trailing_edge = trailing_edge
+        super().__init__(naca4_points(code, chord, n, closed_te, trailing_edge), name=name,
+                         sharp_angle=60.0)
 
     def boundary_curve(self, n=None, h=None):
         # Répartition native en cosinus (raffinée aux bords d'attaque et de fuite)
         if n is not None:
-            return Polygon(naca4_points(self.code, self.chord, n + 2, self.closed_te)).points
+            return Polygon(naca4_points(self.code, self.chord, n + 2, self.closed_te,
+                                        self.trailing_edge)).points
         return super().boundary_curve(n, h)
 
 
@@ -559,7 +585,8 @@ def shape_from_dict(spec: dict, base_dir=".") -> Shape:
         s = Polygon(spec["points"], name=name)
     elif kind == "naca":
         s = NACA4(str(spec.get("code", "0012")), spec.get("chord", 1.0), spec.get("n", 201),
-                  spec.get("closed_te", True), name=name)
+                  spec.get("closed_te", True), name=name,
+                  trailing_edge=spec.get("trailing_edge"))
     elif kind == "spline":
         s = Spline(spec["points"], spec.get("n", 256), name=name)
     elif kind == "file":

@@ -47,6 +47,37 @@ def test_naca_is_closed_ccw_and_thickness():
     assert 0.5 * np.sum(x * np.roll(y, -1) - np.roll(x, -1) * y) > 0
 
 
+def test_naca_trailing_edge_definitions():
+    """Trois définitions publiées du NACA 0012 (lot #30 : le bord de fuite ouvert donne un
+    C_l 3.7 % plus haut en transsonique) : fermé −0.1036 (défaut), ouvert (équation d'origine), pointu (équation
+    d'origine prolongée jusqu'à épaisseur nulle puis ramenée à la corde, Vassberg & Jameson
+    2010)."""
+    from microrans.mesh2d.geometry import NACA_SHARP_XTE, naca4_points
+    x = NACA_SHARP_XTE                                   # racine de l'équation d'origine
+    assert 0.2969 * x ** .5 - 0.1260 * x - 0.3516 * x ** 2 + 0.2843 * x ** 3 \
+        - 0.1015 * x ** 4 == pytest.approx(0.0, abs=1e-12)
+    pts = {te: naca4_points("0012", 1.0, 401, trailing_edge=te)
+           for te in ("closed", "open", "sharp")}
+    tc = {te: 2 * p[:, 1].max() for te, p in pts.items()}
+    assert tc["closed"] == pytest.approx(0.1200, abs=1e-4)
+    assert tc["sharp"] == pytest.approx(0.1190, abs=1e-4)
+    for te in ("closed", "sharp"):                       # un seul point au bord de fuite
+        assert np.allclose(pts[te][0], [1.0, 0.0], atol=1e-12)
+    assert pts["open"][0][1] - pts["open"][-1][1] == pytest.approx(0.00252, abs=1e-5)
+    assert np.array_equal(pts["closed"], naca4_points("0012", 1.0, 401))
+    assert np.array_equal(pts["open"], naca4_points("0012", 1.0, 401, closed_te=False))
+    s = shape_from_dict({"type": "naca", "trailing_edge": "sharp"})
+    assert 2 * s.boundary_curve(n=200)[:, 1].max() == pytest.approx(0.1190, abs=2e-4)
+    with pytest.raises(ValueError, match="trailing_edge = 'pointu' inconnu"):
+        naca4_points("0012", trailing_edge="pointu")
+    from microrans.fv2d.validate import check_case
+    cfg = {"mesh": {"type": "ogrid", "n_around": 64, "n_radial": 16},
+           "bodies": [{"type": "naca", "trailing_edge": "pointu"}],
+           "physics": {"nu": 1e-3}, "boundary": {"airfoil": {"type": "wall"}}}
+    with pytest.raises(ValueError, match="trailing_edge = 'pointu' inconnu"):
+        check_case(cfg)
+
+
 def test_transform_incidence_nose_up():
     s = shape_from_dict({"type": "naca", "code": "0012", "incidence": 10.0,
                          "rotation_center": [0.25, 0.0]})
@@ -71,7 +102,10 @@ def test_read_curve_formats(tmp_path):
                                     "0\nLINE\n10\n1\n20\n0\n11\n1\n21\n1\n"
                                     "0\nLINE\n10\n0\n20\n1\n11\n1\n21\n1\n"
                                     "0\nLINE\n10\n0\n20\n1\n11\n0\n21\n0\n0\nENDSEC\n0\nEOF\n")
-    area = lambda c: abs(0.5 * np.sum(c[:, 0] * np.roll(c[:, 1], -1) - np.roll(c[:, 0], -1) * c[:, 1]))
+
+    def area(c):
+        return abs(0.5 * np.sum(c[:, 0] * np.roll(c[:, 1], -1) - np.roll(c[:, 0], -1) * c[:, 1]))
+
     a_ref = area(pts)
     assert area(read_curve(tmp_path / "selig.dat")) == pytest.approx(a_ref, rel=1e-9)
     assert area(read_curve(tmp_path / "led.dat")) == pytest.approx(a_ref, rel=1e-9)
