@@ -5,11 +5,11 @@
 - microrans : outil RANS / URANS 1D, 2D, 3D (périmètre réduit) avec mailleur, interface
   PySide6 et exécutables PyInstaller Windows / Linux (CI GitHub Actions).
 - Dernier lot terminé : **#30 — écart transsonique NACA 0012 expliqué** (2026-10-03, à la
-  demande « Envoie la purée pour un lot entier » ; voir journal). Avant : E4 coupes x / y
+  demande « Envoie la purée pour un lot entier » ; 688df2a ; voir journal). Avant : E4 coupes x / y
   (c1747e2), E3 VTK binaire (a4693bd), E2 distance à la paroi (3c50fb4).
-- Exécutables de c1747e2 (lot E4) : run https://github.com/Kayoouu/Microrans/actions/runs/37095760981
-  (Windows : artefact 11264835328, Linux : 11264840329 ; expirent le 2027-01-01). CI verte
-  (tests https://github.com/Kayoouu/Microrans/actions/runs/37095758193).
+- Exécutables de 688df2a (lot #30) : run https://github.com/Kayoouu/Microrans/actions/runs/37145810874
+  (Windows : artefact 11281804767, Linux : 11282345490 ; expirent le 2027-01-01). CI verte
+  (tests https://github.com/Kayoouu/Microrans/actions/runs/37145806547).
 - Suite de tests : 455 (454 réussis, 1 ignoré), 5 à 8 min en série sur la machine de session.
 - Aucune release publiée depuis cet environnement (tag refusé) : c'est à l'utilisateur.
 - Autonomie : routine quotidienne `trig_01RCTjquBZw82GuKW83rPuSG` (cron `53 3 * * *` UTC,

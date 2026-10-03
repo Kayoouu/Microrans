@@ -35,6 +35,12 @@ commit. Ce journal sert à retrouver ce qui a été fait, pourquoi, et ce qui a 
   (22.6 s), figure régénérée, docs (compressible § 2, 3.5, 4, 5 ; README), E731 corrigée.
 - Chronométré machine libre : exemple 192 × 64 50 s (452 it) contre 112 s (1 011 it) avec
   K = 0.05 ; 384 × 128 409 s (868 it).
+- Commit 688df2a ; suite locale 454 réussis, 1 ignoré (6 min 37 s). CI tests verte
+  (run 37145806547), exécutables verts (run 37145810874, Windows 11281804767, Linux
+  11282345490).
+- Environnement : `gh api` refusé pour ce dépôt (ancien nom → redirection par identifiant
+  numérique refusée ; nouveau nom « non activé pour la session ») ; les outils MCP
+  (owner Kayoouu, repo Claude-test) marchent : les utiliser pour suivre la CI.
 
 ## 2026-10-03 — Lot E4 : coupes x / y dans l'interface 3D
 
