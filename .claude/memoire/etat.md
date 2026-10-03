@@ -7,10 +7,10 @@
 - Dernier lot terminé : **Lot E4 — coupes x / y dans l'interface 3D** (2026-10-03 ; voir
   journal). Avant : E3 VTK binaire (a4693bd), E2 distance à la paroi (3c50fb4), E — 3D dans
   l'exécutable (f08fb62, b289a91).
-- Exécutables de a4693bd (lot E3) : run https://github.com/Kayoouu/Microrans/actions/runs/37076055233
-  (Windows : artefact 11256343045, Linux : 11257185492 ; expirent le 2026-12-31). CI verte
-  (tests https://github.com/Kayoouu/Microrans/actions/runs/37076055218).
-- Suite de tests : 450 (449 réussis, 1 ignoré), 5 à 8 min en série sur la machine de session.
+- Exécutables de c1747e2 (lot E4) : run https://github.com/Kayoouu/Microrans/actions/runs/37095760981
+  (Windows : artefact 11264835328, Linux : 11264840329 ; expirent le 2027-01-01). CI verte
+  (tests https://github.com/Kayoouu/Microrans/actions/runs/37095758193).
+- Suite de tests : 453 (452 réussis, 1 ignoré), 5 à 8 min en série sur la machine de session.
 - Aucune release publiée depuis cet environnement (tag refusé) : c'est à l'utilisateur.
 - Autonomie : routine quotidienne `trig_01RCTjquBZw82GuKW83rPuSG` (cron `53 3 * * *` UTC,
   dans cette session), 1 lot par jour sauf exception ; première relance 2026-10-03.

@@ -28,6 +28,8 @@ commit. Ce journal sert à retrouver ce qui a été fait, pourquoi, et ce qui a 
   globalement (aire 4.13 au lieu de 3 : vue par le contrôle des aires) ; variable de boucle
   `w` qui écrasait la page Résultats (Qt : « QVBoxLayout already deleted », vue par les
   tests). Corrigés avant commit.
+- Commit c1747e2 ; suite 452 réussis / 1 ignoré ; CI verte (tests 3.10 / 3.12 ; exécutables
+  Windows et Linux par workflow_dispatch, run 37095760981, auto-test avec coupe x).
 
 ## 2026-10-02 — Lot E3 : VTK binaire
 
