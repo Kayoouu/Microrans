@@ -30,6 +30,10 @@ commit. Ce journal sert à retrouver ce qui a été fait, pourquoi, et ce qui a 
   « flèches agrandies (max 11 % de |U|) » dans le titre.
 - Tests : 11 nouveaux, chacun vérifié en échec sur l'ancien code ; suite 465 réussis,
   1 ignoré (5 min 33 s). Campagne 1 : 25 / 25 (avant 24 / 25).
+- Campagnes 2 et 4 relancées : identiques à l'audit 2, sauf « extrusion cochée / décochée
+  après maillage » (1 erreur → 0, effet de U14). Campagne 6 : canal interface = ligne de
+  commande au bit près ; conduite toujours ×9 (C15). Exécutable local : 1 fil BLAS
+  effectif. CI : tests 37177299915, executables 37177304448 (verts).
 
 ## 2026-10-04 — Audit 2 approfondi : cohérence des résultats, fichiers, arrêts
 

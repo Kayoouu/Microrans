@@ -8,10 +8,12 @@
   quotidienne) : P1 (1 fil BLAS), C11, C13, C14, C18, C20, C21, U14, U17 corrigés, un test
   par point (chacun échoue sur l'ancien code). **C15 (vitesse de référence) en attente
   d'une décision de l'utilisateur.** Avant : audit 2 approfondi (576a0bc, e5deb38).
-- Exécutables de 688df2a (lot #30) : run https://github.com/Kayoouu/Microrans/actions/runs/37145810874
-  (Windows : artefact 11281804767, Linux : 11282345490 ; expirent le 2027-01-01). CI verte
-  (tests https://github.com/Kayoouu/Microrans/actions/runs/37145806547).
-- Suite de tests : 455 (454 réussis, 1 ignoré), 5 à 8 min en série sur la machine de session.
+- Exécutables de a0f1bf6 (lot F1) : run https://github.com/Kayoouu/Microrans/actions/runs/37177304448
+  (Windows : artefact 11293569122, Linux : 11293648649 ; expirent le 2027-01-02). CI verte
+  (tests https://github.com/Kayoouu/Microrans/actions/runs/37177299915). Exécutable
+  construit en local : 1 fil BLAS effectif (plaque : CPU 9.4 s pour 9.6 s ; 2 simultanés
+  8.9 / 9.3 s).
+- Suite de tests : 466 (465 réussis, 1 ignoré), 5 à 8 min en série sur la machine de session.
 - Aucune release publiée depuis cet environnement (tag refusé) : c'est à l'utilisateur.
 - Autonomie : routine quotidienne `trig_01RCTjquBZw82GuKW83rPuSG` (cron `53 3 * * *` UTC,
   dans cette session), 1 lot par jour sauf exception ; première relance 2026-10-03.
