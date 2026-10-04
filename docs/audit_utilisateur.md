@@ -288,9 +288,97 @@ impossibles du pavé et de l'extrusion ; profil d'entrée parabolique refusé en
 message clair) ; vecteurs à 2 composantes en 3D signalés ;
 sonde hors domaine signalée ; canal 1D (RANS, 4 modèles en 3.9 s).
 
-## Lots de correction (dans cet ordre, avant l'import Gmsh 3D)
+## Lots de correction
 
-- **F1 — résultats faux, calculs perdus** : C11, C13, C14, U14, U17.
-- **F2 — messages** : M13 à M19, U16, L6.
-- **F3 — interface 3D et figures** : U15, U18, U19, L5.
-- **F4 — textes et documentation** : T1, T2, D5 à D7.
+Remplacés par la liste mise à jour à la fin de la partie « Audit 2 approfondi ».
+
+---
+
+# Audit 2 approfondi (2026-10-04) — cohérence des résultats, fichiers, arrêts, exécutable
+
+Demande : « n'hésite pas à approfondir l'audit ». Au lieu de chercher ce qui plante, ces
+campagnes cherchent **ce qui donne un résultat faux** par des contrôles de cohérence qui ne
+demandent pas de référence extérieure (deux chemins qui doivent donner la même chose), puis
+les fichiers et les usages réels (poste Windows, arrêt d'un calcul, commandes de la
+documentation, exécutable).
+
+```bash
+python tools/audit/c6_interface_egale_cli.py SORTIE      # interface = ligne de commande
+python tools/audit/c7_reprise_exacte.py SORTIE           # N + N itérations = 2N
+python tools/audit/c8_2d_egale_3d_une_couche.py SORTIE [N=…]   # 2D = 3D une couche
+python tools/audit/c9_export_maillages.py SORTIE         # export / relecture, OpenFOAM
+python tools/audit/c9b_maillage_importe.py SORTIE        # calcul sur maillage réimporté
+python tools/audit/c10_fichiers_windows.py SORTIE        # BOM, CRLF, Latin-1, chemins, CSV
+python tools/audit/c11_ctrl_c.py SORTIE                 # Ctrl-C pendant un calcul
+python tools/audit/c12_cas_degeneres.py SORTIE           # cas limites
+python tools/audit/c13_efforts_csv.py SORTIE            # efforts = intégration des CSV
+python tools/audit/c14_commandes_doc.py SORTIE           # commandes du README et des guides
+python tools/audit/c15_arrets_interface.py SORTIE        # « Arrêter », mémoire, durée
+MICRORANS_EXE=dist/microrans/microrans python tools/audit/c1_exemples_cli.py SORTIE  # exécutable
+```
+
+| Campagne | Contrôle | Résultat |
+|---|---|---|
+| 6. Interface = ligne de commande | 22 exemples (Sod ignoré : pas de pas de temps fixe), 20 itérations (ou 3 pas), résumés comparés | identiques au bit près (hors chemins de fichiers), sauf **canal_turbulent_3d** (C13 : U moyen 18.07 → 14.11) et **conduite_carree_3d** (C15 : C_d × 9) |
+| 7. Reprise exacte | 2N itérations d'un coup contre N + `--continue` N, champs de fields.vtk et efforts, 18 exemples | **exacte au bit près** pour tout l'incompressible (2D, 3D, SA, SST, SST-γ, lois de paroi, thermique, scalaires, non newtonien, poreux, disque, axisymétrique, instationnaire) et le compressible RK3 ; **pas exacte en compressible implicite et Navier-Stokes** (C17) |
+| 8. 2D = 3D une couche entre deux symétries | 9 exemples, à 20 itérations puis convergés | convergé : écart ≤ 2·10⁻⁶ (convection, plaques SA / laminaire / lois de paroi, NACA SA) : l'affirmation du README tient ; **la perturbation de sillage plante en 3D** (C16) |
+| 9. Maillages exportés | 6 types (rectangle, périodique, O, blocs, triangles, hybride) en .msh / .su2 / .vtk / OpenFOAM | relecture exacte (aire à 2·10⁻¹⁶) ; polyMesh OpenFOAM correct (propriétaire < voisin, ordre triangulaire supérieur, normales, cellules fermées, frontières contiguës) ; types de frontière et périodicité non transportés par .msh / .su2 (formats) |
+| 9b. Calcul sur maillage réimporté | 4 cas, sans `patch_types` | même résultat convergé (2·10⁻¹¹) |
+| 10. Fichiers « Windows » | BOM, CRLF, Latin-1, espaces et accents, sortie occupée, contour CSV français, Gmsh 4.1, JSON | CRLF, accents, JSON, Gmsh 4.1 ASCII : bons ; **BOM refusé** (M20) ; **contour CSV français : 14 Go puis processus tué** (C18) |
+| 11. Ctrl-C | cavité, cylindre, NACA compressible | **rien n'est écrit** (C19) |
+| 12. Cas limites | vitesse nulle, 1 maille, Re 10⁸, plages vides / inversées / pas nul, dt minuscule, balayages | plages et valeurs bien refusées ; **balayage de `mesh.nx` : erreur interne** (C20) ; **balayage d'une clé mal écrite accepté en silence** (C21) |
+| 13. Post-traitement | efforts recalculés à partir de wall_*.csv et des faces | identiques au résumé (Cd de pression du cylindre 1.224690, frottement de la conduite 3D 0.026460) |
+| 14. Documentation rejouée | 25 commandes du README, du tutoriel, du dépannage, dossier vide | 17 justes ; 3 du README en échec (C11) ; 3 exemples fictifs ; 1 trop longue sur machine chargée (remesurée) |
+| 15. Interface : arrêts, durée, mémoire | « Arrêter » pendant maillage / calcul / balayage ; cavité ; 400 pas instationnaires | arrêt du calcul en 2.4 s, reprise exacte ; balayage 0.8 s ; pas de fuite mémoire ; **arrêt sans effet pendant le maillage** (U20) ; interface 2 fois plus lente (P2) |
+| Exécutable | construit localement (même spec que la CI), 25 exemples, côte à côte avec Python | 24 / 25 (polaire : C11) ; même vitesse que Python ; **fils BLAS : deux calculs simultanés jusqu'à 13 fois plus lents** (P1) |
+| Relecture du code | hypothèses 2D dans les chemins 3D, exceptions avalées | **polaire 3D : plantage** (C22), **multigrille sur extrusion fine : plantage** (C23) ; exceptions avalées : toutes volontaires |
+
+## C. Résultats faux, calculs perdus (suite)
+
+| # | Constat | Reproduction | Statut |
+|---|---|---|---|
+| C15 | **Vitesse de référence par défaut : trois conventions.** Documentation (« défaut 1 ») et ν = U_ref L / Re : 1 ; coefficients et Re affichés par la ligne de commande : vitesse imposée maximale (ou vitesse initiale) ; interface : écrit `reference_velocity = 1` dans le cas. Même fichier `conduite_carree_3d` : C_d 0.02397 en ligne de commande (U_ref = 3), 0.2157 dans l'interface (U_ref = 1), facteur 9. Cas `reynolds = 100` avec une entrée à U = 2 : calcul et résumé à « Re = U L / ν = 200 », sans avertissement. | campagne 6 ; cas rectangle, entrée U = 2, `reynolds = 100` | à faire (F1, décision de convention à prendre) |
+| C16 | `[initial] perturbation` (perturbation du sillage) plante en 3D : « operands could not be broadcast together with shapes (6144,3) (2,) » ; le champ est proposé par l'interface en 3D. | cylindre_re100_urans extrudé | à faire (F1b) |
+| C17 | Reprise compressible implicite et Navier-Stokes **pas exacte** alors que le résumé dit « mode exact » et le README « identique au bit près » : après 30 itérations, C_d 0.0401 d'un coup contre 0.0629 en 15 + 15 (NACA transsonique). Convergé : même résultat (plaque laminaire C_d 0.00423611 / 0.00423610) mais 304 itérations au lieu de 266 (+14 %) : l'état du pilotage (CFL) n'est pas repris. | campagne 7 | à faire (F1b) |
+| C18 | **Contour CSV « à la française » (x;y, virgule décimale, export Excel français) mal lu sans message** : « 1,000000;-0,000000 » est découpé sur les virgules et les points-virgules → points absurdes ((0, 998379)) → le mailleur monte à 14 Go et le système tue le processus ; avec une limite de 4 Go : « mémoire insuffisante : réduire le nombre de cellules » (trompeur). Sur un poste de 16 Go : gel ou disparition de l'exécutable. | campagne 10 | à faire (F1) |
+| C19 | **Ctrl-C en ligne de commande : tout est perdu** (« Interrompu. », aucun fichier : ni checkpoint, ni résumé, ni champs) ; le README promet un checkpoint « à l'arrêt demandé » (vrai pour le bouton de l'interface seulement) ; aucun autre moyen d'arrêter proprement un calcul en ligne de commande. | campagne 11 | à faire (F1b) |
+| C20 | Balayage du maillage (`--param mesh.nx --values 8 16`, étude de convergence en maillage) : « Erreur interne inattendue (TypeError : 'float' object cannot be interpreted as an integer) ». | campagne 12 | à faire (F1b) |
+| C21 | **Balayage d'une clé mal orthographiée accepté en silence** : `--param physics.nuu` ou `solver.max_iterr` → points identiques étiquetés de valeurs différentes (une faute dans `physics.reynold` ferait conclure que Re est sans effet). | campagne 12 | à faire (F1) |
+| C22 | Polaire d'un cas 3D (profil extrudé) : plantage au 2e point (« matmul: Input operand 1 has a mismatch … (size 3 is different from 2) ») : la rotation de U∞ est écrite en 2D. | profil extrudé, `polar --alpha 0 4 2` | à faire (F1b) |
+| C23 | Démarrage multigrille (`fmg_levels`) d'un cas extrudé sur peu de couches (canal_turbulent_3d) : la triangulation 3D de l'interpolation échoue (centres coplanaires au niveau grossier) et affiche ~25 lignes d'aide de Qhull en anglais. Pavé : correct. | `run2d canal_turbulent_3d --set solver.fmg_levels=1` | à faire (F1b) |
+
+## P. Performances
+
+| # | Constat | Statut |
+|---|---|---|
+| P1 | **Fils BLAS par défaut.** Un calcul « sur un cœur » occupe les 4 cœurs sans rien gagner : plaque compressible 10.2 s (CPU 39 s) contre 9.3 s (CPU 9 s) avec un fil BLAS. **Deux calculs simultanés s'effondrent** : 137.2 s au lieu de 9.7 s (×13) ; cavité cubique 3D 104.0 s au lieu de 19.5 s (×5). Les balayages `-j` sont déjà protégés (un fil par processus), pas un calcul seul (ligne de commande, interface, exécutable). Hypothèse à vérifier : le « Numba multi-fil plus lent » du lot D1 et une part des variations « ±50 % selon le jour » en viennent peut-être. | à faire (F1) |
+| P2 | Interface 2 fois plus lente que la ligne de commande (cavité, 351 itérations : 10.2 s contre 4.9 s ; audit 1 : 8.6 / 3.5 s) ; cause non mesurée. | à faire (F3, mesurer d'abord) |
+
+## M / U / L. Messages, interface, sorties (suite)
+
+| # | Constat | Statut |
+|---|---|---|
+| M20 | Fichier de cas en UTF-8 avec BOM (Bloc-notes, PowerShell) refusé : « Erreur : Invalid statement (at line 1, column 1) » ; Latin-1 : « 'utf-8' codec can't decode byte 0xe9 in position 7: invalid continuation byte » ; sortie = fichier existant : « [Errno 17] File exists: '…' » ; Gmsh binaire : indicateur ASCII / binaire non lu (non vérifié : Gmsh absent). | à faire (F2) |
+| M21 | Une seule maille (2D 1 × 1, 3D 1 × 1 × 1) → « Erreur : Factor is exactly singular ». | à faire (F2) |
+| M22 | Un dossier du dossier courant portant le nom d'un exemple masque l'exemple : `microrans run2d cavite_cubique_re100_3d` → « un fichier est attendu, pas un dossier » (il suffit d'un `-o cavite_cubique_re100_3d` précédent). | à faire (F2) |
+| U20 | « Arrêter » sans effet pendant le maillage (hybride : mené à son terme 21.8 s après la demande). | à faire (F3) |
+| L7 | Les CSV pariétaux n'ont ni aire ni normale des faces : l'utilisateur ne peut pas refaire l'intégration des efforts (tableur, comparaison avec un autre code). | à faire (F3) |
+| D8 | README : « un calcul = un cœur » (faux en CPU consommé, P1) ; « reprise … identique au bit près » (faux en compressible implicite, C17) ; un maillage importé ne peut pas avoir de frontières périodiques (`periodic` refusé pour `type = "file"`) : non documenté. | à faire (F4) |
+
+## Ce qui est vérifié juste (en plus de l'audit 2)
+
+Interface = ligne de commande au bit près sur 20 des 22 exemples comparés ; reprise exacte au bit près
+sur tout l'incompressible ; 2D = 3D une couche à la convergence ; export OpenFOAM
+structurellement correct ; aller-retour .msh / .su2 exact ; maillage réimporté → même
+résultat ; efforts du résumé = intégration des CSV pariétaux ; CRLF, chemins accentués, JSON,
+Gmsh 4.1 ; exécutable = Python (résultats et vitesse) ; pas de fuite mémoire de l'interface ;
+plages de balayage mal formées refusées clairement.
+
+## Lots de correction, mis à jour (dans cet ordre, avant l'import Gmsh 3D)
+
+- **F1 — résultats faux, calculs perdus** : C11, C13, C14, C15 (convention à arrêter), C18,
+  C21, U14, U17, P1.
+- **F1b — plantages et reprises** : C16, C17, C19, C20, C22, C23.
+- **F2 — messages** : M13 à M22, U16, L6.
+- **F3 — interface 3D, figures, sorties** : U15, U18, U19, U20, L5, L7, P2.
+- **F4 — textes et documentation** : T1, T2, D5 à D8.

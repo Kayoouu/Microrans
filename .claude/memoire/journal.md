@@ -3,6 +3,29 @@
 Détail des chiffres : README (§ 6 validation, § 7 performances, § 8 limites) et messages de
 commit. Ce journal sert à retrouver ce qui a été fait, pourquoi, et ce qui a été constaté.
 
+## 2026-10-04 — Audit 2 approfondi : cohérence des résultats, fichiers, arrêts
+
+- Demande : « Faire ce qui a déjà était fait est quand même une bonne ideee mais n'hésite
+  pas à approfondir l'audit ».
+- Méthode : chercher les résultats faux par des contrôles sans référence extérieure (deux
+  chemins qui doivent donner la même chose), puis les usages réels. Campagnes 6 à 15 dans
+  `tools/audit/` (c6 à c15 ; c1 accepte `MICRORANS_EXE` pour l'exécutable).
+- Constats les plus graves : C15 (vitesse de référence : C_d × 9 entre interface et ligne
+  de commande sur conduite_carree_3d ; `reynolds = 100` + entrée U = 2 calculé à Re = 200
+  sans avertissement), C18 (contour CSV « x;y » virgule décimale → 14 Go, processus tué),
+  C21 (balayage d'une clé mal écrite accepté), C19 (Ctrl-C : rien d'écrit), P1 (BLAS
+  4 fils : 2 calculs simultanés 137.2 s au lieu de 9.7 s).
+- Vérifié juste : interface = ligne de commande au bit près (21 / 23) ; reprise exacte au bit
+  près en incompressible et RK3 (pas en compressible implicite / NS : C17, convergé
+  identique mais +14 % d'itérations) ; 2D = 3D une couche à 2e-6 près ; OpenFOAM
+  structurellement correct ; .msh / .su2 aller-retour exact ; efforts = intégration des CSV ;
+  exécutable = Python (24 / 25, même vitesse, pic mémoire 113 contre 158 Mo).
+- Pièges : un essai de contour CSV français sans limite mémoire a fait tuer un processus à
+  14 Go (les scripts limitent maintenant à 4 Go) ; deux calculs simultanés faussent tous
+  les chronométrages (P1) : un seul calcul à la fois pour mesurer.
+- Lots F1 (avec P1, C15, C18, C21 en tête), F1b (plantages, reprises) ajoutés ; F2 à F4
+  complétés ; la mesure « Numba multi-fil plus lent » est à refaire après P1.
+
 ## 2026-10-04 — Audit 2 : fouille bugs et expérience utilisateur
 
 - Demande : « Avant de continuer le lot 3D, je pense que ce serait bien de faire une session

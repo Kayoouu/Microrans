@@ -1,14 +1,16 @@
-# État du projet (mis à jour le 2026-10-03)
+# État du projet (mis à jour le 2026-10-04)
 
 ## Où on en est
 
 - microrans : outil RANS / URANS 1D, 2D, 3D (périmètre réduit) avec mailleur, interface
   PySide6 et exécutables PyInstaller Windows / Linux (CI GitHub Actions).
-- Dernier lot terminé : **audit 2 — fouille bugs et expérience utilisateur** (2026-10-04,
-  demande : « Avant de continuer le lot 3D, … une session fouille pour ses bugs, pour
-  l'expérience utilisateur ») : 5 campagnes, constats dans `docs/audit_utilisateur.md`
-  (partie « Audit 2 »), scripts dans `tools/audit/`, corrections en lots F1 à F4 (a_faire).
-  Avant : #30 transsonique (688df2a), E4 coupes x / y (c1747e2).
+- Dernier lot terminé : **audit 2 approfondi** (2026-10-04, demande : « n'hésite pas à
+  approfondir l'audit ») : contrôles de cohérence (interface = ligne de commande, reprise
+  exacte, 2D = 3D une couche, maillages exportés, CSV pariétaux), fichiers Windows, Ctrl-C,
+  cas limites, commandes de la doc, arrêts de l'interface, exécutable construit en local.
+  Constats C15 à C23, M20 à M22, U20, P1, P2, L7, D8 dans `docs/audit_utilisateur.md`
+  (partie « Audit 2 approfondi ») ; lots F1, F1b, F2 à F4 dans a_faire. Avant : audit 2
+  (6608f4d), #30 transsonique (688df2a).
 - Exécutables de 688df2a (lot #30) : run https://github.com/Kayoouu/Microrans/actions/runs/37145810874
   (Windows : artefact 11281804767, Linux : 11282345490 ; expirent le 2027-01-01). CI verte
   (tests https://github.com/Kayoouu/Microrans/actions/runs/37145806547).
@@ -60,13 +62,18 @@ calcul stationnaire 10⁶ cellules = quelques centaines d'itérations ≈ 1 à 1
 
 ## Limites ouvertes importantes (détail : README § 8)
 
-- **Défauts connus non encore corrigés (audit 2, lot F1)** : polaire / balayage /
+- **Défauts connus non encore corrigés (audits 2, lots F1 et F1b)** : polaire / balayage /
   multigrille en échec hors du dossier du cas (C11) ; interface : canal_turbulent_3d
-  calculé faux (périodicité effacée, C13), maillage périmé utilisé (U14), vecteurs de
-  bruit dans les coupes 3D (U17) ; frontière inexistante dans `forces` → calcul perdu à la
-  fin (C14).
+  calculé faux (C13), maillage périmé utilisé (U14), vecteurs de bruit (U17) ; frontière
+  inexistante dans `forces` → calcul perdu (C14) ; vitesse de référence par défaut
+  incohérente (C15 : C_d × 9 entre interface et ligne de commande, Re faux si U ≠ 1) ;
+  contour CSV « x;y » à virgule décimale → 14 Go (C18) ; balayage d'une clé mal écrite
+  accepté (C21) ; Ctrl-C perd tout (C19) ; reprise compressible implicite non exacte
+  (C17) ; plantages : perturbation 3D (C16), balayage mesh.nx (C20), polaire 3D (C22),
+  multigrille sur extrusion fine (C23) ; **BLAS multi-fil par défaut : deux calculs
+  simultanés jusqu'à 13 fois plus lents (P1)**.
 
-- Un calcul = un cœur ; SIMPLE lent sur maillages fins étirés.
+- Un calcul = un cœur de solveur, mais BLAS occupe les 4 cœurs sans gain (P1) ; SIMPLE lent sur maillages fins étirés.
 - NACA 0012 transsonique : ancien « −4.5 % » expliqué (référence d'une autre géométrie +
   seuil du limiteur) ; restent C_d +2 % et une valeur citée de Vassberg & Jameson (≈ 0.347,
   bord de fuite pointu) 3.7 % au-dessus, non vérifiable ici (articles bloqués par le proxy).

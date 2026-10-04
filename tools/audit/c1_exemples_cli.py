@@ -60,7 +60,13 @@ for f in sorted((REPO / "microrans/examples").glob("*.toml")):
     cmd = cmds[0]
     work = OUT / f.stem
     work.mkdir(exist_ok=True)
-    argv = [sys.executable, "-m", "microrans"] + shlex.split(cmd)[1:]
+    # MICRORANS_EXE=…/dist/microrans/microrans : même campagne avec l'exécutable
+    base = (
+        [os.environ["MICRORANS_EXE"]]
+        if os.environ.get("MICRORANS_EXE")
+        else [sys.executable, "-m", "microrans"]
+    )
+    argv = base + shlex.split(cmd)[1:]
     t0 = time.perf_counter()
     with open(work / "stdout.txt", "w") as so, open(work / "stderr.txt", "w") as se:
         p = subprocess.Popen(argv, cwd=work, env=env, stdout=so, stderr=se)

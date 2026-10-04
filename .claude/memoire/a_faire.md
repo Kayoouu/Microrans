@@ -1,4 +1,4 @@
-# Liste de travail (ordre = priorité ; mise à jour le 2026-10-04 ; audit 2 fait)
+# Liste de travail (ordre = priorité ; mise à jour le 2026-10-04 ; audit 2 et audit 2 approfondi faits)
 
 Méthode pour chaque tâche : mesurer d'abord (profil, chiffres de départ), changer, mesurer
 côte à côte dans les mêmes conditions, tests, docs (README, chiffres), commit, CI verte,
@@ -11,26 +11,37 @@ inutile (mesure à l'appui), l'écrire dans le journal et passer à la suivante.
 
 ## À faire
 
-Lots de correction de l'audit 2 (détail et reproduction : `docs/audit_utilisateur.md`,
-partie « Audit 2 » ; campagnes à relancer après chaque lot : `tools/audit/`). Demande de
-l'utilisateur : fouiller les bugs et l'expérience **avant** de continuer la 3D.
+Lots de correction de l'audit 2 et de l'audit 2 approfondi (détail et reproduction :
+`docs/audit_utilisateur.md`, parties « Audit 2 » et « Audit 2 approfondi » ; campagnes à
+relancer après chaque lot : `tools/audit/`). Demande de l'utilisateur : fouiller les bugs et
+l'expérience **avant** de continuer la 3D. Un test par point corrigé.
 
-1. **F1 — résultats faux, calculs perdus** : C11 (polaire / balayage / multigrille hors du
-   dossier du cas : dossier de sortie relatif → le rendre absolu), C13 (interface : faces
-   d'extrusion renommées → périodicité effacée ; `_load_extrude` compare à back / front
-   littéraux), C14 (frontière inexistante dans `[output] forces` → vérifier juste après le
-   maillage, avant les itérations ; interface : retirer les frontières disparues), U14
-   (interface : maillage périmé → avertir ou remailler), U17 (vecteurs des coupes : échelle
-   rapportée à |U| complet, rien si composantes dans le plan négligeables). Un test par
-   point, plus relance des campagnes 1, 2 et 4.
-2. **F2 — messages** : M13 à M19, U16 (virgule décimale des sondes), L6 (bruit d'arrondi
-   du résumé).
-3. **F3 — interface 3D et figures** : U15 (sondes / profils suivent la dimension ; case
-   Extruder grisée pour axisymétrique / poreux / animation), U18 (« Enregistrer sous » et
-   fichiers relatifs), U19 (petits défauts 3D), L5 (plan des figures 3D en ligne de
-   commande, noms d'axes ; remplace le petit travail correspondant).
-4. **F4 — textes et documentation** : T1, T2, D5 à D7.
-5. **Import de maillage 3D (Gmsh .msh).** `Mesh3D` connaît déjà tétraèdres, pyramides,
+1. **F1 — résultats faux, calculs perdus** :
+   - P1 d'abord (petit, gros effet) : 1 fil BLAS (OPENBLAS / OMP / MKL_NUM_THREADS) fixé aux
+     points d'entrée (cli, gui, exe) avant l'import de numpy, sauf si l'utilisateur l'a
+     fixé ; mesurer côte à côte un calcul seul et deux simultanés (plaque : 9.7 → 137 s).
+   - C15 vitesse de référence : une seule convention (proposition : vitesse imposée
+     maximale partout, ν depuis Re compris ; interface sans `reference_velocity = 1`
+     forcé ; U_ref affiché) ; vérifier les exemples avec `reynolds` et U ≠ 1 ; doc.
+   - C18 contour CSV « x;y » à virgule décimale : détecter le séparateur `;` et la virgule
+     décimale, refuser clairement un contour absurde (points hors d'échelle).
+   - C21 balayage : refuser une clé inconnue (liste des clés du schéma de cas).
+   - C11 (sortie relative des polaires / balayages / multigrille → absolue), C13
+     (`_load_extrude` compare à back / front littéraux), C14 (frontière inconnue de
+     `[output] forces` vérifiée après le maillage), U14 (maillage périmé dans l'interface),
+     U17 (échelle des vecteurs des coupes).
+2. **F1b — plantages et reprises** : C16 (perturbation en 3D), C17 (reprise compressible
+   implicite / NS : reprendre l'état du pilotage CFL, sinon ne plus écrire « exact »), C19
+   (Ctrl-C : écrire checkpoint + résumé + champs comme le bouton Arrêter), C20 (balayage
+   de mesh.nx : entier), C22 (polaire 3D : rotation autour de z), C23 (multigrille sur
+   extrusion fine : refuser proprement ou interpoler par couche).
+3. **F2 — messages** : M13 à M22 (BOM accepté : `utf-8-sig` ; Latin-1, sortie = fichier,
+   une seule maille, dossier masquant un exemple), U16 (virgule décimale des sondes), L6.
+4. **F3 — interface 3D, figures, sorties** : U15, U18, U19, U20 (Arrêter pendant le
+   maillage), L5, L7 (aire et normale dans les CSV pariétaux), P2 (interface 2 fois plus
+   lente : mesurer la cause d'abord).
+5. **F4 — textes et documentation** : T1, T2, D5 à D8.
+6. **Import de maillage 3D (Gmsh .msh).** `Mesh3D` connaît déjà tétraèdres, pyramides,
    prismes, hexaèdres (`VTK_TYPES`) ; vérifier par des tests que le solveur les traite
    (seuls hexaèdres et prismes sont validés aujourd'hui). Frontières depuis les groupes physiques.
    Les coupes des figures (`PlaneSlice`) gèrent déjà tétraèdres et pyramides (testé) ; la
@@ -41,12 +52,12 @@ l'utilisateur : fouiller les bugs et l'expérience **avant** de continuer la 3D.
    proportionnel ; total égal) : découpage différent des faces, pas une erreur ; à
    documenter si l'import amène de tels maillages.
    Fait quand : lecture testée sur un petit fichier versionné, calcul court, doc.
-6. **Un calcul sur plusieurs cœurs.** Numba multi-fil mesuré plus lent sur la machine de
-   test : mesurer d'abord où part le temps (AMG pyamg mono-fil, assemblage) avant de choisir.
+7. **Un calcul sur plusieurs cœurs.** Numba multi-fil mesuré plus lent sur la machine de
+   test (peut-être à cause de P1 : refaire la mesure après F1) : mesurer d'abord où part le temps (AMG pyamg mono-fil, assemblage) avant de choisir.
    Ne rien promettre sans mesure.
-7. **Maillage en C pour les profils + comparaison NASA TMR** (vérifier d'abord que les
+8. **Maillage en C pour les profils + comparaison NASA TMR** (vérifier d'abord que les
    données TMR sont accessibles depuis l'environnement ; sinon le noter et passer).
-8. **Étude de convergence en maillage (GCI)** sur 2 ou 3 cas de validation du README.
+9. **Étude de convergence en maillage (GCI)** sur 2 ou 3 cas de validation du README.
 
 ## Plus tard (feuille de route du README § 9, non prioritaire)
 
