@@ -251,3 +251,63 @@ def test_limited_scheme_acts_on_velocity_and_temperature():
     dT = np.abs(out["linearUpwind"][1] - out["linearUpwindLimited"][1]).max()
     assert dU > 1e-6 and dT > 1e-6
     assert np.all(np.isfinite(out["linearUpwindLimited"][0]))
+
+
+def _channel_case(boundary, **physics):
+    return {"mesh": {"type": "rectangle", "x0": 0.0, "x1": 4.0, "y0": 0.0, "y1": 1.0,
+                     "nx": 16, "ny": 8,
+                     "names": {"left": "inlet", "right": "outlet", "bottom": "bottom",
+                               "top": "top"}},
+            "physics": physics, "boundary": boundary,
+            "solver": {"max_iter": 3}, "output": {"vtk": False, "plots": False}}
+
+
+def test_reference_velocity_one_rule_for_re_and_coefficients(tmp_path):
+    """C15 (audit 2 approfondi) : reynolds = 100 avec une entrée à U = 2 était calculé à
+    Re = 200 (ν = 1 · L / Re) alors que les coefficients utilisaient U = 2 ; même fichier,
+    C_d × 9 entre interface (U_ref = 1 écrit) et ligne de commande (U_ref = vitesse
+    initiale 3) sur la conduite carrée. Une seule règle maintenant, partout."""
+    from microrans.fv2d.case import build_solver, run_case
+    wall = {"type": "wall"}
+    cfg = _channel_case({"inlet": {"type": "inlet", "U": [2.0, 0.0]},
+                         "outlet": {"type": "outlet"}, "bottom": wall, "top": wall},
+                        reynolds=100)
+    s = run_case(cfg, out_dir=tmp_path, verbose=False, plot=False)
+    assert s["nu"] == pytest.approx(0.02)
+    assert s["reference_velocity"] == 2.0 and "inlet" in s["reference_velocity_source"]
+    # débit imposé : vitesse débitante Q / h
+    cfg["boundary"]["inlet"] = {"type": "inlet", "flow_rate": 0.5}
+    assert build_solver(cfg).U_ref == pytest.approx(0.5)
+    # écoulement entraîné par une force, vitesse initiale 3 : U_ref = 1, pas 3
+    cfg = _channel_case({"inlet": wall, "outlet": wall, "bottom": wall, "top": wall},
+                        nu=0.01, body_force=[1.0, 0.0])
+    cfg["initial"] = {"U": [3.0, 0.0]}
+    sv = build_solver(cfg)
+    assert sv.U_ref == 1.0 and sv.U_ref_source.startswith("défaut")
+    # même cas donné en Reynolds : avertissement (Re interprété avec U_ref = 1)
+    cfg["physics"] = {"reynolds": 50, "body_force": [1.0, 0.0]}
+    s = run_case(cfg, out_dir=tmp_path / "f", verbose=False, plot=False)
+    assert any("sans vitesse imposée" in w for w in s.get("warnings", []))
+
+
+def test_reference_velocity_inflow_before_moving_wall():
+    """Cylindre tournant dans un écoulement : Re et coefficients sur U∞, pas sur la vitesse
+    de la paroi ; deux entrées de vitesses différentes : la plus grande, avec un
+    avertissement ; donnée explicite prioritaire."""
+    from microrans.fv2d.solver import choose_reference_velocity
+    from microrans.mesh2d import rectangle_mesh
+    m = rectangle_mesh(0.0, 4.0, 0.0, 1.0, 8, 4)
+    names = [p.name for p in m.patches]
+    bc = {n: {"type": "wall"} for n in names}
+    bc[names[0]] = {"type": "farfield", "U": [1.0, 0.0]}
+    bc[names[1]] = {"type": "wall", "U": ["0", "3*x/4"]}         # paroi mobile, jusqu'à 3
+    u, src, warn = choose_reference_velocity(None, m, bc)
+    assert u == 1.0 and names[0] in src and warn is None
+    bc[names[1]] = {"type": "inlet", "U": [0.5, 0.0]}
+    u, src, warn = choose_reference_velocity(None, m, bc)
+    assert u == 1.0 and "Plusieurs vitesses imposées" in warn
+    assert choose_reference_velocity(7.0, m, bc)[0] == 7.0
+    bc = {n: {"type": "wall"} for n in names}
+    bc[names[2]] = {"type": "wall", "U": [2.0, 0.0]}             # couvercle de cavité
+    u, src, _ = choose_reference_velocity(None, m, bc)
+    assert u == 2.0 and "paroi" in src

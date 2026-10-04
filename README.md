@@ -196,7 +196,8 @@ code = "2412"
 incidence = 4.0
 name = "profil"
 [physics]
-reynolds = 1e6
+reynolds = 1e6             # ν = U_ref L / Re ; U_ref = reference_velocity, sinon vitesse
+                           # d'entrée (ou de paroi mobile), sinon 1 (glossaire)
 model = "sst"              # laminar | sa | ke | kw | sst | sst_gamma (transition)
 angle_of_attack = 4.0      # incidence de l'écoulement amont (°) ; Cd, Cl en axes écoulement
 axisymmetric = false       # true : x = axe, y = rayon ; frontière d'axe : type = "axis"

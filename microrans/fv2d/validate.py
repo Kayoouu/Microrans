@@ -149,7 +149,9 @@ SCHEMA = Table({
         "compressible": K("true : solveur compressible (grandeurs SI, section [flow])"),
         "nu": K("viscosité cinématique ν (m²/s)", INC),
         "reynolds": K("nombre de Reynolds (ν = U_ref L_ref / Re) — au lieu de nu", INC),
-        "reference_velocity": K("vitesse de référence U_ref (défaut 1)", INC),
+        "reference_velocity": K("vitesse de référence U_ref : ν = U L / Re, coefficients "
+                                "(défaut : vitesse d'entrée, sinon de paroi mobile, sinon 1)",
+                                INC),
         "reference_length": K("longueur de référence L_ref (défaut 1)"),
         "reference_area": K("axisymétrique : aire de référence de Cd (défaut π L²/4)", INC),
         "model": K("laminar | sa | ke | kw | sst | sst_gamma (défaut laminar)", INC),

@@ -183,6 +183,63 @@ def _xyz(points):
     return tuple(points[:, k] for k in range(points.shape[1]))
 
 
+def choose_reference_velocity(given, mesh, boundaries, axisymmetric=False):
+    """Vitesse de référence U_ref, une seule pour tout le cas : ν = U_ref L / Re,
+    coefficients d'efforts (½ U_ref² A_ref), γ̇_ref des lois non newtoniennes, C_T des
+    disques. Retourne (U_ref, origine, avertissement ou None).
+
+    1. [physics] reference_velocity si elle est donnée ;
+    2. sinon la vitesse d'entrée : moyenne (débitante) sur chaque frontière inlet (U ou
+       débit) ou farfield, la plus grande s'il y en a plusieurs (avertissement) ;
+    3. sinon la vitesse d'une paroi mobile (couvercle de cavité, Couette) ;
+    4. sinon 1 (écoulement entraîné par une force ou une pression).
+    Jamais la vitesse initiale (valeur de départ arbitraire). Avant (C15) : 1 pour
+    ν = U L / Re, la plus grande vitesse imposée ou initiale pour les coefficients, 1 écrit
+    par l'interface : C_d × 9 entre interface et ligne de commande sur la conduite carrée,
+    reynolds = 100 avec une entrée à U = 2 calculé à Re = 200."""
+    if given is not None:
+        return float(given), "[physics] reference_velocity", None
+    inflow, walls = {}, {}
+    for p in mesh.patches:
+        spec = boundaries.get(p.name)
+        if not isinstance(spec, dict) or spec.get("type") not in ("inlet", "farfield", "wall"):
+            continue
+        sl = slice(p.start, p.start + p.size)
+        w = np.asarray(mesh.magSf[sl], dtype=float)
+        fc = mesh.face_centers[sl]
+        if axisymmetric:
+            w = w * np.maximum(fc[:, 1], 0.0)
+        if w.sum() <= 0.0:
+            continue
+        if spec["type"] == "inlet" and "flow_rate" in spec:
+            q = abs(float(spec["flow_rate"])) / (2.0 * np.pi if axisymmetric else 1.0)
+            speed = q / w.sum()
+        else:
+            U = spec.get("U")
+            if U is None or isinstance(U, str) or len(U) != fc.shape[1]:
+                continue                        # erreur expliquée plus tard (_setup_bc)
+            xyz = _xyz(fc)
+            comps = [_eval_expr(c, *xyz) if isinstance(c, str) else np.full(len(fc), float(c))
+                     for c in U]
+            speed = float(np.sum(np.linalg.norm(np.column_stack(comps), axis=1) * w) / w.sum())
+        if speed > 0.0:
+            (walls if spec["type"] == "wall" else inflow)[p.name] = speed
+    found = inflow or walls
+    if not found:
+        return 1.0, "défaut : aucune vitesse imposée", None
+    name = max(found, key=found.get)
+    uref = found[name]
+    what = "vitesse de paroi" if found is walls else "vitesse d'entrée"
+    others = {k: v for k, v in found.items() if abs(v - uref) > 1e-6 * uref}
+    warn = None
+    if others:
+        listed = ", ".join(f"« {k} » {v:.4g}" for k, v in found.items())
+        warn = (f"Plusieurs vitesses imposées ({listed}) : U_ref = {uref:.4g} (la plus "
+                "grande) pour Re et les coefficients ; donner [physics] reference_velocity "
+                "pour un autre choix.")
+    return uref, f"{what} sur « {name} »", warn
+
+
 def _vector(v, dim, what):
     """Vecteur à `dim` composantes ; un vecteur nul plus court est complété (valeurs par
     défaut (0, 0) du 2D)."""
@@ -468,13 +525,8 @@ class Solver2D:
                 nonorth = mesh.quality()["non_orthogonality_max_deg"]
                 self.settings.relax_U = 0.9 if nonorth < 30.0 else 0.7
         kindU_h, U_fixed_h, kindP_h = self._setup_bc()
-        uref = reference_velocity
-        if uref is None:
-            uref = max([float(np.max(np.linalg.norm(U_fixed_h[kindU_h == 0], axis=1)))
-                        if np.any(kindU_h == 0) else 0.0, 1e-30])
-            uref = max(uref, float(np.linalg.norm(initial_U)) if U_init is None
-                       else float(np.max(np.linalg.norm(U_init, axis=1))), 1e-12)
-        self.U_ref = uref
+        self.U_ref, self.U_ref_source, self.U_ref_warning = choose_reference_velocity(
+            reference_velocity, mesh, boundaries, self.axisymmetric)
         self.model_name = canonical_name(model)
         self.model = get_model(self.model_name, mesh, self.nu, **(model_options or {}))
         self.model.ops = Ops2D(self)
@@ -493,7 +545,7 @@ class Solver2D:
         self.nu_wall = xp.full(fvm.nb, self.nu)     # viscosité effective aux faces de paroi
         self.u_tau_wall = xp.zeros(fvm.nb)
         ti = {"intensity": 0.001, "viscosity_ratio": 0.1, **(turbulence_inflow or {})}
-        self.freestream = self.model.freestream_values(uref, ti["intensity"],
+        self.freestream = self.model.freestream_values(self.U_ref, ti["intensity"],
                                                        ti["viscosity_ratio"])
         # champs
         nc = fvm.nc
@@ -523,7 +575,7 @@ class Solver2D:
             gref = spec.pop("gamma_ref", None)
             if gref is None:
                 bb = mesh.bbox()
-                gref = uref / max(max(bb[dim + k] - bb[k] for k in range(dim)), 1e-300)
+                gref = self.U_ref / max(max(bb[dim + k] - bb[k] for k in range(dim)), 1e-300)
             self.rheology = Rheology(spec, float(gref))
             self.nu_lam = xp.full(nc, self.rheology.nu_ref)
             self.nu_wall = xp.where(self.backend.asarray(self.is_wall), self.rheology.nu_ref,

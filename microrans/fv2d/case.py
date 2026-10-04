@@ -64,7 +64,7 @@ from ..mesh2d.io import write_vtk
 from .report import MODES, quality_text
 from .restart import load_checkpoint, save_checkpoint
 from .sampling import Sampler, TimeAverage, parse_points, write_lines
-from .solver import Settings, Solver2D
+from .solver import Settings, Solver2D, choose_reference_velocity
 
 
 def _settings_from(cfg: dict) -> Settings:
@@ -140,16 +140,27 @@ def build_solver(cfg: dict, base_dir=".", verbose=False, mesh=None):
     if mesh is None:
         mesh = case_mesh(cfg, base_dir, verbose)
     ph = cfg.get("physics", {})
+    dim = getattr(mesh, "dim", 2)
+    axi = bool(ph.get("axisymmetric", False))
+    bcs, U0 = _apply_incidence(cfg, dim)
+    # une seule vitesse de référence pour ν = U L / Re, γ̇_ref et les coefficients (C15)
+    uref, uref_src, uref_warn = choose_reference_velocity(ph.get("reference_velocity"), mesh,
+                                                          bcs, axi)
+    notes = [uref_warn] if uref_warn else []
     visc = ph.get("viscosity")
     if visc and str(visc.get("model", "newtonian")).lower() != "newtonian":
-        visc = {"gamma_ref": ph.get("reference_velocity", 1.0) / ph.get("reference_length", 1.0),
-                **visc}
+        visc = {"gamma_ref": uref / ph.get("reference_length", 1.0), **visc}
     else:
         visc = None
     if "nu" in ph:
         nu = float(ph["nu"])
     elif "reynolds" in ph:
-        nu = ph.get("reference_velocity", 1.0) * ph.get("reference_length", 1.0) / ph["reynolds"]
+        nu = uref * ph.get("reference_length", 1.0) / ph["reynolds"]
+        if uref_src.startswith("défaut"):
+            notes.append(f"reynolds = {ph['reynolds']:g} sans vitesse imposée (écoulement "
+                         "entraîné par une force ou une pression) : Re interprété avec "
+                         "U_ref = 1 (ν = L / Re) ; donner [physics] reference_velocity (vitesse "
+                         "attendue) ou nu.")
     elif visc:
         from .rheology import reference_viscosity
         nu = reference_viscosity({k: v for k, v in visc.items() if k != "gamma_ref"},
@@ -157,15 +168,12 @@ def build_solver(cfg: dict, base_dir=".", verbose=False, mesh=None):
     else:
         raise ValueError("[physics] : donner nu ou reynolds.")
     init = cfg.get("initial", {})
-    axi = bool(ph.get("axisymmetric", False))
     if axi and float(ph.get("angle_of_attack", 0.0)) != 0.0:
         raise ValueError("Axisymétrique : pas d'incidence possible (l'écoulement amont doit "
                          "être parallèle à l'axe).")
-    dim = getattr(mesh, "dim", 2)
     if dim == 3 and cfg.get("output", {}).get("animate"):
         raise ValueError("Maillage 3D : animation (animate) disponible en 2D seulement ; "
                          "écrire des champs VTK avec [output] vtk_every = N.")
-    bcs, U0 = _apply_incidence(cfg, dim)
     solver = Solver2D(mesh, nu, bcs, model=ph.get("model", "laminar"),
                       model_options=ph.get("model_options"),
                       body_force=ph.get("body_force", (0.0,) * dim),
@@ -176,6 +184,7 @@ def build_solver(cfg: dict, base_dir=".", verbose=False, mesh=None):
                       energy=_energy_from(cfg), axisymmetric=axi, viscosity=visc,
                       scalars=cfg.get("scalars"), porous=cfg.get("porous"),
                       swirl=ph.get("swirl", False), actuator_disks=cfg.get("actuator_disk"))
+    solver.reference_notes = notes
     solver.restart_info = None
     if init.get("restart"):
         path = Path(init["restart"])
@@ -246,7 +255,7 @@ def run_case(cfg: dict, base_dir=".", out_dir=None, verbose=True, plot=True, cal
             cfg = {**cfg, "initial": {**cfg.get("initial", {}), "restart": str(path)}}
             fmg = {"levels": fmg, "wall_time_s": round(time.perf_counter() - t_f, 2)}
     solver = build_solver(cfg, base_dir, verbose, mesh=mesh)
-    Uref = ph.get("reference_velocity", solver.U_ref)
+    Uref = solver.U_ref                     # = choose_reference_velocity (une seule règle)
     Lref = ph.get("reference_length", 1.0)
     qdyn = 0.5 * Uref ** 2 * Lref
     axi = solver.axisymmetric
@@ -273,13 +282,19 @@ def run_case(cfg: dict, base_dir=".", out_dir=None, verbose=True, plot=True, cal
     mode = sc.get("mode", "steady")
     if verbose:
         print(f"Cas {dim}D : {solver.mesh.n_cells} cellules, modèle {solver.model.label}, "
-              f"ν = {solver.nu:.4g}, {MODES.get(mode, mode)}")
+              f"ν = {solver.nu:.4g}, U_ref = {Uref:.4g} ({solver.U_ref_source}), "
+              f"{MODES.get(mode, mode)}")
         print("\n".join(quality_text(solver.mesh)))
     t0 = time.perf_counter()
     summary = {"mode": mode, "model": solver.model_name, "n_cells": solver.mesh.n_cells,
                "axisymmetric": axi, "dimension": dim,
-               "nu": solver.nu, "reference_velocity": Uref, "reference_length": Lref,
+               "nu": solver.nu, "reference_velocity": Uref,
+               "reference_velocity_source": solver.U_ref_source, "reference_length": Lref,
                "angle_of_attack": float(ph.get("angle_of_attack", 0.0))}
+    for w in getattr(solver, "reference_notes", []):
+        summary.setdefault("warnings", []).append(w)
+        if verbose:
+            print(f"  ATTENTION : {w}")
     if dim == 3:
         summary["reference_area"] = a_ref
     if solver.restart_info:

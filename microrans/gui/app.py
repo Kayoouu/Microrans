@@ -123,8 +123,7 @@ DEFAULT_CASE = {
     "mesh": {"type": "rectangle", "x0": 0.0, "x1": 1.0, "y0": 0.0, "y1": 1.0, "nx": 48,
              "ny": 48, "names": {"left": "walls", "right": "walls", "bottom": "walls",
                                   "top": "lid"}},
-    "physics": {"nu": 0.01, "model": "laminar", "reference_velocity": 1.0,
-                "reference_length": 1.0},
+    "physics": {"nu": 0.01, "model": "laminar", "reference_length": 1.0},
     "boundary": {"lid": {"type": "wall", "U": [1.0, 0.0]}, "walls": {"type": "wall"}},
     "solver": {"mode": "steady", "max_iter": 2000, "tol": 1e-6},
     "output": {"directory": "results/nouveau_cas"},
@@ -592,7 +591,14 @@ class MainWindow(QMainWindow):
         self.re_edit = B.sci(("physics", "reynolds"), 100.0)
         f.addRow("ν (m²/s)", self.nu_edit)
         f.addRow("Re = U L / ν", self.re_edit)
-        f.addRow("Vitesse de référence U", B.sci(("physics", "reference_velocity"), 1.0))
+        # vide = automatique, même règle qu'en ligne de commande (avant : 1 écrit dans le
+        # cas, C_d × 9 sur la conduite carrée par rapport à la ligne de commande, C15)
+        uref = B.sci(("physics", "reference_velocity"), None, True,
+                     "auto : vitesse d'entrée (ou de paroi mobile), sinon 1")
+        uref.setToolTip("Sert à ν = U L / Re et aux coefficients (½ U² A). Vide : vitesse "
+                        "d'entrée (moyenne sur la frontière, la plus grande s'il y en a "
+                        "plusieurs), sinon vitesse de la paroi mobile, sinon 1.")
+        f.addRow("Vitesse de référence U", uref)
         f.addRow("Longueur de référence L", B.sci(("physics", "reference_length"), 1.0))
         f.addRow("Incidence α (°)", B.sci(("physics", "angle_of_attack"), None, True, "0"))
         axi = B.check(("physics", "axisymmetric"), False, "Axisymétrique (x = axe, y = rayon)")
@@ -1704,16 +1710,52 @@ class MainWindow(QMainWindow):
         périmée, ex. ν = 0.01 affichée pour Re = 20). Changer de mode garde donc la même
         viscosité."""
         ph = self.cfg.get("physics", {})
+        U = self._reference_velocity_estimate()
         try:
-            UL = float(ph.get("reference_velocity", 1.0)) * float(ph.get("reference_length",
-                                                                         1.0))
+            UL = None if U is None else U * float(ph.get("reference_length", 1.0))
         except (TypeError, ValueError):
             return
         by_nu = self.nu_mode.currentData() == "nu"
         given = ph.get("nu" if by_nu else "reynolds")
-        ok = isinstance(given, (int, float)) and given > 0
+        ok = isinstance(given, (int, float)) and given > 0 and UL is not None
         (self.re_edit if by_nu else self.nu_edit).set_value(float(f"{UL / given:.6g}") if ok
                                                             else None)
+
+    def _reference_velocity_estimate(self):
+        """U_ref du calcul (fv2d.solver.choose_reference_velocity) pour l'affichage de ν
+        ou de Re : exacte avec le maillage à jour ; sans maillage, à partir des vitesses
+        constantes des conditions aux limites (None si un débit ou une formule décide)."""
+        ph = self.cfg.get("physics", {})
+        try:
+            if ph.get("reference_velocity") is not None:
+                return float(ph["reference_velocity"])
+        except (TypeError, ValueError):
+            return None
+        bcs = self.cfg.get("boundary") or {}
+        if self.mesh is not None and self._mesh_of == self._mesh_sig():
+            from ..fv2d.solver import choose_reference_velocity
+            try:
+                return choose_reference_velocity(None, self.mesh, bcs,
+                                                 bool(ph.get("axisymmetric")))[0]
+            except Exception:                    # noqa: BLE001 — affichage seulement
+                return None
+        speeds = {"inflow": [], "wall": []}
+        for spec in bcs.values():
+            if not isinstance(spec, dict) or spec.get("type") not in ("inlet", "farfield",
+                                                                      "wall"):
+                continue
+            U = spec.get("U")
+            if spec.get("type") == "inlet" and ("flow_rate" in spec or U is None):
+                return None
+            if U is None:
+                continue
+            if not all(isinstance(c, (int, float)) for c in U):
+                return None
+            v = float(np.linalg.norm(U))
+            if v > 0.0:
+                speeds["wall" if spec["type"] == "wall" else "inflow"].append(v)
+        found = speeds["inflow"] or speeds["wall"]
+        return max(found) if found else 1.0
 
     def _energy_toggled(self, on=None):
         on = self.energy_on.isChecked()

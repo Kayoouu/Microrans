@@ -7,7 +7,7 @@ inutile (mesure à l'appui), l'écrire dans le journal et passer à la suivante.
 
 ## En cours
 
-(rien ; F1 fini sauf C15, en attente de l'utilisateur)
+(rien ; F1 et C15 faits le 2026-10-04)
 
 ## À faire
 
@@ -16,24 +16,19 @@ Lots de correction de l'audit 2 et de l'audit 2 approfondi (détail et reproduct
 relancer après chaque lot : `tools/audit/`). Demande de l'utilisateur : fouiller les bugs et
 l'expérience **avant** de continuer la 3D. Un test par point corrigé.
 
-1. **F1 — reste C15 seulement** (fait le 2026-10-04 : P1, C11, C13, C14, C18, C20, C21,
-   U14, U17). C15 vitesse de référence : **décision de l'utilisateur attendue** (question
-   posée le 2026-10-04 : proposition = vitesse imposée maximale partout, ν depuis Re
-   compris, interface sans `reference_velocity = 1` forcé, U_ref affiché ; change des
-   résultats de l'interface). Ne pas trancher seul ; si pas de réponse, passer à F1b.
-2. **F1b — plantages et reprises** : C16 (perturbation en 3D), C17 (reprise compressible
+1. **F1b — plantages et reprises** : C16 (perturbation en 3D), C17 (reprise compressible
    implicite / NS : reprendre l'état du pilotage CFL, sinon ne plus écrire « exact »), C19
    (Ctrl-C : écrire checkpoint + résumé + champs comme le bouton Arrêter), C22 (polaire
    3D : rotation autour de z), C23 (multigrille sur extrusion fine : refuser proprement ou
    interpoler par couche). (C20 fait en F1.) Balayage d'une clé `bodies.0.radius` :
    refusé clairement depuis F1 (« clé impossible à modifier ») ; à rendre possible ?
-3. **F2 — messages** : M13 à M22 (BOM accepté : `utf-8-sig` ; Latin-1, sortie = fichier,
+2. **F2 — messages** : M13 à M22 (BOM accepté : `utf-8-sig` ; Latin-1, sortie = fichier,
    une seule maille, dossier masquant un exemple), U16 (virgule décimale des sondes), L6.
-4. **F3 — interface 3D, figures, sorties** : U15, U18, U19, U20 (Arrêter pendant le
+3. **F3 — interface 3D, figures, sorties** : U15, U18, U19, U20 (Arrêter pendant le
    maillage), L5, L7 (aire et normale dans les CSV pariétaux), P2 (interface 2 fois plus
    lente : mesurer la cause d'abord).
-5. **F4 — textes et documentation** : T1, T2, D5 à D8.
-6. **Import de maillage 3D (Gmsh .msh).** `Mesh3D` connaît déjà tétraèdres, pyramides,
+4. **F4 — textes et documentation** : T1, T2, D5 à D8.
+5. **Import de maillage 3D (Gmsh .msh).** `Mesh3D` connaît déjà tétraèdres, pyramides,
    prismes, hexaèdres (`VTK_TYPES`) ; vérifier par des tests que le solveur les traite
    (seuls hexaèdres et prismes sont validés aujourd'hui). Frontières depuis les groupes physiques.
    Les coupes des figures (`PlaneSlice`) gèrent déjà tétraèdres et pyramides (testé) ; la
@@ -44,12 +39,12 @@ l'expérience **avant** de continuer la 3D. Un test par point corrigé.
    proportionnel ; total égal) : découpage différent des faces, pas une erreur ; à
    documenter si l'import amène de tels maillages.
    Fait quand : lecture testée sur un petit fichier versionné, calcul court, doc.
-7. **Un calcul sur plusieurs cœurs.** Numba multi-fil mesuré plus lent sur la machine de
+6. **Un calcul sur plusieurs cœurs.** Numba multi-fil mesuré plus lent sur la machine de
    test (peut-être à cause de P1 : refaire la mesure après F1) : mesurer d'abord où part le temps (AMG pyamg mono-fil, assemblage) avant de choisir.
    Ne rien promettre sans mesure.
-8. **Maillage en C pour les profils + comparaison NASA TMR** (vérifier d'abord que les
+7. **Maillage en C pour les profils + comparaison NASA TMR** (vérifier d'abord que les
    données TMR sont accessibles depuis l'environnement ; sinon le noter et passer).
-9. **Étude de convergence en maillage (GCI)** sur 2 ou 3 cas de validation du README.
+8. **Étude de convergence en maillage (GCI)** sur 2 ou 3 cas de validation du README.
 
 ## Plus tard (feuille de route du README § 9, non prioritaire)
 

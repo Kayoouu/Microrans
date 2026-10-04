@@ -16,6 +16,13 @@ U et L une vitesse et une longueur de référence (`reference_velocity`,
 `reference_length`). Petit (< ~1 000 pour un obstacle) : écoulement laminaire ; grand :
 turbulent. Donner `[physics] reynolds` au lieu de `nu` : ν = U L / Re.
 
+**Vitesse de référence U_ref** — une seule valeur, utilisée pour ν = U L / Re et pour tous
+les coefficients (½ U² A). Si `reference_velocity` n'est pas donnée : vitesse d'entrée
+(moyenne sur la frontière d'entrée, de débit ou de champ lointain ; la plus grande s'il y
+en a plusieurs, avec un avertissement), sinon vitesse de la paroi mobile (couvercle d'une
+cavité), sinon 1. Jamais la vitesse initiale. Valeur et origine affichées au début du
+calcul et écrites dans `summary.json`.
+
 **Laminaire / turbulent** — laminaire : écoulement régulier, calculé sans modèle ;
 turbulent : fluctuations chaotiques, représentées en moyenne par un modèle de turbulence
 (`[physics] model`).

@@ -619,6 +619,22 @@ def test_run_after_mesh_settings_change_remeshes(win, monkeypatch, tmp_path):
     assert "remaille" not in win.log_view.toPlainText()
 
 
+def test_reference_velocity_left_automatic(win):
+    """C15 (audit 2 approfondi) : l'interface écrivait reference_velocity = 1 dans tout cas
+    qui n'en donnait pas ; conduite_carree_3d : C_d 0.2157 contre 0.02397 en ligne de
+    commande. Vide = même règle automatique qu'en ligne de commande."""
+    from microrans.cli import examples_dir
+    win.open_case(examples_dir() / "conduite_carree_3d.toml")
+    win._store_forms()
+    assert "reference_velocity" not in win.cfg["physics"]
+    win.new_case()
+    win._store_forms()
+    assert "reference_velocity" not in win.cfg["physics"]
+    win.open_case(examples_dir() / "cylindre_re20.toml")      # valeur donnée : gardée
+    win._store_forms()
+    assert win.cfg["physics"]["reference_velocity"] == 1.0
+
+
 def test_3d_case_meshed_run_and_plotted(win, monkeypatch, tmp_path):
     """Lot E : cas 3D de bout en bout dans l'interface (avant : refusé) — maillage, calcul,
     champs dans un plan z (Uz compris), plan hors du domaine expliqué au lieu d'une figure

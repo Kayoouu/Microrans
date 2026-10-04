@@ -6,8 +6,9 @@
   PySide6 et exécutables PyInstaller Windows / Linux (CI GitHub Actions).
 - Dernier lot terminé : **F1 — résultats faux, calculs perdus** (2026-10-04, relance
   quotidienne) : P1 (1 fil BLAS), C11, C13, C14, C18, C20, C21, U14, U17 corrigés, un test
-  par point (chacun échoue sur l'ancien code). **C15 (vitesse de référence) en attente
-  d'une décision de l'utilisateur.** Avant : audit 2 approfondi (576a0bc, e5deb38).
+  par point (chacun échoue sur l'ancien code). Puis **C15** (l'utilisateur m'a laissé
+  choisir « la meilleure solution ») : une seule vitesse de référence. Avant : audit 2
+  approfondi (576a0bc, e5deb38).
 - Exécutables de a0f1bf6 (lot F1) : run https://github.com/Kayoouu/Microrans/actions/runs/37177304448
   (Windows : artefact 11293569122, Linux : 11293648649 ; expirent le 2027-01-02). CI verte
   (tests https://github.com/Kayoouu/Microrans/actions/runs/37177299915). Exécutable
@@ -45,6 +46,10 @@ calcul stationnaire 10⁶ cellules = quelques centaines d'itérations ≈ 1 à 1
   k-d a été essayée et rejetée (64³ : 228 s, vecteurs changés aux égalités).
 - Numba désactivé par défaut (`[solver] numba = false`) et exclu de l'exécutable : ~10 % de
   gain mesuré, multi-fil plus lent sur la machine de test.
+- Vitesse de référence (C15, 2026-10-04) : `fv2d.solver.choose_reference_velocity`, une
+  seule règle pour ν = U L / Re, coefficients, γ̇_ref, C_T : `reference_velocity` donnée,
+  sinon vitesse d'entrée (débitante, la plus grande + avertissement), sinon paroi mobile,
+  sinon 1 ; jamais la vitesse initiale ; interface : champ vide = auto.
 - BLAS : 1 fil par calcul, fixé dans `microrans/__init__.py` avant l'import de NumPy
   (F1 ; 6 cas mesurés A/B/B/A, aucun plus lent ; 2 calculs simultanés 9 s au lieu de
   137 s). La mesure « Numba multi-fil plus lent » datait d'avant : à refaire.
@@ -64,9 +69,7 @@ calcul stationnaire 10⁶ cellules = quelques centaines d'itérations ≈ 1 à 1
 
 ## Limites ouvertes importantes (détail : README § 8)
 
-- **Défauts connus non encore corrigés (lots F1b, C15)** : vitesse de référence par défaut
-  incohérente (C15 : C_d × 9 entre interface et ligne de commande, Re faux si U ≠ 1 ;
-  décision de l'utilisateur attendue) ; Ctrl-C perd tout (C19) ; reprise compressible
+- **Défauts connus non encore corrigés (lot F1b)** : Ctrl-C perd tout (C19) ; reprise compressible
   implicite non exacte (C17) ; plantages : perturbation 3D (C16), polaire 3D (C22),
   multigrille sur extrusion fine (C23).
 

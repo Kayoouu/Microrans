@@ -229,7 +229,7 @@ Exemples complets : `microrans examples` ; tutoriel : `docs/tutoriel.md`.
 | `compressible` | true : solveur compressible (grandeurs SI, section [flow]) |  |
 | `nu` | viscosité cinématique ν (m²/s) | incompressible seulement |
 | `reynolds` | nombre de Reynolds (ν = U_ref L_ref / Re) — au lieu de nu | incompressible seulement |
-| `reference_velocity` | vitesse de référence U_ref (défaut 1) | incompressible seulement |
+| `reference_velocity` | vitesse de référence U_ref : ν = U L / Re, coefficients (défaut : vitesse d'entrée, sinon de paroi mobile, sinon 1) | incompressible seulement |
 | `reference_length` | longueur de référence L_ref (défaut 1) |  |
 | `reference_area` | axisymétrique : aire de référence de Cd (défaut π L²/4) | incompressible seulement |
 | `model` | laminar \| sa \| ke \| kw \| sst \| sst_gamma (défaut laminar) | incompressible seulement |

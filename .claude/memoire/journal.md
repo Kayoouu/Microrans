@@ -3,6 +3,26 @@
 Détail des chiffres : README (§ 6 validation, § 7 performances, § 8 limites) et messages de
 commit. Ce journal sert à retrouver ce qui a été fait, pourquoi, et ce qui a été constaté.
 
+## 2026-10-04 — C15 : une seule vitesse de référence
+
+- Demande : « La meilleure solution pour C15 » (choix délégué). Mesuré d'abord : 4 usages,
+  2 conventions (1 pour ν et γ̇_ref ; vitesse imposée max OU vitesse initiale pour les
+  coefficients) ; interface : 1 écrit. Seuls 2 exemples sans `reference_velocity` : cavité
+  cubique (auto 1 = 1) et conduite carrée (auto 3 = **vitesse initiale**, arbitraire).
+- Règle retenue (`choose_reference_velocity`, solver.py, utilisée par le solveur et par
+  build_solver avant ν) : donnée > vitesse d'entrée (inlet U ou débit, farfield ;
+  moyenne pondérée par l'aire, ×r en axisymétrique ; la plus grande + avertissement) >
+  paroi mobile > 1. Entrée prioritaire sur la paroi : cylindre tournant → Re sur U∞.
+  Reynolds sans vitesse imposée : avertissement. U_ref et origine dans le journal et
+  summary.json (`reference_velocity_source`). Interface : champ vide = auto ; affichage
+  de ν / Re dérivé avec la même règle.
+- Vérifié : reynolds = 100 + entrée U = 2 → ν = 0.02 (avant 0.01, Re 200) ; campagne 6 sur
+  22 exemples : interface = ligne de commande partout (hors chemins) ; ligne de commande
+  avant / après : seuls les coefficients de la conduite changent (×1/9 ; champs identiques
+  au bit près). T3A : C_l (≈ 5e-4) change de 1.7e-6 relatif entre l'audit 2 et maintenant :
+  dû à P1 (ordre des sommes BLAS), identique au bit près avant / après C15 à BLAS égal.
+- Tests : 3 nouveaux ; suite 468 réussis, 1 ignoré (5 min 35 s).
+
 ## 2026-10-04 — Lot F1 : résultats faux, calculs perdus
 
 - Relance quotidienne (03:53 UTC). C15 laissé de côté : décision de convention posée à
