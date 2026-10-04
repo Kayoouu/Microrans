@@ -327,8 +327,8 @@ MICRORANS_EXE=dist/microrans/microrans python tools/audit/c1_exemples_cli.py SOR
 | 10. Fichiers « Windows » | BOM, CRLF, Latin-1, espaces et accents, sortie occupée, contour CSV français, Gmsh 4.1, JSON | CRLF, accents, JSON, Gmsh 4.1 ASCII : bons ; **BOM refusé** (M20) ; **contour CSV français : 14 Go puis processus tué** (C18) |
 | 11. Ctrl-C | cavité, cylindre, NACA compressible | **rien n'est écrit** (C19) |
 | 12. Cas limites | vitesse nulle, 1 maille, Re 10⁸, plages vides / inversées / pas nul, dt minuscule, balayages | plages et valeurs bien refusées ; **balayage de `mesh.nx` : erreur interne** (C20) ; **balayage d'une clé mal écrite accepté en silence** (C21) |
-| 13. Post-traitement | efforts recalculés à partir de wall_*.csv et des faces | identiques au résumé (Cd de pression du cylindre 1.224690, frottement de la conduite 3D 0.026460) |
-| 14. Documentation rejouée | 25 commandes du README, du tutoriel, du dépannage, dossier vide | 17 justes ; 3 du README en échec (C11) ; 3 exemples fictifs ; 1 trop longue sur machine chargée (remesurée) |
+| 13. Post-traitement | efforts recalculés à partir de wall_*.csv et des faces (cylindre Re 20, NACA SA, conduite 3D) | pression : identique au résumé (C_d de pression du cylindre 1.224690, NACA 0.005859) ; frottement : identique sur la conduite (0.026460), 0.19 % plus bas sur le cylindre (L7) |
+| 14. Documentation rejouée | 25 commandes du README, du tutoriel, du dépannage, dossier vide | 17 justes ; 3 du README en échec (C11) ; 3 exemples fictifs ; RK3 du cylindre : 1 061 s sur machine libre, au-dessus des « 2 à 16 min » annoncés (D8) |
 | 15. Interface : arrêts, durée, mémoire | « Arrêter » pendant maillage / calcul / balayage ; cavité ; 400 pas instationnaires | arrêt du calcul en 2.4 s, reprise exacte ; balayage 0.8 s ; pas de fuite mémoire ; **arrêt sans effet pendant le maillage** (U20) ; interface 2 fois plus lente (P2) |
 | Exécutable | construit localement (même spec que la CI), 25 exemples, côte à côte avec Python | 24 / 25 (polaire : C11) ; même vitesse que Python ; **fils BLAS : deux calculs simultanés jusqu'à 13 fois plus lents** (P1) |
 | Relecture du code | hypothèses 2D dans les chemins 3D, exceptions avalées | **polaire 3D : plantage** (C22), **multigrille sur extrusion fine : plantage** (C23) ; exceptions avalées : toutes volontaires |
@@ -362,15 +362,15 @@ MICRORANS_EXE=dist/microrans/microrans python tools/audit/c1_exemples_cli.py SOR
 | M21 | Une seule maille (2D 1 × 1, 3D 1 × 1 × 1) → « Erreur : Factor is exactly singular ». | à faire (F2) |
 | M22 | Un dossier du dossier courant portant le nom d'un exemple masque l'exemple : `microrans run2d cavite_cubique_re100_3d` → « un fichier est attendu, pas un dossier » (il suffit d'un `-o cavite_cubique_re100_3d` précédent). | à faire (F2) |
 | U20 | « Arrêter » sans effet pendant le maillage (hybride : mené à son terme 21.8 s après la demande). | à faire (F3) |
-| L7 | Les CSV pariétaux n'ont ni aire ni normale des faces : l'utilisateur ne peut pas refaire l'intégration des efforts (tableur, comparaison avec un autre code). | à faire (F3) |
-| D8 | README : « un calcul = un cœur » (faux en CPU consommé, P1) ; « reprise … identique au bit près » (faux en compressible implicite, C17) ; un maillage importé ne peut pas avoir de frontières périodiques (`periodic` refusé pour `type = "file"`) : non documenté. | à faire (F4) |
+| L7 | Les CSV pariétaux n'ont ni aire ni normale des faces : l'utilisateur ne peut pas refaire l'intégration des efforts (tableur, comparaison avec un autre code). De plus, le frottement du résumé intègre ν (U_P − U_paroi) / d **complet** (composante normale comprise, `solver.forces`), le CSV la seule composante tangentielle : à convergence, 0.195 % du C_d de frottement du cylindre Re 20 (≈ 0.08 % du C_d total), 0.006 % sur le NACA. Écart de discrétisation (la contrainte normale visqueuse est nulle à une paroi sans glissement) : projeter sur la tangente dans les efforts, ou l'écrire. | à faire (F3) |
+| D8 | README : « un calcul = un cœur » (faux en CPU consommé, P1) ; « cylindre Re = 100 : 2 à 16 min » : la commande RK3 + `adjust_dt` du § 3 a pris 1 061 s (17.7 min) sur machine libre (tableau : 949 s) ; « reprise … identique au bit près » (faux en compressible implicite, C17) ; un maillage importé ne peut pas avoir de frontières périodiques (`periodic` refusé pour `type = "file"`) : non documenté. | à faire (F4) |
 
 ## Ce qui est vérifié juste (en plus de l'audit 2)
 
 Interface = ligne de commande au bit près sur 20 des 22 exemples comparés ; reprise exacte au bit près
 sur tout l'incompressible ; 2D = 3D une couche à la convergence ; export OpenFOAM
 structurellement correct ; aller-retour .msh / .su2 exact ; maillage réimporté → même
-résultat ; efforts du résumé = intégration des CSV pariétaux ; CRLF, chemins accentués, JSON,
+résultat ; efforts de pression du résumé = intégration des CSV pariétaux ; CRLF, chemins accentués, JSON,
 Gmsh 4.1 ; exécutable = Python (résultats et vitesse) ; pas de fuite mémoire de l'interface ;
 plages de balayage mal formées refusées clairement.
 

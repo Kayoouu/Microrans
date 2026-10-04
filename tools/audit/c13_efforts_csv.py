@@ -1,6 +1,7 @@
 """Campagne 13 : les fichiers wall_<frontière>.csv permettent-ils de retrouver les efforts du
 résumé ? Intégration de C_p sur les faces (aires et normales prises dans le maillage, car le
-CSV ne les donne pas : constat L7) et comparaison avec summary.json (60 itérations)."""
+CSV ne les donne pas : constat L7) et comparaison avec summary.json (60 itérations).
+Le frottement n'est comparable en 3D que sur une paroi parallèle à x (C_f = norme)."""
 
 import sys
 from pathlib import Path
@@ -35,6 +36,9 @@ for name, patch in (("cylindre_re20", "cylinder"), ("naca0012_sa", "airfoil"),
     if Aref is None:
         Aref = Lref if m.points.shape[1] == 2 else Lref * np.ptp(m.points[:, 2])
     Fp = (csv["Cp"][:, None] * n * A[:, None]).sum(0) / Aref
+    # 2D : C_f signé selon la tangente t = (−n_y, n_x) ; 3D : C_f = norme (≥ 0), donc
+    # intégrable sans direction seulement sur une paroi parallèle à l'écoulement (ici x)
+    tx = -n[:, 1] if m.points.shape[1] == 2 else np.ones(len(A))
+    Fv = np.sum(csv["Cf"] * A * tx) / Aref
     print(f"{name} : Cd pression CSV {Fp[0]:+.6f} / résumé {s[patch]['Cd_pressure']:+.6f} ; "
-          f"Σ Cf·A / A_ref {np.sum(csv['Cf'] * A) / Aref:+.6f} / résumé "
-          f"{s[patch]['Cd_viscous']:+.6f}")
+          f"Cd frottement CSV {Fv:+.6f} / résumé {s[patch]['Cd_viscous']:+.6f}")

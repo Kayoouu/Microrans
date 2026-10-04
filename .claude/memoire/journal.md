@@ -18,8 +18,12 @@ commit. Ce journal sert à retrouver ce qui a été fait, pourquoi, et ce qui a 
 - Vérifié juste : interface = ligne de commande au bit près (21 / 23) ; reprise exacte au bit
   près en incompressible et RK3 (pas en compressible implicite / NS : C17, convergé
   identique mais +14 % d'itérations) ; 2D = 3D une couche à 2e-6 près ; OpenFOAM
-  structurellement correct ; .msh / .su2 aller-retour exact ; efforts = intégration des CSV ;
+  structurellement correct ; .msh / .su2 aller-retour exact ; pression = intégration des
+  CSV (frottement : 0.195 % d'écart sur le cylindre, composante normale incluse dans le
+  résumé, ajouté à L7) ;
   exécutable = Python (24 / 25, même vitesse, pic mémoire 113 contre 158 Mo).
+- README : la commande RK3 + adjust_dt du cylindre Re 100 a pris 1 061 s (17.7 min) sur
+  machine libre, au-dessus des « 2 à 16 min » écrits (ajouté à D8).
 - Pièges : un essai de contour CSV français sans limite mémoire a fait tuer un processus à
   14 Go (les scripts limitent maintenant à 4 Go) ; deux calculs simultanés faussent tous
   les chronométrages (P1) : un seul calcul à la fois pour mesurer.
