@@ -4,9 +4,11 @@
 
 - microrans : outil RANS / URANS 1D, 2D, 3D (périmètre réduit) avec mailleur, interface
   PySide6 et exécutables PyInstaller Windows / Linux (CI GitHub Actions).
-- Dernier lot terminé : **#30 — écart transsonique NACA 0012 expliqué** (2026-10-03, à la
-  demande « Envoie la purée pour un lot entier » ; 688df2a ; voir journal). Avant : E4 coupes x / y
-  (c1747e2), E3 VTK binaire (a4693bd), E2 distance à la paroi (3c50fb4).
+- Dernier lot terminé : **audit 2 — fouille bugs et expérience utilisateur** (2026-10-04,
+  demande : « Avant de continuer le lot 3D, … une session fouille pour ses bugs, pour
+  l'expérience utilisateur ») : 5 campagnes, constats dans `docs/audit_utilisateur.md`
+  (partie « Audit 2 »), scripts dans `tools/audit/`, corrections en lots F1 à F4 (a_faire).
+  Avant : #30 transsonique (688df2a), E4 coupes x / y (c1747e2).
 - Exécutables de 688df2a (lot #30) : run https://github.com/Kayoouu/Microrans/actions/runs/37145810874
   (Windows : artefact 11281804767, Linux : 11282345490 ; expirent le 2027-01-01). CI verte
   (tests https://github.com/Kayoouu/Microrans/actions/runs/37145806547).
@@ -57,6 +59,12 @@ calcul stationnaire 10⁶ cellules = quelques centaines d'itérations ≈ 1 à 1
   deux plans de symétrie = 2D exact. Documenté (README § 8, limite 17).
 
 ## Limites ouvertes importantes (détail : README § 8)
+
+- **Défauts connus non encore corrigés (audit 2, lot F1)** : polaire / balayage /
+  multigrille en échec hors du dossier du cas (C11) ; interface : canal_turbulent_3d
+  calculé faux (périodicité effacée, C13), maillage périmé utilisé (U14), vecteurs de
+  bruit dans les coupes 3D (U17) ; frontière inexistante dans `forces` → calcul perdu à la
+  fin (C14).
 
 - Un calcul = un cœur ; SIMPLE lent sur maillages fins étirés.
 - NACA 0012 transsonique : ancien « −4.5 % » expliqué (référence d'une autre géométrie +

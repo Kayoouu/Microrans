@@ -180,3 +180,117 @@ disques actuateurs, le démarrage multigrille, le pseudo-transitoire, les sondes
 dans l'interface), l'arrêt sur efforts, la reprise, l'arrêt en cours de calcul, l'export du
 maillage, le balayage, le canal 1D (RANS et URANS), les 20 exemples de calcul en ligne de
 commande. Aucune valeur NaN ou aberrante dans les 102 résumés produits (hors M8).
+
+---
+
+# Audit 2 (2026-10-04) — après la 3D (lots D4, E à E4) et le lot #30
+
+Même démarche que l'audit 1, centrée sur ce qui a changé depuis : 3D (pavé, extrusion,
+interface, coupes x / y / z, VTK binaire), `trailing_edge`, `venkat_k`. Les campagnes sont
+maintenant **versionnées** dans `tools/audit/` pour être relancées après les corrections :
+
+```bash
+python tools/audit/c1_exemples_cli.py SORTIE [exemple …]          # campagne 1
+python tools/audit/c2_exemples_interface.py SORTIE [exemple …]    # campagne 2
+python tools/audit/c3_entrees_invalides.py SORTIE [variante …]    # campagne 3
+python tools/audit/c3b_cles_numeriques.py SORTIE [contexte]       # campagnes 3b / 3c
+python tools/audit/c4_combinaisons_3d_interface.py SORTIE [scénario …]  # campagne 4
+```
+
+| Campagne | Contenu | Résultat |
+|---|---|---|
+| 1. Exemples, ligne de commande | la commande écrite en tête de chacun des 25 exemples, copiée telle quelle, lancée dans un dossier vide, un exemple à la fois | 24 / 25 ; **la polaire s'arrête au 2e point** (C11) ; aucune valeur non finie dans les résumés ; durées conformes au catalogue (canal 3D : 23.6 s au premier lancement, 10.6 s ensuite : cache des polices de Matplotlib construit une fois) |
+| 2. Exemples, interface | les 25 : ouverture, enregistrement immédiat, maillage, calcul court, tous les champs, 5 grandeurs pariétales, profil, vue du maillage, coupes x / y / z (3D), « Continuer » | aucun plantage ; **canal_turbulent_3d calculé faux** (C13) ; exemples enregistrés : seules des valeurs égales aux défauts ajoutées, sauf ce cas |
+| 3. Entrées invalides, ligne de commande | 44 variantes (pavé, extrusion, vecteurs à 2 composantes en 3D, options 2D seulement, commandes polar / sweep / mesh sur des cas 3D, sorties, `trailing_edge`, `venkat_k`) ; 3b / 3c : 116 valeurs (texte, puis −1) sur 46 clés numériques, puis 12 clés reprises dans un cas où elles servent | 36 / 44 corrects (29 refus clairs en moins d'une seconde, 7 cas valides acceptés ou avertis à juste titre) ; 0 trace Python brute ; 8 à reprendre (M13 à M16, M18, M19, garde mémoire) ; clés « expert » non vérifiées (M18) |
+| 4. Combinaisons 3D, interface | 38 scénarios + 5 complémentaires : extrusion de 13 exemples 2D par la case à cocher, pavé × 6 modèles + loi de paroi, 4 schémas instationnaires, thermique 3D, 4 types d'extrémités en z, passage 2D ↔ 3D après maillage, changement de type de maillage, sondes, balayage, Continuer, export, plans de coupe au bord et hors domaine | 26 sans aucun message ; 6 refus attendus et clairs (axisymétrique, poreux, animation, maillage seul, export .msh / .su2) ; 1 scénario faussé par le script (refait à part) ; 5 défauts : **maillage périmé utilisé sans avertissement** (U14), sondes / profils non convertis en 3D (U15), saisie des sondes (U16) ; à part : C14 côté interface |
+| 5. Relecture | aide de la ligne de commande, « À propos », README (§ 1, 3, 8, 9), tutoriel, glossaire, figures produites, 4 captures de l'interface en 3D | **vecteurs de bruit numérique affichés comme un écoulement** (U17) ; textes périmés (T1 à T3) ; documentation 3D (D5 à D7) |
+
+Les boîtes de dialogue sont interceptées (titre et texte enregistrés). Piège corrigé en
+cours de campagne : `set_combo` bloque les signaux de Qt ; les changements de liste doivent
+passer par `setCurrentIndex` pour imiter un clic (deux faux constats évités ainsi).
+
+Non testé ici : les exécutables eux-mêmes (téléchargement des artefacts refusé par le
+proxy de l'environnement ; l'auto-test de l'interface tourne sur chaque exécutable en CI),
+Windows, écran réel ou haute densité, cartes graphiques, calculs de plusieurs heures.
+
+Statut : **à faire** (lot prévu), puis **corrigé** avec le test qui le vérifie.
+
+## C. Résultats faux, calculs perdus
+
+| # | Constat | Reproduction | Statut |
+|---|---|---|---|
+| C11 | **Polaire, balayage (série et parallèle) et démarrage multigrille cassés hors du dossier du cas.** Le dossier de sortie relatif est pris dans le dossier courant, la reprise relative à côté du fichier de cas. `microrans polar naca0012_polaire --alpha -4 14 2` (commande du README et de l'en-tête) : arrêt au 2e point après 32 s, « Fichier de reprise introuvable : …/microrans/examples/results/… » (reprise jamais demandée). Ne marche que lancé depuis le dossier du cas. L'interface n'est pas touchée (dossier de sortie absolu). | `microrans polar naca0012_polaire --alpha 0 2 2` ; `microrans sweep cavite_re100 … -j 2` ; `microrans run2d cavite_re100 --set solver.fmg_levels=1` | à faire (F1) |
+| C13 | **Interface : canal_turbulent_3d calculé faux sans message.** Les faces d'extrusion y sont renommées (`names = { back = "z0", front = "z1" }`) ; l'interface ne reconnaît la périodicité que pour les noms `back` / `front` : `periodic = [["z0", "z1"]]` est effacé à l'enregistrement et au lancement, puis z0 et z1 sont devinées « paroi ». Canal → conduite fermée : C_d du fond 0.00791 au lieu de 0.008889 (−11 %). Tout cas à faces d'extrusion renommées est touché. | ouvrir l'exemple, Lancer | à faire (F1) |
+| C14 | **Frontière inexistante dans `[output] forces` : tout le calcul est fait, puis « Erreur interne inattendue (KeyError) » à la fin**, sans résumé. Pour un long calcul, tout est perdu. Interface : même cause quand on change le type de maillage d'un exemple (cylindre_re20 → Rectangle : `forces = ["cylinder"]` reste → « Paramètre manquant dans le cas : 'cylinder' »). | `microrans run2d cavite_re100 --set 'output.forces=["lidd"]'` | à faire (F1) |
+| U14 | **Interface : maillage périmé utilisé sans avertissement.** Maillage généré, `nx` changé de 64 à 16 dans le formulaire, « Lancer » : calcul sur l'ancien maillage (4 096 cellules), le cas enregistré dit nx = 16. Même cause, case « Extruder » cochée ou décochée après le maillage : messages incompréhensibles (« [boundary.lid] U = [1.0, 0.0] : 3 composantes attendues (maillage 3D) » juste après être repassé en 2D ; « body_force = [np.float64(0.0), …] »). | voir campagne 4, scénarios `decoche_apres_maillage`, `coche_apres_maillage` | à faire (F1) |
+| U17 | **Coupes 3D : bruit numérique dessiné comme un écoulement.** Conduite carrée laminaire, coupe x = cte, « Vecteurs vitesse » : grandes flèches désordonnées alors que max \|U_y\|, \|U_z\| = 7·10⁻¹⁶ (U_x = 7.3) : l'échelle automatique des flèches agrandit le bruit d'un facteur ~10¹⁶ et fait croire à un écoulement secondaire qui n'existe pas. | capture 3 de la campagne 5 | à faire (F1) |
+
+## M. Messages
+
+| # | Constat | Statut |
+|---|---|---|
+| M13 | `periodic = [["inlet", "outlett"]]` (pavé ou extrusion) → « Erreur : 'outlett' is not in list » (message Python brut, ni liste des frontières, ni suggestion). | à faire (F2) |
+| M14 | Clés de `[solver]` compressible données en texte → « Erreur interne inattendue » (voir M18). | à faire (F2) |
+| M15 | Type de frontière mal écrit (`patch_types = { z0 = "symetrie" }`) → « Type de patch inconnu 'symetrie' (z0) », sans liste des choix ni suggestion. | à faire (F2) |
+| M16 | Clé dans la mauvaise section (`[physics] moment_center`, qui va dans `[output]`) → « clé inconnue, ignorée », sans indiquer la bonne section. | à faire (F2) |
+| M17 | « Conditions aux limites manquantes pour les patches ['front'] » : liste Python, mot anglais. | à faire (F2) |
+| M18 | **Clés « expert » de `[solver]` non vérifiées** (campagnes 3b / 3c, chaque clé dans un cas où elle sert). Texte → « Erreur interne inattendue » pour `venkat_k`, `limiter_freeze`, `entropy_fix`, `cn_theta`, `ddt_phi_coeff`, `cfl_growth`, `viscous_factor` ; message Python en anglais pour `linear_iter` (« invalid literal for int() »), `linear_tol` (« could not convert string to float ») ; −1 accepté en silence pour `venkat_k`, `limiter_freeze`, `entropy_fix`, `ddt_phi_coeff`, `nonorth_limit`, `cfl_growth`, `cfl_cuts`, `linear_*`, `viscous_factor` ; `cn_theta = -1` → « Le calcul a divergé » au lieu d'un refus. Bien vérifiées : `relax_*`, `pseudo_*`, `max_co`, `max_dt`, `n_outer`, `n_corr`, `n_nonorth`, `max_iter`, `tol`, `monitor_*`, `dt`, `t_end`, `fmg_levels`, `cfl`, `cfl_max`, `order`, `[flow]`. | à faire (F2) |
+| M19 | Mineurs : `trailing_edge` sur un corps qui n'est pas un NACA, ignoré sans avertissement ; `microrans urans --steps 50` (abréviation acceptée de `--steps-per-period`) → « steps_per_period doit être un multiple de n_phases » (noms internes) ; commande d'en-tête de `mesh_naca_multi` (`--type unstructured`) → « ATTENTION : [mesh] layers : sans effet ». | à faire (F2) |
+
+## U. Interface
+
+| # | Constat | Statut |
+|---|---|---|
+| U15 | Extrusion : vitesses, force volumique, gravité, U initiale passent à 3 composantes, mais pas les sondes ni les profils `[[output.lines]]` → refus au lancement, après le maillage (`melange_deux_courants` : « [[output.lines]] « sortie » : start et end à 3 composantes attendus »). Case « Extruder » cochable sur un cas axisymétrique, poreux ou animé : refus seulement au lancement (message clair). Extrusion absente pour le maillage multi-blocs (permise dans le fichier de cas). | à faire (F3) |
+| U16 | Sondes : virgule décimale refusée (« 0,25 0,75 » lu comme 4 nombres, la virgule séparant x et y), alors qu'elle est acceptée dans les autres champs (C1) ; refus seulement au lancement. | à faire (F2) |
+| U18 | « Enregistrer sous » dans un autre dossier : les fichiers relatifs du cas (contour `profil_volet.dat` de `mesh_naca_multi`, fichier de maillage) ne sont plus trouvés (message clair, mais rien pour les suivre ; la ligne de commande les copie avec `microrans examples`). | à faire (F3) |
+| U19 | Petits défauts 3D : profil par défaut de (0, 0, 0) à (1, 0, 0) même hors du domaine (conduite : x ∈ [0, 0.5]) ; « Ouvrir l'animation » actif en 3D ; « Zoom sur les corps » coché mais sans effet en coupe x / y (documenté) ; vue 3D du maillage : légende sur le dessin, étiquette z collée à la figure voisine ; types de frontière « patch » / « cyclic » affichés avant les conditions limites (observation de l'audit 1, toujours là). | à faire (F3) |
+
+## L. Ligne de commande et figures
+
+| # | Constat | Statut |
+|---|---|---|
+| L5 | Figures 3D de la ligne de commande toujours dans le plan z médian : pour la conduite carrée, bande de 2 mailles le long de l'axe, sans intérêt (la section x = cte est la bonne figure) ; pas de noms d'axes ; grande marge blanche. | à faire (F3 : clé `[output]` pour le plan, noms d'axes) |
+| L6 | Résumé de fin de calcul 3D : « Vitesse moyenne dans le domaine : (17.64, -4.447e-16, -2.495e-39) » : bruit d'arrondi affiché (U7 l'avait supprimé ailleurs). | à faire (F2) |
+
+## T / D. Textes et documentation
+
+| # | Constat | Statut |
+|---|---|---|
+| T1 | La 3D manque dans la description générale : `microrans --help` (« Écoulements 2D en volumes finis »), « À propos » (« écoulements 2D en volumes finis »), description du paquet (« RANS/URANS 1D et 2D »). | à faire (F4) |
+| T2 | Interface, ouverture d'un cas 3D : « figures dans un plan z = constante » (périmé depuis E4 : x, y ou z). | à faire (F4) |
+| D5 | README § 3 « Cas 3D » : `periodic = … # ou patch_types = { back = "symmetry", … }` laisse croire que `patch_types` suffit ; il faut aussi `[boundary.back] type = "symmetry"` (sinon « Conditions aux limites manquantes pour les patches ['back', 'front'] »). | à faire (F4) |
+| D6 | Tutoriel : la 3D tient en un paragraphe ; pas de pas-à-pas (pavé ou extrusion, conditions en z, coupes, ouverture de `fields.vtk` dans ParaView). | à faire (F4) |
+| D7 | Glossaire : aucun terme 3D (extrusion, hexaèdre / prisme, faces périodiques, plan de coupe). Dépannage : pas d'entrée pour les nouveaux messages 3D de M13 à M17. | à faire (F4) |
+
+## Observations (non classées en défauts)
+
+- `mesh_naca_multi` : 14 233 triangles en 39 s avec un pic de mémoire de 1.2 Go
+  (`mesh_cylindre_hybride` : 21 393 cellules, 25 s, 0.57 Go) : cause à mesurer.
+- Maillage 3D de 8·10⁶ cellules : l'avertissement annonce ~23.5 Go (machine de test :
+  15 Go) puis le maillage commence quand même en ligne de commande (l'interface demande
+  confirmation). Pas de garde par rapport à la mémoire disponible.
+- `microrans mesh` écrit toujours dans `results/mesh` : deux maillages successifs
+  s'écrasent (`run2d` utilise le nom du cas).
+- Premier lancement : ~13 s de plus (cache des polices de Matplotlib), une seule fois.
+
+## Ce qui fonctionne (vérifié)
+
+Les 25 exemples en ligne de commande (sauf la polaire hors du dossier du cas) et dans
+l'interface ; en 3D : pavé, extrusion calculée des maillages rectangle et O (cylindre,
+profil), maillage hybride extrudé (42 786 cellules) ; les 6
+modèles de turbulence et la loi de paroi ; SIMPLE, SIMPLEC ; Euler, BDF2, Crank-Nicolson,
+RK3 ; thermique (gravité à 3 composantes) ; extrémités périodiques, symétrie, parois, à
+régler ; sondes et profils 3D ; balayage ; « Continuer » (reprise exacte) ; export VTK
+(.msh et .su2 refusés avec explication) ; coupes x / y / z, plan sur le bord, plan hors du
+domaine expliqué ; refus clairs et immédiats des options 2D seulement et des valeurs
+impossibles du pavé et de l'extrusion ; profil d'entrée parabolique refusé en 3D (0.6 s,
+message clair) ; vecteurs à 2 composantes en 3D signalés ;
+sonde hors domaine signalée ; canal 1D (RANS, 4 modèles en 3.9 s).
+
+## Lots de correction (dans cet ordre, avant l'import Gmsh 3D)
+
+- **F1 — résultats faux, calculs perdus** : C11, C13, C14, U14, U17.
+- **F2 — messages** : M13 à M19, U16, L6.
+- **F3 — interface 3D et figures** : U15, U18, U19, L5.
+- **F4 — textes et documentation** : T1, T2, D5 à D7.

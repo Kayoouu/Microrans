@@ -3,6 +3,29 @@
 Détail des chiffres : README (§ 6 validation, § 7 performances, § 8 limites) et messages de
 commit. Ce journal sert à retrouver ce qui a été fait, pourquoi, et ce qui a été constaté.
 
+## 2026-10-04 — Audit 2 : fouille bugs et expérience utilisateur
+
+- Demande : « Avant de continuer le lot 3D, je pense que ce serait bien de faire une session
+  fouille pour ses bugs, pour l'expérience utilisateur, ect ect ».
+- 5 campagnes (scripts versionnés dans `tools/audit/`, sorties en scratchpad) :
+  1. 25 exemples, commande d'en-tête copiée, dossier vide : 24 / 25 ; la polaire échoue au
+     2e point (C11) ; durées conformes (canal 3D 23.6 s au 1er lancement = cache des
+     polices de Matplotlib, 10.6 s ensuite).
+  2. 25 exemples dans l'interface : aucun plantage ; canal_turbulent_3d calculé faux (C13 :
+     C_d du fond 0.00791 au lieu de 0.008889, faces z devenues parois).
+  3. 44 variantes invalides (36 correctes, 8 à reprendre) + 116 valeurs sur les clés
+     numériques (M18 : clés expert non vérifiées, « erreur interne »).
+  4. 38 scénarios 3D dans l'interface (+ 5 à part) : maillage périmé utilisé (U14), sondes
+     / profils non convertis en 3D (U15), virgule décimale des sondes (U16).
+  5. Relecture + 4 captures : vecteurs de bruit (|U_y|, |U_z| ≈ 7e-16) dessinés comme un
+     écoulement secondaire (U17) ; textes périmés (T1, T2) ; doc 3D (D5 à D7).
+- Pièges de la campagne : `set_combo` bloque les signaux Qt (deux faux constats évités en
+  refaisant avec `setCurrentIndex`) ; une variante de ma part était fausse
+  (`[physics] moment_center` : la clé est dans [output]) → devenue M16 (message sans la
+  bonne section).
+- Non testé : exécutables eux-mêmes (artefacts non téléchargeables), Windows, écran réel.
+- Lots F1 à F4 placés avant l'import Gmsh 3D dans a_faire.md.
+
 ## 2026-10-03 — Lot #30 : écart transsonique NACA 0012 expliqué
 
 - Demande : « Envoie la purée pour un lot entier ». Budget : une journée.
