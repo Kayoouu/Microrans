@@ -4,13 +4,10 @@
 
 - microrans : outil RANS / URANS 1D, 2D, 3D (périmètre réduit) avec mailleur, interface
   PySide6 et exécutables PyInstaller Windows / Linux (CI GitHub Actions).
-- Dernier lot terminé : **audit 2 approfondi** (2026-10-04, demande : « n'hésite pas à
-  approfondir l'audit ») : contrôles de cohérence (interface = ligne de commande, reprise
-  exacte, 2D = 3D une couche, maillages exportés, CSV pariétaux), fichiers Windows, Ctrl-C,
-  cas limites, commandes de la doc, arrêts de l'interface, exécutable construit en local.
-  Constats C15 à C23, M20 à M22, U20, P1, P2, L7, D8 dans `docs/audit_utilisateur.md`
-  (partie « Audit 2 approfondi ») ; lots F1, F1b, F2 à F4 dans a_faire. Avant : audit 2
-  (6608f4d), #30 transsonique (688df2a).
+- Dernier lot terminé : **F1 — résultats faux, calculs perdus** (2026-10-04, relance
+  quotidienne) : P1 (1 fil BLAS), C11, C13, C14, C18, C20, C21, U14, U17 corrigés, un test
+  par point (chacun échoue sur l'ancien code). **C15 (vitesse de référence) en attente
+  d'une décision de l'utilisateur.** Avant : audit 2 approfondi (576a0bc, e5deb38).
 - Exécutables de 688df2a (lot #30) : run https://github.com/Kayoouu/Microrans/actions/runs/37145810874
   (Windows : artefact 11281804767, Linux : 11282345490 ; expirent le 2027-01-01). CI verte
   (tests https://github.com/Kayoouu/Microrans/actions/runs/37145806547).
@@ -46,6 +43,9 @@ calcul stationnaire 10⁶ cellules = quelques centaines d'itérations ≈ 1 à 1
   k-d a été essayée et rejetée (64³ : 228 s, vecteurs changés aux égalités).
 - Numba désactivé par défaut (`[solver] numba = false`) et exclu de l'exécutable : ~10 % de
   gain mesuré, multi-fil plus lent sur la machine de test.
+- BLAS : 1 fil par calcul, fixé dans `microrans/__init__.py` avant l'import de NumPy
+  (F1 ; 6 cas mesurés A/B/B/A, aucun plus lent ; 2 calculs simultanés 9 s au lieu de
+  137 s). La mesure « Numba multi-fil plus lent » datait d'avant : à refaire.
 - 3D : figures en coupe plane — interface : x, y ou z = cte (`mesh3d/slice.py` :
   `PlaneSlice` polygones d'intersection, tous types de cellules, 0.4 s à 10⁶ ; `ZSlice`
   inchangé pour z, maillages en couches) ; ligne de commande : plan z médian ; champs
@@ -62,18 +62,13 @@ calcul stationnaire 10⁶ cellules = quelques centaines d'itérations ≈ 1 à 1
 
 ## Limites ouvertes importantes (détail : README § 8)
 
-- **Défauts connus non encore corrigés (audits 2, lots F1 et F1b)** : polaire / balayage /
-  multigrille en échec hors du dossier du cas (C11) ; interface : canal_turbulent_3d
-  calculé faux (C13), maillage périmé utilisé (U14), vecteurs de bruit (U17) ; frontière
-  inexistante dans `forces` → calcul perdu (C14) ; vitesse de référence par défaut
-  incohérente (C15 : C_d × 9 entre interface et ligne de commande, Re faux si U ≠ 1) ;
-  contour CSV « x;y » à virgule décimale → 14 Go (C18) ; balayage d'une clé mal écrite
-  accepté (C21) ; Ctrl-C perd tout (C19) ; reprise compressible implicite non exacte
-  (C17) ; plantages : perturbation 3D (C16), balayage mesh.nx (C20), polaire 3D (C22),
-  multigrille sur extrusion fine (C23) ; **BLAS multi-fil par défaut : deux calculs
-  simultanés jusqu'à 13 fois plus lents (P1)**.
+- **Défauts connus non encore corrigés (lots F1b, C15)** : vitesse de référence par défaut
+  incohérente (C15 : C_d × 9 entre interface et ligne de commande, Re faux si U ≠ 1 ;
+  décision de l'utilisateur attendue) ; Ctrl-C perd tout (C19) ; reprise compressible
+  implicite non exacte (C17) ; plantages : perturbation 3D (C16), polaire 3D (C22),
+  multigrille sur extrusion fine (C23).
 
-- Un calcul = un cœur de solveur, mais BLAS occupe les 4 cœurs sans gain (P1) ; SIMPLE lent sur maillages fins étirés.
+- Un calcul = un cœur (BLAS limité à 1 fil depuis F1) ; SIMPLE lent sur maillages fins étirés.
 - NACA 0012 transsonique : ancien « −4.5 % » expliqué (référence d'une autre géométrie +
   seuil du limiteur) ; restent C_d +2 % et une valeur citée de Vassberg & Jameson (≈ 0.347,
   bord de fuite pointu) 3.7 % au-dessus, non vérifiable ici (articles bloqués par le proxy).

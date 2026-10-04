@@ -708,6 +708,12 @@ parallèle ») : un point par processus (4 cœurs, détails `docs/multicoeur.md`
 Script Python appelant `run_sweep(jobs=N)` : protéger le code par
 `if __name__ == "__main__":`.
 
+**Un fil BLAS par calcul** (`docs/multicoeur.md` § 3) : OpenBLAS occupait par défaut les
+4 cœurs sans rien gagner (cavité cubique 32³ : 20.0 s pour 73 s de CPU, contre 19.2 s pour
+19 s avec un fil). Deux calculs lancés en même temps : 9.1 et 9.5 s au lieu de 137 s
+(plaque compressible). Une valeur de `OPENBLAS_NUM_THREADS` donnée par l'utilisateur est
+respectée.
+
 **Un seul calcul, noyaux Numba** (`[solver] numba = true`, `pip install ".[fast]"`,
 désactivé par défaut, absent des exécutables) : interpolations aux faces, sommes par
 cellule, gradients et assemblage fusionnés en boucles compilées. Mesuré de bout en bout
@@ -780,6 +786,8 @@ redonne l'ancien fichier texte, identique octet pour octet.
    Un calcul n'utilise qu'un cœur (seuls les balayages / polaires sont parallèles, ainsi que
    la recherche des faces de paroi voisines pour la distance à la paroi ; noyaux
    Numba facultatifs : ~10 % de gain mesuré, multi-fil plus lent sur la machine de test).
+   Bibliothèque BLAS limitée à un fil par calcul (avant : 4 cœurs occupés sans gain, deux
+   calculs simultanés jusqu'à 13 fois plus lents ; `docs/multicoeur.md` § 3).
 2. **Cartes graphiques non testées sur matériel réel** (§ 5.3) ; exécutables CPU seulement.
 3. **SIMPLE** converge lentement sur les maillages très fins et étirés (O(N²) itérations) ;
    l'option `pseudo_cfl` règle le cas des écoulements dominés par la diffusion (canal) mais

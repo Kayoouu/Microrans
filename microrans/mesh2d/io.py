@@ -7,7 +7,7 @@ Maillages
   - OpenFOAM  : écriture d'un constant/polyMesh extrudé d'une maille (faces avant/arrière 'empty')
 Contours (objets importés)
   - .dat/.txt : profils Selig ou Lednicer, ou colonnes x y
-  - .csv      : colonnes x, y (en-tête toléré)
+  - .csv      : colonnes x, y (en-tête toléré ; « x;y » à virgule décimale accepté)
   - .svg      : polygon, polyline, rect, circle, ellipse, path (M L H V C Q Z, absolus/relatifs)
   - .dxf      : LWPOLYLINE, POLYLINE/VERTEX, LINE, ARC, CIRCLE (ASCII), segments chaînés
 """
@@ -46,8 +46,17 @@ def read_curves(path) -> list[np.ndarray]:
 
 
 def _numbers(line):
+    """Nombres d'une ligne : séparateurs virgule, espaces, tabulation ou point-virgule.
+    Export d'un tableur français (« 0,5;1,25 », ou tabulations sans aucun point) : la
+    virgule est décimale. Avant, « 1,000;-0,000 » donnait les points (1, 0), (0, 0)… sans
+    message, et un contour de 100 points pouvait demander 14 Go au mailleur."""
+    s = line.strip()
+    if ";" in s or ("\t" in s and "," in s and "." not in s):
+        parts = [v.replace(",", ".") for v in re.split(r"[;\s]+", s)]
+    else:
+        parts = re.split(r"[,\s]+", s)
     try:
-        return [float(v) for v in re.split(r"[,\s;]+", line.strip()) if v]
+        return [float(v) for v in parts if v]
     except ValueError:
         return None
 

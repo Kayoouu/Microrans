@@ -203,6 +203,17 @@ def build_solver(cfg: dict, base_dir=".", verbose=False, mesh=None):
     return solver
 
 
+def check_force_patches(names, mesh):
+    """[output] forces : frontières connues du maillage. Vérifié avant les itérations ;
+    avant, un nom absent faisait échouer le calcul à la fin, après tout le temps de
+    calcul, par une « erreur interne » (C14)."""
+    known = [p.name for p in mesh.patches]
+    bad = [n for n in names if n not in known]
+    if bad:
+        raise ValueError(f"[output] forces : frontière(s) inconnue(s) : {', '.join(map(str, bad))}"
+                         f" ; frontières du maillage : {', '.join(known)}.")
+
+
 def run_case(cfg: dict, base_dir=".", out_dir=None, verbose=True, plot=True, callback=None,
              mesh=None, return_solver=False, check=True):
     """Exécute un cas complet. callback(solver, n) -> True pour arrêter (interface
@@ -218,7 +229,9 @@ def run_case(cfg: dict, base_dir=".", out_dir=None, verbose=True, plot=True, cal
         return run_compressible_case(cfg, base_dir, out_dir, verbose, plot, callback, mesh,
                                      return_solver)
     ph, sc, oc = cfg.get("physics", {}), cfg.get("solver", {}), cfg.get("output", {})
-    out = Path(out_dir or oc.get("directory", "results/case2d"))
+    # absolu : la reprise du multigrille (fmg_niveau*.npz) et celle d'un balayage sont
+    # relues relativement au dossier du cas, pas au dossier courant (C11)
+    out = Path(out_dir or oc.get("directory", "results/case2d")).resolve()
     out.mkdir(parents=True, exist_ok=True)
     fmg = None
     levels = int(sc.get("fmg_levels", 0))
@@ -256,6 +269,7 @@ def run_case(cfg: dict, base_dir=".", out_dir=None, verbose=True, plot=True, cal
     es = np.array([0.0, 0.0, 1.0])
     center = oc.get("moment_center", (0.0, 0.0))
     force_patches = oc.get("forces", [p.name for p in solver.mesh.patches if p.type == "wall"])
+    check_force_patches(force_patches, solver.mesh)
     mode = sc.get("mode", "steady")
     if verbose:
         print(f"Cas {dim}D : {solver.mesh.n_cells} cellules, modèle {solver.model.label}, "

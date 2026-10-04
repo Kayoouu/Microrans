@@ -67,7 +67,8 @@ _SHAPE = {
     "trailing_edge": K("naca : closed (défaut, −0.1036, workshops High-Order CFD) | open "
                        "(équation d'origine, bord de fuite épais) | sharp (prolongée jusqu'à "
                        "épaisseur nulle, Vassberg & Jameson 2010) ; prioritaire sur closed_te"),
-    "path": K("file : fichier de contour (.dat Selig/Lednicer, .csv, .dxf)"),
+    "path": K("file : fichier de contour (.dat Selig/Lednicer, .csv « x,y » ou « x;y » à "
+              "virgule décimale, .dxf)"),
     "sharp_angle": K("file : angle (°) au-delà duquel un sommet est un coin (défaut 60)"),
     "angle": K("rotation (°, sens trigonométrique)"),
     "incidence": K("incidence (°) : rotation de −incidence (profil cabré)"),

@@ -296,12 +296,12 @@ def _write_lines(solver, lines, out, plot):
 def run_compressible_case(cfg: dict, base_dir=".", out_dir=None, verbose=True, plot=True,
                           callback=None, mesh=None, return_solver=False):
     """Équivalent compressible de case.run_case (mêmes arguments, mêmes sorties)."""
-    from .case import wind_axes
+    from .case import check_force_patches, wind_axes
     from .sampling import parse_points
     ph, sc, oc = cfg.get("physics", {}), cfg.get("solver", {}), cfg.get("output", {})
     if ph.get("axisymmetric"):
         raise ValueError("Compressible : calcul axisymétrique non disponible (plan 2D).")
-    out = Path(out_dir or oc.get("directory", "results/compressible"))
+    out = Path(out_dir or oc.get("directory", "results/compressible")).resolve()   # C11
     out.mkdir(parents=True, exist_ok=True)
     solver = build_compressible_solver(cfg, base_dir, verbose, mesh=mesh)
     fs, gas = solver.fs, solver.gas
@@ -315,6 +315,7 @@ def run_compressible_case(cfg: dict, base_dir=".", out_dir=None, verbose=True, p
     walls = [p.name for p in solver.mesh.patches
              if solver.bc_types.get(p.name) in ("wall", "slip_wall")]
     force_patches = oc.get("forces", walls)
+    check_force_patches(force_patches, solver.mesh)
     mode = sc.get("mode", "steady")
     s = solver.settings
     Re = (fs.rho * fs.speed * Lref / float(gas.mu_of(fs.T))) if gas.viscous else None

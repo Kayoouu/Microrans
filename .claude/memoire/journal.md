@@ -3,6 +3,34 @@
 Détail des chiffres : README (§ 6 validation, § 7 performances, § 8 limites) et messages de
 commit. Ce journal sert à retrouver ce qui a été fait, pourquoi, et ce qui a été constaté.
 
+## 2026-10-04 — Lot F1 : résultats faux, calculs perdus
+
+- Relance quotidienne (03:53 UTC). C15 laissé de côté : décision de convention posée à
+  l'utilisateur, pas de réponse (le silence ne vaut pas accord).
+- P1 : `microrans/__init__.py` fixe OMP / OPENBLAS / MKL / VECLIB à 1 avant l'import de
+  NumPy (valeur utilisateur conservée, NUMBA_NUM_THREADS non touché : Numba garde 4 fils).
+  Mesuré A/B/B/A sur 6 cas (cavité 2D, plaque compressible, cavité 32³, NACA SA 200 it,
+  cylindre URANS t = 10, cavité 64³ 10 it) : aucun cas plus lent avec 1 fil ; CPU ÷ 4 sur
+  plaque et cavité 32³. Deux calculs simultanés : plaque 9.1 / 9.5 s (avant 137.2 s),
+  cavité 32³ 17.9 / 18.6 s (avant 104.0 s).
+- C11 : dossiers de sortie `.resolve()` (case.py, compressible_case.py, sweep.py).
+- C13 : `_load_extrude` compare aux noms `names.back/front`.
+- C14 : `check_force_patches` avant les itérations (refus en 0.3 s).
+- C18 : `_numbers` : « ; » (ou tabulation sans point) → virgule décimale. Première version
+  (découpage sur les seules tabulations) écartée : une ligne .dat « 1.0 \t 2.0  3.0 »
+  aurait été ignorée.
+- C20 (avancé de F1b) : valeurs entières pour les clés de maillage balayées.
+- C21 : `check_sweep_key` (nouvelle clé comparée aux avertissements de check_case) :
+  refuse aussi une clé sans effet (mesh.nx sur un maillage en O, solver.cfl en
+  incompressible) ; `bodies.0.radius` : refus clair (set_key ne traverse pas les listes).
+- U14 : signature [mesh] / [domain] / [[bodies]] mémorisée au maillage ; remaillage annoncé.
+- U17 : première version (flèches à l'échelle de |U| complet) écartée après avoir regardé
+  la figure : l'écoulement secondaire réel de la cavité cubique (plan x = 0.5 : 11 % de
+  |U|) devenait invisible. Retenu : rien sous 0.1 % de |U|, sinon échelle automatique +
+  « flèches agrandies (max 11 % de |U|) » dans le titre.
+- Tests : 11 nouveaux, chacun vérifié en échec sur l'ancien code ; suite 465 réussis,
+  1 ignoré (5 min 33 s). Campagne 1 : 25 / 25 (avant 24 / 25).
+
 ## 2026-10-04 — Audit 2 approfondi : cohérence des résultats, fichiers, arrêts
 
 - Demande : « Faire ce qui a déjà était fait est quand même une bonne ideee mais n'hésite

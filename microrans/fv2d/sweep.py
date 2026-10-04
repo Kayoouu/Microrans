@@ -101,6 +101,24 @@ def set_key(cfg: dict, key: str, value):
     d[parts[-1]] = value
 
 
+def check_sweep_key(cfg: dict, key: str, value):
+    """Refuse une clé balayée inconnue ou sans effet pour ce cas. Avant, « physics.nuu » ou
+    « solver.max_iterr » étaient acceptées : tous les points identiques, étiquetés de
+    valeurs différentes (une faute dans « physics.reynold » faisait conclure que Re est
+    sans effet)."""
+    from .validate import check_case
+    c = copy.deepcopy(cfg)
+    try:
+        set_key(c, key, value)
+    except (AttributeError, TypeError):
+        raise ValueError(f"Balayage de « {key} » : clé impossible à modifier (une liste "
+                         "ou une valeur se trouve sur le chemin).") from None
+    before = set(check_case(cfg, values=False))
+    new = [w for w in check_case(c, values=False) if w not in before]
+    if new:
+        raise ValueError(f"Balayage de « {key} » refusé : {new[0].replace(', ignorée', '')}")
+
+
 def _label(key: str, v: float) -> str:
     name = "alpha" if key == ALPHA else key.split(".")[-1]
     return f"{name}_{v:+g}".replace("+", "p").replace("-", "m").replace(".", "_")
@@ -132,7 +150,10 @@ def run_sweep(cfg: dict, key: str, values, base_dir=".", out_dir=None, continuat
     from .validate import warn_case
     warn_case(cfg)                                     # une fois (pas à chaque point)
     values = parse_values(values)
-    out = Path(out_dir or cfg.get("output", {}).get("directory", "results/balayage"))
+    check_sweep_key(cfg, key, values[0])
+    # absolu : chaque point repart du checkpoint du précédent, chemin relu relativement
+    # au dossier du cas ; relatif, la polaire échouait au 2e point hors de ce dossier (C11)
+    out = Path(out_dir or cfg.get("output", {}).get("directory", "results/balayage")).resolve()
     out.mkdir(parents=True, exist_ok=True)
     remesh = key.startswith(_MESH_KEYS)
     if mesh is None and not remesh:
@@ -155,7 +176,8 @@ def run_sweep(cfg: dict, key: str, values, base_dir=".", out_dir=None, continuat
 def _point_cfg(cfg, key, v, prev, prev_v, continuation):
     """Cas du point `v` ; continuation : départ des champs du point précédent `prev`."""
     c = copy.deepcopy(cfg)
-    set_key(c, key, v)
+    # mesh.nx = 16.0 : nombre de mailles entier attendu (avant : erreur interne, C20)
+    set_key(c, key, int(v) if key.startswith(_MESH_KEYS) and float(v).is_integer() else v)
     # nu et reynolds s'excluent (nu prioritaire) : balayer l'un retire l'autre, sinon un
     # balayage de Reynolds sur un cas donné en nu calculait tous les points avec le même ν
     other = {"physics.reynolds": "nu", "physics.nu": "reynolds"}.get(key)

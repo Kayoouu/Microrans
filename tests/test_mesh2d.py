@@ -114,6 +114,23 @@ def test_read_curve_formats(tmp_path):
     assert area(read_curve(tmp_path / "d.dxf")) == pytest.approx(1.0)
 
 
+def test_read_curve_french_spreadsheet_csv(tmp_path):
+    """C18 (audit 2 approfondi) : « x;y » à virgule décimale (Excel français, fin de ligne
+    Windows) ou tabulations à virgule décimale = mêmes points que le CSV « x,y » ; avant,
+    « 0,998379;0,000227 » donnait (0, 998379) et le mailleur montait à 14 Go."""
+    pts = NACA4("0012", n=41).points
+    (tmp_path / "us.csv").write_text("x,y\n" + "\n".join(f"{x},{y}" for x, y in pts))
+    fr = "\r\n".join(f"{x:.6f};{y:.6f}".replace(".", ",") for x, y in pts)
+    (tmp_path / "fr.csv").write_bytes(("x;y\r\n" + fr + "\r\n").encode("utf-8"))
+    tab = "\n".join(f"{x:.6f}\t{y:.6f}".replace(".", ",") for x, y in pts)
+    (tmp_path / "tab.csv").write_text("x\ty\n" + tab)
+    ref = read_curve(tmp_path / "us.csv")
+    for name in ("fr.csv", "tab.csv"):
+        c = read_curve(tmp_path / name)
+        assert c.shape == ref.shape
+        assert np.allclose(c, ref, atol=1e-6)
+
+
 # ------------------------------------------------------------------ structurés
 def test_grading_distribution():
     s = grading_distribution(10, 5.0)
@@ -254,3 +271,24 @@ def test_shape_errors_are_explained(tmp_path):
            "domain": {"x0": -4.0, "x1": 8.0, "y0": -4.0, "y1": 4.0},
            "bodies": [{"type": "circle", "radius": 0.5, "name": "c"}]}
     assert build_mesh(cfg).n_cells > 0
+
+
+def test_slice_vectors_scaled_by_full_speed():
+    """U17 (audit 2) : coupe x = cte d'un écoulement selon x, composantes dans le plan à
+    1e-16 : l'échelle automatique les dessinait en flèches pleine longueur (écoulement
+    secondaire inventé). Avec vector_ref (|U| complet), rien n'est dessiné sous 0.1 % de
+    |U| ; un vrai écoulement secondaire est dessiné, agrandi, avec sa taille dans le titre."""
+    import matplotlib
+    matplotlib.use("Agg")
+    from matplotlib.quiver import Quiver
+
+    from microrans.mesh2d.plot import plot_field
+    m = rectangle_mesh(0.0, 1.0, 0.0, 1.0, 6, 6)
+    noise = np.full((m.n_cells, 2), 7e-16)
+    ax = plot_field(m, np.ones(m.n_cells), vectors=noise, vector_ref=7.3, title="U")
+    assert not [c for c in ax.collections if isinstance(c, Quiver)]
+    assert "pas de flèches" in ax.get_title()
+    ax = plot_field(m, np.ones(m.n_cells), vectors=np.full((m.n_cells, 2), 0.73),
+                    vector_ref=7.3, title="U")
+    assert len([c for c in ax.collections if isinstance(c, Quiver)]) == 1
+    assert "max 14 % de |U|" in ax.get_title()

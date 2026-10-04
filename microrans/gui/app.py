@@ -185,6 +185,7 @@ class MainWindow(QMainWindow):
         self.cfg = copy.deepcopy(DEFAULT_CASE)
         self.case_path: Path | None = None
         self.mesh = None
+        self._mesh_of = None                  # réglages du maillage affiché (U14)
         self.solver = None
         self.summary = None
         self.history: list = []
@@ -1204,6 +1205,7 @@ class MainWindow(QMainWindow):
         self.case_path = None
         self._mesh_only_file = False
         self.mesh = None
+        self._mesh_of = None                  # réglages du maillage affiché (U14)
         self.load_cfg(copy.deepcopy(DEFAULT_CASE))
         self.nav.setCurrentRow(2)
 
@@ -1222,6 +1224,7 @@ class MainWindow(QMainWindow):
             return
         self.case_path = path
         self.mesh = None
+        self._mesh_of = None                  # réglages du maillage affiché (U14)
         self.solver = None
         # fichier de maillage seul (exemples mesh_*) : load_cfg y ajoute [physics]…
         mesh_only = not any(k in cfg for k in ("physics", "boundary", "flow"))
@@ -1322,10 +1325,14 @@ class MainWindow(QMainWindow):
         self.ext_nz.setValue(int(e.get("nz", 8)))
         ends = "patch"
         pt = e.get("patch_types") or {}
-        if any(set(p[:2]) == {"back", "front"} for p in e.get("periodic") or []):
+        # faces z renommées (canal_turbulent_3d : z0 / z1) : avant, comparées à back / front
+        # littéraux, la périodicité était perdue et le canal calculé fermé (C13)
+        names = e.get("names") or {}
+        back, front = names.get("back", "back"), names.get("front", "front")
+        if any(set(p[:2]) == {back, front} for p in e.get("periodic") or []):
             ends = "periodic"
-        elif pt.get("back") == pt.get("front") and pt.get("back") in ("symmetry", "wall"):
-            ends = pt["back"]
+        elif pt.get(back) == pt.get(front) and pt.get(back) in ("symmetry", "wall"):
+            ends = pt[back]
         elif not e:
             ends = "periodic"
         set_combo(self.ext_ends, ends)
@@ -1530,6 +1537,7 @@ class MainWindow(QMainWindow):
     def generate_mesh(self):
         self._store_forms()
         cfg = copy.deepcopy(self.cfg)
+        self._meshing_sig = self._mesh_sig()
         base = self.base_dir()
         if cfg.get("mesh", {}).get("type") == "file" and cfg["mesh"].get("path"):
             p = Path(cfg["mesh"]["path"])
@@ -1546,6 +1554,7 @@ class MainWindow(QMainWindow):
 
     def _mesh_done(self, mesh):
         self.mesh = mesh
+        self._mesh_of = getattr(self, "_meshing_sig", None)
         self.solver = None
         q = mesh.quality()
         types = ", ".join(f"{v} {k}" for k, v in q["cell_types"].items())
@@ -1983,6 +1992,21 @@ class MainWindow(QMainWindow):
         self.box_steady.setEnabled(steady)
         self.box_transient.setEnabled(not steady)
 
+    def _mesh_sig(self):
+        """Réglages qui déterminent le maillage : [mesh], [domain], [[bodies]]."""
+        return json.dumps({k: self.cfg.get(k) for k in ("mesh", "domain", "bodies")},
+                          sort_keys=True, default=str)
+
+    def _valid_mesh(self):
+        """Maillage affiché s'il correspond encore aux réglages, sinon None : le calcul
+        remaille. Avant, un calcul lancé après un changement des réglages du maillage
+        (finesse, extrusion…) tournait sur l'ancien maillage sans le dire (U14)."""
+        if self.mesh is not None and self._mesh_of != self._mesh_sig():
+            self.log("Réglages du maillage modifiés depuis le dernier maillage : le calcul "
+                     "remaille.")
+            return None
+        return self.mesh
+
     def _patch_names(self):
         if self.mesh is not None:
             return [n for n, t, _ in self.mesh.all_boundary_patches()
@@ -2290,7 +2314,7 @@ class MainWindow(QMainWindow):
             QMessageBox.information(self, "Balayage", "Le balayage fonctionne aussi en "
                                     "instationnaire, mais chaque point est alors long. "
                                     "Il est conseillé de passer en stationnaire.")
-        mesh, base, cont = self.mesh, self.base_dir(), self.sweep_cont.isChecked()
+        mesh, base, cont = self._valid_mesh(), self.base_dir(), self.sweep_cont.isChecked()
         jobs = self.sweep_jobs.value()
         self.sweep_rows, self._sweep_key, self._sweep_n = [], key, len(values)
         self._sweep_order = {v: i for i, v in enumerate(values)}
@@ -2407,7 +2431,8 @@ class MainWindow(QMainWindow):
         if not self._case_ok(cfg):
             return
         self._it0 = None
-        mesh = self.mesh
+        mesh = self._valid_mesh()
+        self._run_mesh_sig = self._mesh_sig()
         base = self.base_dir()
         self.history = []
         steady = cfg.get("solver", {}).get("mode", "steady") == "steady"
@@ -2479,6 +2504,7 @@ class MainWindow(QMainWindow):
         summary, solver = res
         self.summary, self.solver = summary, solver
         self.mesh = solver.mesh
+        self._mesh_of = getattr(self, "_run_mesh_sig", None)
         from ..fv2d.report import summary_text
         self.summary_view.setPlainText(summary_text(summary))   # avant : JSON brut
         fields = solver.fields()
@@ -2525,7 +2551,7 @@ class MainWindow(QMainWindow):
             val = f[key]
         val = np.asarray(val)
         zoom = self._zoom() if self.zoom_check.isChecked() and axis == "z" else None
-        mesh, sel, plane, U = s.mesh, slice(None), "", s.U
+        mesh, sel, plane, U, vref = s.mesh, slice(None), "", s.U, None
         if d3:                                       # 3D : plan x, y ou z = cte
             try:
                 mesh = self._slice(s.mesh)
@@ -2535,7 +2561,9 @@ class MainWindow(QMainWindow):
                 return
             sel, plane = mesh.cells, f" — plan {mesh.axis} = {mesh.value:.4g}"
             uv = ["xyz".index(c) for c in mesh.labels]           # composantes dans le plan
-            val, U = val[sel], np.asarray(s.U)[sel][:, uv]
+            Ufull = np.asarray(s.U)[sel]
+            val, U = val[sel], Ufull[:, uv]
+            vref = float(np.linalg.norm(Ufull, axis=1).max()) if len(Ufull) else None
         vmin = vmax = None
         if key == "vorticity":
             _, L = _body_size(s)
@@ -2552,7 +2580,8 @@ class MainWindow(QMainWindow):
             mirror = -1 if key in ("Uy", "vorticity") else 1
         plot_field(mesh, val, ax=ax, cmap=cmap, zoom=zoom, vmin=vmin, vmax=vmax,
                    title=label + plane,
-                   vectors=U if self.vec_check.isChecked() else None, mirror=mirror)
+                   vectors=U if self.vec_check.isChecked() else None, mirror=mirror,
+                   vector_ref=vref)
         if self.mesh_check.isChecked():
             plot_mesh(mesh, ax=ax, zoom=zoom, linewidth=0.15, show_patches=False,
                       title=label + plane)

@@ -121,7 +121,7 @@ Exemples complets : `microrans examples` ; tutoriel : `docs/tutoriel.md`.
 | `n` | naca, spline : nombre de points du contour |  |
 | `closed_te` | naca : bord de fuite fermé (défaut true) |  |
 | `trailing_edge` | naca : closed (défaut, −0.1036, workshops High-Order CFD) \| open (équation d'origine, bord de fuite épais) \| sharp (prolongée jusqu'à épaisseur nulle, Vassberg & Jameson 2010) ; prioritaire sur closed_te |  |
-| `path` | file : fichier de contour (.dat Selig/Lednicer, .csv, .dxf) |  |
+| `path` | file : fichier de contour (.dat Selig/Lednicer, .csv « x,y » ou « x;y » à virgule décimale, .dxf) |  |
 | `sharp_angle` | file : angle (°) au-delà duquel un sommet est un coin (défaut 60) |  |
 | `angle` | rotation (°, sens trigonométrique) |  |
 | `incidence` | incidence (°) : rotation de −incidence (profil cabré) |  |
@@ -167,7 +167,7 @@ Exemples complets : `microrans examples` ; tutoriel : `docs/tutoriel.md`.
 | `n` | naca, spline : nombre de points du contour |  |
 | `closed_te` | naca : bord de fuite fermé (défaut true) |  |
 | `trailing_edge` | naca : closed (défaut, −0.1036, workshops High-Order CFD) \| open (équation d'origine, bord de fuite épais) \| sharp (prolongée jusqu'à épaisseur nulle, Vassberg & Jameson 2010) ; prioritaire sur closed_te |  |
-| `path` | file : fichier de contour (.dat Selig/Lednicer, .csv, .dxf) |  |
+| `path` | file : fichier de contour (.dat Selig/Lednicer, .csv « x,y » ou « x;y » à virgule décimale, .dxf) |  |
 | `sharp_angle` | file : angle (°) au-delà duquel un sommet est un coin (défaut 60) |  |
 | `angle` | rotation (°, sens trigonométrique) |  |
 | `incidence` | incidence (°) : rotation de −incidence (profil cabré) |  |
@@ -205,7 +205,7 @@ Exemples complets : `microrans examples` ; tutoriel : `docs/tutoriel.md`.
 | `n` | naca, spline : nombre de points du contour |  |
 | `closed_te` | naca : bord de fuite fermé (défaut true) |  |
 | `trailing_edge` | naca : closed (défaut, −0.1036, workshops High-Order CFD) \| open (équation d'origine, bord de fuite épais) \| sharp (prolongée jusqu'à épaisseur nulle, Vassberg & Jameson 2010) ; prioritaire sur closed_te |  |
-| `path` | file : fichier de contour (.dat Selig/Lednicer, .csv, .dxf) |  |
+| `path` | file : fichier de contour (.dat Selig/Lednicer, .csv « x,y » ou « x;y » à virgule décimale, .dxf) |  |
 | `sharp_angle` | file : angle (°) au-delà duquel un sommet est un coin (défaut 60) |  |
 | `angle` | rotation (°, sens trigonométrique) |  |
 | `incidence` | incidence (°) : rotation de −incidence (profil cabré) |  |

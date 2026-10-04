@@ -191,3 +191,69 @@ def test_parse_values_errors_explained(text, expected):
 def test_parse_values_decimal_comma():
     assert parse_values("0,5; 1; 1,5") == [0.5, 1.0, 1.5]
     assert parse_values("0:1:0,5") == [0.0, 0.5, 1.0]
+
+
+_CAV = """
+[mesh]
+type = "rectangle"
+x0 = 0.0
+x1 = 1.0
+y0 = 0.0
+y1 = 1.0
+nx = 8
+ny = 8
+names = { left = "walls", right = "walls", bottom = "walls", top = "lid" }
+[physics]
+reynolds = 100
+[boundary.lid]
+type = "wall"
+U = [1.0, 0.0]
+[boundary.walls]
+type = "wall"
+[solver]
+max_iter = 15
+"""
+
+
+def test_sweep_run_outside_case_directory(tmp_path, monkeypatch):
+    """C11 (audit 2) : lancé depuis un autre dossier que celui du cas, avec une sortie
+    relative, le 2e point repartait d'un checkpoint introuvable (« Fichier de reprise
+    introuvable ») ; même chose pour le démarrage multigrille."""
+    (tmp_path / "cas").mkdir()
+    (tmp_path / "cas" / "cav.toml").write_text(_CAV)
+    (tmp_path / "ailleurs").mkdir()
+    monkeypatch.chdir(tmp_path / "ailleurs")
+    rc = main(["sweep", "../cas/cav.toml", "-o", "sw", "-q", "--no-plot", "--param",
+               "physics.reynolds", "--values", "50", "100", "200"])
+    assert rc in (0, 1)                                 # 1 = non convergé (15 itérations)
+    with open("sw/balayage.csv", encoding="utf-8") as fh:
+        assert len(list(csv.DictReader(fh))) == 3
+    rc = main(["run2d", "../cas/cav.toml", "-o", "fmg", "-q", "--no-plot", "--set",
+               "solver.fmg_levels=1"])
+    assert rc in (0, 1) and (tmp_path / "ailleurs" / "fmg" / "fmg_niveau1.npz").is_file()
+
+
+@pytest.mark.parametrize("key, expected", [
+    ("physics.reynold", "vouliez-vous dire « reynolds »"),
+    ("solver.max_iterr", "vouliez-vous dire « max_iter »"),
+    ("physique.reynolds", "[physics]"),
+    ("solver.cfl", "sans effet avec le solveur incompressible"),
+])
+def test_sweep_refuses_unknown_or_useless_key(tmp_path, key, expected):
+    """C21 (audit 2 approfondi) : une clé mal orthographiée était balayée en silence
+    (points identiques étiquetés de valeurs différentes)."""
+    from microrans.tomlio import loads
+    with pytest.raises(ValueError, match="Balayage") as exc:
+        run_sweep(loads(_CAV), key, [1, 2], out_dir=tmp_path, verbose=False, plot=False)
+    assert expected in str(exc.value)
+    assert not (tmp_path / "balayage.csv").exists()
+
+
+def test_mesh_resolution_sweep(tmp_path):
+    """C20 (audit 2 approfondi) : --param mesh.nx --values 8 16 (étude de convergence en
+    maillage) → « Erreur interne (TypeError) » ; les valeurs lues sont des réels."""
+    from microrans.tomlio import loads
+    rows = run_sweep(loads(_CAV), "mesh.nx", [6, 10], out_dir=tmp_path, verbose=False,
+                     plot=False)
+    assert [r["mesh.nx"] for r in rows] == [6.0, 10.0]
+    assert rows[0]["Cd_lid"] != rows[1]["Cd_lid"]

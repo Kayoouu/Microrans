@@ -61,11 +61,15 @@ def plot_mesh(mesh, path=None, ax=None, title=None, zoom=None, linewidth=0.3, sh
 
 def plot_field(mesh, values, path=None, ax=None, title=None, cmap="viridis", zoom=None,
                vmin=None, vmax=None, label=None, vectors=None, vector_stride=None,
-               mirror=None):
+               mirror=None, vector_ref=None):
     """Champ aux cellules (couleur par cellule), optionnellement des vecteurs.
 
     mirror : ±1 (calcul axisymétrique) — trace aussi l'image miroir par rapport à l'axe
-    y = 0, avec les valeurs multipliées par ce signe (−1 pour u_r, la vorticité)."""
+    y = 0, avec les valeurs multipliées par ce signe (−1 pour u_r, la vorticité).
+    vector_ref : vitesse de référence (coupe 3D : |U| complet maximal). Composantes dans
+    le plan < 0.1 % de vector_ref : pas de flèches (avant, dans une coupe 3D, du bruit à
+    1e-16 était dessiné en flèches pleine longueur, U17) ; sinon échelle automatique et,
+    si elles sont petites devant |U|, le titre donne leur maximum en % de |U|."""
     from matplotlib.collections import PolyCollection
     plt = _plt()
     own = ax is None
@@ -92,9 +96,18 @@ def plot_field(mesh, values, path=None, ax=None, title=None, cmap="viridis", zoo
             m = ((C[sel, 0] > zoom[0]) & (C[sel, 0] < zoom[1]) & (C[sel, 1] > zoom[2])
                  & (C[sel, 1] < zoom[3]))
             sel = sel[m]
-        ax.quiver(C[sel, 0], C[sel, 1], vectors[sel, 0], vectors[sel, 1], color="#0b0b0b",
-                  scale_units="xy", angles="xy", width=0.0015)
-        if mirror:
+        if vector_ref:
+            mag = np.hypot(vectors[sel, 0], vectors[sel, 1])
+            ratio = float(mag.max()) / vector_ref if mag.size else 0.0
+            if ratio < 1e-3:
+                sel = sel[:0]
+                title = (title or "") + " — vitesse dans le plan < 0.1 % de |U| : pas de flèches"
+            elif ratio < 0.5:
+                title = (title or "") + f" — flèches agrandies (max {100 * ratio:.0f} % de |U|)"
+        if len(sel):
+            ax.quiver(C[sel, 0], C[sel, 1], vectors[sel, 0], vectors[sel, 1],
+                      color="#0b0b0b", scale_units="xy", angles="xy", width=0.0015)
+        if mirror and len(sel):
             ax.quiver(C[sel, 0], -C[sel, 1], vectors[sel, 0], -vectors[sel, 1],
                       color="#0b0b0b", scale_units="xy", angles="xy", width=0.0015)
     ax.set_aspect("equal")

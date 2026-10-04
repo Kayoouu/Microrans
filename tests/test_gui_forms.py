@@ -571,6 +571,54 @@ def test_extrude_checkbox_switches_case_to_3d(win):
     assert len(lid["U"]) == 2 and win.bc_table.isColumnHidden(10)
 
 
+def test_renamed_extrusion_faces_keep_periodicity(win):
+    """C13 (audit 2) : canal_turbulent_3d nomme ses faces z « z0 » / « z1 » ; l'interface
+    comparait aux noms back / front littéraux, effaçait la périodicité au premier
+    enregistrement du formulaire et calculait un canal fermé (C_d du fond 0.00791 au lieu
+    de 0.008889)."""
+    import copy
+
+    from microrans.cli import examples_dir
+    from microrans.tomlio import loads
+    path = examples_dir() / "canal_turbulent_3d.toml"
+    ref = loads(path.read_text(encoding="utf-8"))["mesh"]["extrude"]
+    win.open_case(path)
+    assert win.ext_ends.currentData() == "periodic"
+    win._store_forms()
+    ext = win.cfg["mesh"]["extrude"]
+    assert ext["periodic"] == ref["periodic"] == [["z0", "z1"]]
+    assert "patch_types" not in ext or not set(ext["patch_types"]) & {"z0", "z1"}
+    assert copy.deepcopy(ext) == ref
+
+
+def test_run_after_mesh_settings_change_remeshes(win, monkeypatch, tmp_path):
+    """U14 (audit 2) : maillage généré, puis réglages du maillage modifiés, puis « Lancer » :
+    le calcul tournait sur l'ancien maillage sans le dire."""
+    from microrans.cli import examples_dir
+    monkeypatch.setenv("MICRORANS_RESULTS", str(tmp_path))
+    win.open_case(examples_dir() / "cavite_re100.toml")
+    win.cfg["mesh"].update(nx=6, ny=6)
+    win.cfg["solver"].update(max_iter=2)
+    win.load_cfg(win.cfg)
+    win.quiet = True
+    win.errors.clear()
+    win.generate_mesh()
+    _wait(win)
+    assert win.mesh.n_cells == 36
+    win.cfg["mesh"].update(nx=8, ny=8)               # comme un changement du formulaire
+    win.load_cfg(win.cfg)
+    win.log_view.clear()
+    win.run_2d()
+    _wait(win)
+    assert not win.errors and win.summary["n_cells"] == 64
+    assert "le calcul remaille" in win.log_view.toPlainText()
+    win.log_view.clear()
+    win.run_2d()                                     # réglages inchangés : même maillage
+    _wait(win)
+    assert win.summary["n_cells"] == 64
+    assert "remaille" not in win.log_view.toPlainText()
+
+
 def test_3d_case_meshed_run_and_plotted(win, monkeypatch, tmp_path):
     """Lot E : cas 3D de bout en bout dans l'interface (avant : refusé) — maillage, calcul,
     champs dans un plan z (Uz compris), plan hors du domaine expliqué au lieu d'une figure

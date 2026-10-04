@@ -150,3 +150,13 @@ def test_summary_is_strict_json_when_strouhal_undefined(tmp_path):
     s = json.loads((tmp_path / "summary.json").read_text(encoding="utf-8"),
                    parse_constant=refuse)
     assert s["lid"]["strouhal"] is None and s["lid"]["periods_used"] == 0
+
+
+def test_unknown_force_patch_refused_before_iterations(tmp_path):
+    """C14 (audit 2) : une frontière absente de [output] forces faisait échouer le calcul
+    à la fin, par une « erreur interne », après tout le temps de calcul."""
+    cfg = _cavity(8, forces=["couvercle"])
+    with pytest.raises(ValueError, match=r"inconnue\(s\) : couvercle ; frontières du "
+                                         r"maillage : .*lid"):
+        run_case(cfg, out_dir=tmp_path, verbose=False, plot=False)
+    assert not (tmp_path / "history.csv").exists()

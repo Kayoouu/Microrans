@@ -100,3 +100,30 @@ mesurée sur un vrai processeur : `microrans bench --numba --threads 1 2 4`.
 
 Premier lancement : compilation des noyaux (quelques secondes, mise en cache ensuite).
 Numba n'est pas inclus dans les exécutables (taille, cache de compilation).
+
+Mesures antérieures au § 3 : la bibliothèque BLAS tournait alors sur 4 fils en parallèle
+des fils Numba (sursouscription) ; à remesurer avant de conclure.
+
+## 3. Bibliothèque BLAS : un fil par calcul (2026-10-04)
+
+OpenBLAS (livré avec NumPy et SciPy) démarre par défaut un fil par cœur. Ici, les
+produits matriciels sont petits : ces fils occupent les cœurs sans accélérer le calcul.
+Depuis le lot F1, `import microrans` fixe `OMP_NUM_THREADS`, `OPENBLAS_NUM_THREADS`,
+`MKL_NUM_THREADS`, `VECLIB_MAXIMUM_THREADS` à 1 **avant** le premier import de NumPy (ligne
+de commande, interface, exécutables) ; une valeur déjà donnée par l'utilisateur est
+conservée, et `NUMBA_NUM_THREADS` n'est pas touché (option `numba = true`).
+
+Mesures côte à côte, un calcul à la fois, ordre défaut / 1 fil / 1 fil / défaut (temps
+écoulé ; temps CPU entre parenthèses) :
+
+| Cas | 4 fils BLAS (avant) | 1 fil BLAS |
+|---|---|---|
+| cavité 2D (exemple) | 5.2 / 4.0 s (5.4 / 4.5 s) | 4.0 / 4.0 s (3.9 s) |
+| plaque compressible laminaire | 10.3 / 10.0 s (39 / 38 s) | 9.1 / 8.3 s (9.0 / 8.2 s) |
+| cavité cubique 32³ | 20.5 / 20.0 s (74 / 73 s) | 18.6 / 19.2 s (18.5 / 19.0 s) |
+| NACA 0012 SA, 200 itérations | 7.7 / 7.4 s | 7.5 / 7.5 s |
+| cylindre URANS, t = 10 | 19.5 / 18.7 s | 19.6 / 18.5 s |
+| cavité cubique 64³ (262 144 cellules), 10 itérations | 29.5 / 28.7 s (50 s) | 28.6 / 28.7 s (30 s) |
+
+Aucun cas plus lent avec un fil. Deux calculs **simultanés** (avant / après) : plaque
+compressible 137.2 s / 9.1 et 9.5 s ; cavité cubique 104.0 s / 17.9 et 18.6 s.

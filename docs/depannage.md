@@ -238,8 +238,9 @@ Ce sont des règles usuelles en CFD, valables pour tout logiciel :
 - **Plusieurs cœurs** :
   - les points d'un balayage ou d'une polaire se calculent en parallèle (`-j 4`, ou « jobs »
     dans l'interface) ;
-  - un calcul seul utilise un cœur. Les noyaux Numba (`numba = true`) gagnent ~10 % ; le
-    multi-fil était plus lent sur la machine de test (README).
+  - un calcul seul utilise un cœur (bibliothèque BLAS limitée à un fil : deux calculs
+    lancés en même temps ne se gênent plus). Les noyaux Numba (`numba = true`) gagnent
+    ~10 % ; le multi-fil était plus lent sur la machine de test (README).
 - **Arrêter puis reprendre** : le calcul est sauvegardé (`checkpoint.npz`) toutes les 5
   minutes et à la fin. On le poursuit avec `--continue` ou « Continuer le calcul
   précédent ».
