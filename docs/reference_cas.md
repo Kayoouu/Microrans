@@ -284,7 +284,7 @@ Contenu libre, sous la forme `nom = valeur`.
 |---|---|---|
 | `U` | vitesse initiale [ux, uy] (3D : [ux, uy, uz] ; valeurs ou formules en x, y, z) |  |
 | `perturbation` | amplitude d'un tourbillon initial (déclenche le lâcher) | incompressible seulement |
-| `perturbation_center` | centre du tourbillon initial (défaut [1.5, 0]) | incompressible seulement |
+| `perturbation_center` | centre du tourbillon initial (défaut [1.5, 0] ; 3D : [x, y] = tube selon z, ou [x, y, z]) | incompressible seulement |
 | `restart` | fichier checkpoint.npz de reprise |  |
 | `restart_mode` | exact (défaut) \| fields |  |
 | `restart_shift_U` | décalage de vitesse à la reprise | incompressible seulement |

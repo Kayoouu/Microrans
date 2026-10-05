@@ -98,10 +98,21 @@ def _size(C):
 
 def _interpolator(src, dst):
     """Interpolation linéaire (triangulation de Delaunay des centres source), plus proche
-    voisin en dehors de l'enveloppe convexe ; renvoie f(valeurs) -> valeurs sur dst."""
+    voisin en dehors de l'enveloppe convexe ; renvoie f(valeurs) -> valeurs sur dst.
+
+    Direction où les centres source n'ont qu'une valeur (3D extrudé sur une couche : niveau
+    grossier du multigrille, maillage source d'une reprise) : écartée, interpolation dans
+    le plan, champ constant selon elle. Avant : triangulation 3D de points coplanaires,
+    erreur de Qhull (« initial simplex is flat », ~25 lignes en anglais, C23)."""
     from scipy.interpolate import LinearNDInterpolator
     from scipy.spatial import Delaunay, cKDTree
 
+    src, dst = np.asarray(src, float), np.asarray(dst, float)
+    if src.shape[1] == 3:
+        ext = np.ptp(src, axis=0)
+        keep = ext > 1e-9 * max(float(ext.max()), 1e-300)
+        if not keep.all():
+            src, dst = src[:, keep], dst[:, keep]
     tri = Delaunay(src)
     near = cKDTree(src).query(dst)[1]
 

@@ -2,9 +2,12 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import os
 import re
+import signal
 import sys
+import threading
 import traceback
 import warnings
 from pathlib import Path
@@ -234,17 +237,54 @@ def _load_case(args):
     return _apply_set(load_config(args.case), args.set)
 
 
+@contextlib.contextmanager
+def _ctrl_c_stops_cleanly():
+    """1er Ctrl-C : arrêt propre, comme « Arrêter » dans l'interface (fin de l'itération ou
+    du pas en cours, puis checkpoint, résumé, champs et figures écrits) ; 2e Ctrl-C : arrêt
+    immédiat sans rien écrire. Avant (C19) : « Interrompu. » et aucun fichier, alors que le
+    README promettait un checkpoint à l'arrêt demandé. Fournit should_stop()."""
+    state = {"stop": False}
+    if threading.current_thread() is not threading.main_thread():
+        yield lambda: False
+        return
+
+    def handler(signum, frame):
+        if state["stop"]:
+            raise KeyboardInterrupt
+        state["stop"] = True
+        print("\nArrêt demandé : fin de l'itération en cours, puis écriture du checkpoint, "
+              "du résumé et des champs (Ctrl-C à nouveau : arrêt immédiat, sans rien "
+              "écrire).", file=sys.stderr, flush=True)
+
+    old = signal.signal(signal.SIGINT, handler)
+    try:
+        yield lambda: state["stop"]
+    finally:
+        signal.signal(signal.SIGINT, old)
+
+
+def _stopped_message(out, case):
+    print(f"Arrêté à la demande : résultats et checkpoint écrits dans {Path(out).resolve()} ; "
+          f"poursuivre avec : microrans run2d {case} --continue -o {out}", file=sys.stderr)
+    return 130
+
+
 def cmd_run2d(args) -> int:
     from .fv2d.case import run_case
 
+    given = args.case                               # nom tapé (exemple ou fichier)
     cfg = _load_case(args)
     out = args.out or cfg.get("output", {}).get("directory") or f"results/{Path(args.case).stem}"
     if args.continue_run:
         args.restart = str(Path(out) / "checkpoint.npz")
     if args.restart:
         cfg.setdefault("initial", {})["restart"] = str(Path(args.restart).resolve())
-    summary = run_case(cfg, base_dir=Path(args.case).parent, out_dir=out,
-                       verbose=not args.quiet, plot=not args.no_plot)
+    with _ctrl_c_stops_cleanly() as stop:
+        summary = run_case(cfg, base_dir=Path(args.case).parent, out_dir=out,
+                           verbose=not args.quiet, plot=not args.no_plot,
+                           callback=lambda s, n: stop())
+    if stop():
+        return _stopped_message(out, given)
     return 0 if summary.get("converged", True) else 1
 
 
@@ -267,9 +307,13 @@ def cmd_sweep(args) -> int:
     cont = sw.get("continuation", True) and not args.no_continuation
     out = args.out or cfg.get("output", {}).get("directory") or f"results/{Path(args.case).stem}"
     jobs = args.jobs if args.jobs is not None else sw.get("jobs", 1)
-    rows = run_sweep(cfg, key, values, base_dir=Path(args.case).parent, out_dir=out,
-                     continuation=cont, verbose=not args.quiet, plot=not args.no_plot,
-                     jobs=jobs)
+    with _ctrl_c_stops_cleanly() as stop:
+        rows = run_sweep(cfg, key, values, base_dir=Path(args.case).parent, out_dir=out,
+                         continuation=cont, verbose=not args.quiet, plot=not args.no_plot,
+                         jobs=jobs, should_stop=stop)
+    if not rows:
+        print("Arrêté à la demande avant la fin du premier point.", file=sys.stderr)
+        return 130
     cols = [key, "converged", "iterations"] + [k for k in rows[0] if k.split("_")[0] in
                                                ("Cl", "Cd", "Cm") and "_" in k
                                                and not k.startswith(("Cd_p", "Cd_v"))]
@@ -277,6 +321,10 @@ def cmd_sweep(args) -> int:
     for r in rows:
         print("  ".join(f"{r[c]:>14.5g}" if isinstance(r[c], float) else f"{str(r[c]):>14s}"
                         for c in cols))
+    if stop():
+        print(f"Arrêté à la demande : {len(rows)} point(s) calculé(s) ; tableau écrit dans "
+              f"{Path(out).resolve()}.", file=sys.stderr)
+        return 130
     return 0 if all(r["converged"] for r in rows) else 1
 
 

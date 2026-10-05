@@ -243,3 +243,35 @@ def test_example_square_duct_via_cli(tmp_path, capsys):
     s = json.loads((tmp_path / "summary.json").read_text(encoding="utf-8"))
     assert s["converged"] and s["U_mean"][0] / 3.5144253739 - 1 == pytest.approx(0.015, abs=2e-3)
     assert (tmp_path / "line_diagonale.csv").is_file()
+
+
+def test_wake_perturbation_in_3d():
+    """C16 (audit 2 approfondi) : [initial] perturbation plantait en 3D (« operands could
+    not be broadcast … (6144,3) (2,) »). Centre [x, y] = tube de tourbillon selon z : une
+    couche extrudée donne la même perturbation que le 2D ; [x, y, z] accepté ; autre
+    longueur refusée clairement."""
+    from microrans.fv2d.case import build_solver
+    pert = {"perturbation": 0.3, "perturbation_center": [1.5, 0.0]}
+    s2 = build_solver(_cyl_cfg(2, initial=pert))
+    s3 = build_solver(_cyl_cfg(3, initial=pert))
+    assert np.allclose(np.asarray(s3.U)[:, 1], np.asarray(s2.U)[:, 1], rtol=0, atol=1e-14)
+    assert np.asarray(s3.U)[:, 1].max() > 0.2
+    s3b = build_solver(_cyl_cfg(3, initial={"perturbation": 0.3,
+                                            "perturbation_center": [1.5, 0.0, 0.25]}))
+    assert np.asarray(s3b.U)[:, 1].max() > 0.2
+    with pytest.raises(ValueError, match="perturbation_center"):
+        build_solver(_cyl_cfg(3, initial={"perturbation": 0.3, "perturbation_center": [1.5]}))
+
+
+def test_polar_on_extruded_case_matches_2d(tmp_path):
+    """C22 (audit 2 approfondi) : polaire d'un cas 3D en échec au 2e point (rotation de U∞
+    écrite en 2 × 2). Une couche entre plans de symétrie : mêmes C_d, C_l que la polaire 2D."""
+    from microrans.fv2d.sweep import ALPHA, run_sweep
+    rows = {}
+    for dim in (2, 3):
+        rows[dim] = run_sweep(_cyl_cfg(dim), ALPHA, [0.0, 10.0], out_dir=tmp_path / str(dim),
+                              verbose=False, plot=False)
+    assert len(rows[3]) == 2 and all(r["converged"] for r in rows[3])
+    for a, b in zip(rows[2], rows[3]):
+        for k in ("Cd_cylinder", "Cl_cylinder"):
+            assert b[k] == pytest.approx(a[k], rel=1e-7, abs=1e-9), k

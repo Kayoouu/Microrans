@@ -37,6 +37,7 @@ import json
 import multiprocessing
 import os
 import re
+import signal
 from pathlib import Path
 
 import numpy as np
@@ -261,6 +262,9 @@ def _one_thread_per_process():
 
 
 def _init_worker(mesh, stop_event):
+    # Ctrl-C au terminal atteint aussi les processus de calcul : c'est le processus
+    # principal qui le traite (arrêt propre via stop_event, C19)
+    signal.signal(signal.SIGINT, signal.SIG_IGN)
     _WORKER["mesh"], _WORKER["stop"] = mesh, stop_event
 
 
@@ -359,8 +363,12 @@ def _freestream_change(cfg, a_old, a_new):
     u0 = np.asarray(u0, float)
 
     def rot(a):
+        # rotation autour de z ; 3D : composante z inchangée (avant : matrice 2 × 2
+        # appliquée à un vecteur à 3 composantes, polaire 3D en échec au 2e point, C22)
         a = np.radians(a)
-        return np.array([[np.cos(a), -np.sin(a)], [np.sin(a), np.cos(a)]]) @ u0
+        r = u0.copy()
+        r[:2] = [np.cos(a) * u0[0] - np.sin(a) * u0[1], np.sin(a) * u0[0] + np.cos(a) * u0[1]]
+        return r
     return [float(x) for x in rot(a_new) - rot(a_old)]
 
 

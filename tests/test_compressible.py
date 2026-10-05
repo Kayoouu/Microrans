@@ -312,6 +312,38 @@ def test_case_file_run_and_restart(tmp_path):
     assert s2["iterations"] == s1["iterations"] + s2["iterations_this_run"]
 
 
+def test_implicit_restart_identical_to_continuous_run(tmp_path):
+    """C17 : N + N itérations (reprise exacte) = 2N d'un coup, au bit près, en implicite avec
+    tourbillon de champ lointain, gel du limiteur et arrêt sur efforts. Avant : le pilotage
+    du CFL repartait de cfl, le limiteur gelé et Γ étaient perdus, les relevés d'efforts
+    décalés (reprise à l'itération 36 : relevés à 46, 56…)."""
+    from microrans.cli import examples_dir
+    from microrans.fv2d.case import run_case
+    from microrans.mesh2d.builder import load_config
+    cfg = load_config(examples_dir() / "compressible_naca0012_transsonique.toml")
+    cfg["mesh"].update(n_around=48, n_radial=16, farfield_radius=10.0, first_height=6e-3)
+    cfg["boundary"]["farfield"]["vortex"] = [0.25, 0.0]
+    cfg["solver"].update(tol=1e-30, monitor_tol=1e-9, monitor_window=20, limiter_freeze=30)
+    cfg["output"] = {"vtk": False, "forces": ["airfoil"]}
+
+    def run(n, out, restart=None, **solver):
+        c = {**cfg, "solver": {**cfg["solver"], "max_iter": n, **solver}}
+        if restart:
+            c["initial"] = {**cfg.get("initial", {}), "restart": str(restart)}
+        s = run_case(c, examples_dir(), out_dir=tmp_path / out, verbose=False, plot=False)
+        with np.load(tmp_path / out / "checkpoint.npz") as z:
+            return s, z["Q"].copy()
+    sa, qa = run(70, "A")
+    run(35, "B")
+    sb, qb = run(35, "B2", restart=tmp_path / "B" / "checkpoint.npz")
+    assert sb["restart"]["controller"] == "repris"
+    assert np.array_equal(qa, qb)
+    assert sb["airfoil"]["Cl"] == sa["airfoil"]["Cl"]
+    # réglages changés : pilotage neuf (comportement d'avant)
+    sc, _ = run(5, "C", restart=tmp_path / "B" / "checkpoint.npz", cfl_max=50.0)
+    assert sc["restart"]["controller"].startswith("neuf")
+
+
 def test_case_file_transient_sod(tmp_path):
     from microrans.cli import examples_dir
     from microrans.fv2d.case import run_case

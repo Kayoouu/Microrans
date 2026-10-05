@@ -242,8 +242,13 @@ Ce sont des règles usuelles en CFD, valables pour tout logiciel :
     lancés en même temps ne se gênent plus). Les noyaux Numba (`numba = true`) gagnent
     ~10 % ; le multi-fil était plus lent sur la machine de test (README).
 - **Arrêter puis reprendre** : le calcul est sauvegardé (`checkpoint.npz`) toutes les 5
-  minutes et à la fin. On le poursuit avec `--continue` ou « Continuer le calcul
-  précédent ».
+  minutes, à la fin et à l'arrêt demandé : bouton « Arrêter » de l'interface, ou **un**
+  Ctrl-C en ligne de commande (l'itération en cours se termine, puis tous les fichiers
+  sont écrits : checkpoint, résumé, champs, historique ; code de sortie 130). Un second
+  Ctrl-C arrête tout de suite, sans rien écrire. Un balayage ou une polaire arrêtés par
+  Ctrl-C écrivent le tableau des points déjà calculés. On poursuit avec `--continue` ou
+  « Continuer le calcul précédent » : même résultat, au bit près, qu'un calcul sans
+  interruption (sur le même maillage, avec les mêmes réglages).
 
 ## 6. Signaler un défaut
 

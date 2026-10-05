@@ -204,9 +204,14 @@ def build_solver(cfg: dict, base_dir=".", verbose=False, mesh=None):
         return solver
     amp = init.get("perturbation", 0.0)
     if amp:
-        # tourbillon gaussien dans le sillage pour déclencher une instabilité (lâcher)
-        c = np.asarray(init.get("perturbation_center", (1.5, 0.0)))
-        C = mesh.cell_centers
+        # tourbillon gaussien dans le sillage pour déclencher une instabilité (lâcher) ;
+        # 3D : centre [x, y] = tube de tourbillon selon z (corps extrudé), ou [x, y, z]
+        # (avant : centre 2D retranché aux centres 3D, plantage « broadcast », C16)
+        c = np.asarray(init.get("perturbation_center", (1.5, 0.0)), dtype=float)
+        if c.size not in (2, dim):
+            raise ValueError(f"[initial] perturbation_center = {c.tolist()} : [x, y]"
+                             + (" ou [x, y, z]" if dim == 3 else "") + " attendu.")
+        C = mesh.cell_centers[:, :c.size]
         solver.U[:, 1] += solver.backend.asarray(
             amp * solver.U_ref * np.exp(-np.sum((C - c) ** 2, axis=1)))
     return solver

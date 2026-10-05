@@ -188,7 +188,8 @@ SCHEMA = Table({
     "initial": Table({
         "U": K("vitesse initiale [ux, uy] (3D : [ux, uy, uz] ; valeurs ou formules en x, y, z)"),
         "perturbation": K("amplitude d'un tourbillon initial (déclenche le lâcher)", INC),
-        "perturbation_center": K("centre du tourbillon initial (défaut [1.5, 0])", INC),
+        "perturbation_center": K("centre du tourbillon initial (défaut [1.5, 0] ; 3D : [x, y] "
+                                 "= tube selon z, ou [x, y, z])", INC),
         "restart": K("fichier checkpoint.npz de reprise"),
         "restart_mode": K("exact (défaut) | fields"),
         "restart_shift_U": K("décalage de vitesse à la reprise", INC),

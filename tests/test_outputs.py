@@ -160,3 +160,31 @@ def test_unknown_force_patch_refused_before_iterations(tmp_path):
                                          r"maillage : .*lid"):
         run_case(cfg, out_dir=tmp_path, verbose=False, plot=False)
     assert not (tmp_path / "history.csv").exists()
+
+
+def test_interpolation_from_single_layer_3d_source():
+    """C23 (audit 2 approfondi) : source 3D d'une seule couche (niveau grossier du
+    multigrille d'un cas extrudé sur 2 couches) : la triangulation 3D de points coplanaires
+    échouait (erreur de Qhull). La direction sans étendue est écartée : interpolation dans
+    le plan, exacte pour un champ linéaire en x, y."""
+    from microrans.fv2d.restart import _interpolator
+    g = np.linspace(0.0, 1.0, 6)
+    X, Y = np.meshgrid(g, g)
+    src = np.column_stack([X.ravel(), Y.ravel(), np.full(X.size, 0.25)])
+    dst = np.array([[0.31, 0.47, 0.1], [0.72, 0.15, 0.4], [0.5, 0.5, 0.25]])
+    f = _interpolator(src, dst)
+    v = 2.0 * src[:, 0] - 3.0 * src[:, 1] + 1.0
+    assert np.allclose(f(v), 2.0 * dst[:, 0] - 3.0 * dst[:, 1] + 1.0, atol=1e-12)
+
+
+def test_fmg_on_two_layer_extrusion(tmp_path):
+    """C23 : démarrage multigrille d'un cas extrudé sur 2 couches (niveau grossier : 1
+    couche) ; avant : erreur de Qhull à l'interpolation."""
+    cfg = _cavity(16, plots=False)
+    cfg["mesh"]["extrude"] = {"z1": 0.2, "nz": 2,
+                              "patch_types": {"back": "symmetry", "front": "symmetry"}}
+    cfg["boundary"].update(back={"type": "symmetry"}, front={"type": "symmetry"})
+    cfg["boundary"]["lid"]["U"] = [1.0, 0.0, 0.0]
+    cfg["solver"].update(fmg_levels=1, max_iter=50)
+    s = run_case(cfg, out_dir=tmp_path, verbose=False, plot=False)
+    assert s["fmg"]["levels"][0]["n_cells"] == 64 and s["dimension"] == 3

@@ -1,5 +1,9 @@
 """Ligne de commande : --set à plusieurs niveaux, erreurs sans trace Python brute
 (audit utilisateur M1, L3)."""
+import os
+import sys
+
+import numpy as np
 import pytest
 
 from microrans.cli import _apply_set, main
@@ -136,3 +140,57 @@ def test_example_copied_for_editing(tmp_path, capsys):
     out = capsys.readouterr()
     assert "Déjà présent(s)" in out.err and "rien n'est copié" in out.err
     assert "vouliez-vous dire « cavite_re100 » ?" in out.err
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="signal envoyé par os.kill (POSIX)")
+def test_ctrl_c_writes_checkpoint_and_continue_is_exact(tmp_path):
+    """C19 (audit 2 approfondi) : Ctrl-C pendant run2d → « Interrompu. », aucun fichier
+    (ni checkpoint, ni résumé, ni champs). Maintenant : arrêt propre comme le bouton
+    « Arrêter » (code 130), puis --continue ; k + 40 itérations en deux fois = k + 40 d'un
+    coup, au bit près."""
+    import json
+    import signal
+    import threading
+
+    from microrans.mesh2d.io import read_vtk
+    case = tmp_path / "cav.toml"
+    case.write_text("""
+[mesh]
+type = "rectangle"
+x0 = 0.0
+x1 = 1.0
+y0 = 0.0
+y1 = 1.0
+nx = 24
+ny = 24
+names = { left = "walls", right = "walls", bottom = "walls", top = "lid" }
+[physics]
+reynolds = 100
+[boundary.lid]
+type = "wall"
+U = [1.0, 0.0]
+[boundary.walls]
+type = "wall"
+[solver]
+max_iter = 1000000
+tol = 1e-30
+""")
+    a, b = tmp_path / "a", tmp_path / "b"
+    timer = threading.Timer(2.0, os.kill, (os.getpid(), signal.SIGINT))
+    timer.start()
+    try:
+        rc = main(["run2d", str(case), "-o", str(b), "-q", "--no-plot"])
+    finally:
+        timer.cancel()
+    assert rc == 130
+    for f in ("checkpoint.npz", "summary.json", "fields.vtk", "history.csv"):
+        assert (b / f).is_file(), f
+    k = json.loads((b / "summary.json").read_text())["iterations"]
+    assert k > 0
+    assert main(["run2d", str(case), "-o", str(b), "-q", "--no-plot", "--continue", "--set",
+                 "solver.max_iter=40"]) == 1
+    assert main(["run2d", str(case), "-o", str(a), "-q", "--no-plot", "--set",
+                 f"solver.max_iter={k + 40}"]) == 1
+    ua, ub = (read_vtk(d / "fields.vtk")["cell_data"]["U"] for d in (a, b))
+    assert json.loads((b / "summary.json").read_text())["iterations"] == k + 40
+    assert np.array_equal(ua, ub)

@@ -62,8 +62,9 @@ Performance : NumPy vectorisé (aucune boucle Python sur les cellules ou les fac
 """
 from __future__ import annotations
 
+import json
 import time
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 
 import numpy as np
 import scipy.sparse as sp
@@ -416,6 +417,9 @@ class CompressibleSolver2D:
         self.wall_time = 0.0
         self._res0 = None
         self._res0_count = 0
+        # pilotage du pas implicite (CFL, plafond, stagnation) gardé d'une exécution à la
+        # suivante et dans le checkpoint : reprise exacte (C17)
+        self._ctrl = None
         self._psi = None                   # limiteur mémorisé (gel / réutilisation)
         self._psi_frozen = None            # limiteur gelé (limiter_freeze)
         self._last = {}
@@ -682,17 +686,22 @@ class CompressibleSolver2D:
         pression et masse volumique déduites à enthalpie totale et entropie amont. Sans
         elle, la portance dépend de la taille du domaine (NACA 0012, M = 0.8 : +2 % entre
         30 et 100 cordes) ; avec, elle devient ~indépendante de la distance."""
-        vx = self._vortex
-        fs, g = self.fs, self.gas.gamma
-        U = fs.speed
-        ed = np.array([fs.u, fs.v]) / U
+        self._vortex_apply(self._vortex_gamma())
+
+    def _vortex_gamma(self):
+        """Γ = L′/(ρ∞ U∞) des efforts de l'itéré précédent (flux mémorisés par
+        residual(store=True)) : pas de résidu supplémentaire."""
+        fs = self.fs
+        ed = np.array([fs.u, fs.v]) / fs.speed
         el = np.array([-ed[1], ed[0]])
         walls = [p for p, k in self.bc_types.items() if k in ("wall", "slip_wall")]
-        # efforts de l'itéré précédent (flux mémorisés par residual(store=True)) : pas de
-        # résidu supplémentaire
         lift = float(sum(f["total"] @ el for f in self.forces(walls).values())) if walls \
             else 0.0
-        gam = lift / (fs.rho * U)
+        return lift / (fs.rho * fs.speed)
+
+    def _vortex_apply(self, gam):
+        vx = self._vortex
+        fs, g = self.fs, self.gas.gamma
         vx["gamma"] = gam
         M = fs.mach
         beta = np.sqrt(1.0 - M * M)
@@ -972,11 +981,23 @@ class CompressibleSolver2D:
         qscale = np.array([self.fs.rho, self.fs.rho * vref, self.fs.rho * vref,
                            self.fs.p])[:, None]
         q_start, path = None, 0.0
+        if self._ctrl:                                 # suite d'une exécution / reprise
+            c = self._ctrl
+            cfl, cfl_cap, prev = c["cfl"], c["cfl_cap"], c["prev"]
+            best, since, cuts, path = c["best"], c["since"], c["cuts"], c["path"]
+            q_start, forces_hist = c["q_start"], list(c["forces_hist"])
+        resume_gamma = None
+        if self._vortex is not None:
+            resume_gamma = self._vortex.pop("resume_gamma", None)
+            self._vortex.pop("pending", None)
         for it in range(1, max_iter + 1):
             gi = self.iterations_total + it
             order = 1 if gi <= s.first_order_iter else s.order
-            if self._vortex is not None and it > 1:
-                self._vortex_update()                  # Γ de l'itéré précédent
+            if self._vortex is not None:
+                if it > 1:
+                    self._vortex_update()              # Γ de l'itéré précédent
+                elif resume_gamma is not None:
+                    self._vortex_apply(resume_gamma)   # reprise : Γ que l'itération aurait
             R = self.residual(self.Q, order, gi, store=self._vortex is not None)
             rel = self._relative(self.residual_norms(R))
             if stepper is not None:
@@ -1023,13 +1044,14 @@ class CompressibleSolver2D:
                 raise FloatingPointError(f"Divergence à l'itération {gi} (valeurs non "
                                          f"définies). {_TIPS}")
             self.history.append(rec)
-            if monitor is not None and (it % 10 == 0 or it == 1):
+            # relevés sur l'itération globale (gi) : mêmes itérations avec ou sans reprise
+            if monitor is not None and (gi % 10 == 0 or gi == 1):
                 self.monitor.append({"iteration": gi, **monitor(self)})
             if verbose and (it % log_every == 0 or it == 1):
                 print("  it %6d  " % gi + "  ".join(f"{k}={v:.2e}" for k, v in rec.items()
                                                      if k != "iteration")
                       + (f"  CFL={cfl:.3g}" if stepper is not None else ""))
-            if s.monitor_tol and it % 10 == 0:
+            if s.monitor_tol and gi % 10 == 0:
                 self._last = {}
                 fr = self.forces()
                 forces_hist.append(np.concatenate([f["total"] for f in fr.values()])
@@ -1040,12 +1062,21 @@ class CompressibleSolver2D:
                     if np.max(np.abs(forces_hist[-1] - forces_hist[-1 - w])) / ref \
                             < s.monitor_tol:
                         converged = "forces"
+            # état du pilotage après cette itération (lu par une reprise, y compris depuis
+            # une sauvegarde automatique faite dans le callback)
+            self._ctrl = {"cfl": cfl, "cfl_cap": cfl_cap, "prev": prev, "best": best,
+                          "since": since, "cuts": cuts, "path": path, "q_start": q_start,
+                          "forces_hist": forces_hist[-max(s.monitor_window // 10, 1) - 1:]}
             if callback and callback(self, it):
                 break
             if max(rel) < tol:
                 converged = True
             if converged:
                 break
+        if self._vortex is not None:
+            # Γ que l'itération suivante appliquerait (avant que le résidu final ne
+            # remplace les flux mémorisés) : sauvé dans le checkpoint
+            self._vortex["pending"] = self._vortex_gamma()
         self.residual(self.Q, s.order, self.iterations_total + it, store=True)
         self.converged = converged
         self.cfl_cuts_done = cuts                # réductions du plafond de CFL (implicite)
@@ -1057,6 +1088,56 @@ class CompressibleSolver2D:
             print(f"  {'convergé' if converged else 'NON convergé'}{how} en {it} itérations "
                   f"({self.wall_time:.1f} s)")
         return bool(converged)
+
+    # ------------------------------------------------------------------ état de reprise
+    _NOT_IN_SIGNATURE = ("max_iter", "tol", "monitor_tol", "log_every")
+
+    def _restart_signature(self) -> dict:
+        """Réglages numériques, gaz et écoulement amont dont dépend l'état du pilotage :
+        s'ils changent entre deux exécutions, la reprise repart d'un pilotage neuf."""
+        st = {k: v for k, v in asdict(self.settings).items()
+              if k not in self._NOT_IN_SIGNATURE}
+        fs = self.fs
+        return json.loads(json.dumps({"settings": st, "gas": asdict(self.gas),
+                                      "freestream": [fs.rho, fs.u, fs.v, fs.p]},
+                                     default=float))
+
+    def restart_state(self):
+        """(métadonnées JSON, tableaux) à ajouter au checkpoint stationnaire pour une
+        reprise identique au calcul continu : pilotage du CFL, normalisation des résidus,
+        limiteur gelé, circulation du tourbillon à l'itération suivante."""
+        meta = {"res0_count": self._res0_count, "signature": self._restart_signature()}
+        arrays = {}
+        c = self._ctrl
+        if c:
+            meta["ctrl"] = {k: c[k] for k in ("cfl", "cfl_cap", "prev", "best", "since",
+                                              "cuts", "path")}
+            meta["ctrl"]["forces_hist"] = [np.asarray(f).tolist() for f in c["forces_hist"]]
+            if c["q_start"] is not None:
+                arrays["ctrl_q_start"] = c["q_start"]
+        if self._psi_frozen is not None:
+            arrays["psi_frozen"] = self._psi_frozen
+        if self._vortex is not None:
+            g = self._vortex.get("pending")
+            # sauvegarde en cours de calcul : Γ que l'itération suivante lirait
+            meta["vortex_gamma"] = self._vortex_gamma() if g is None else g
+        return meta, arrays
+
+    def set_restart_state(self, meta, arrays) -> bool:
+        """Inverse de restart_state ; False (pilotage neuf) si les réglages ont changé."""
+        if meta.get("signature") != self._restart_signature():
+            return False
+        self._res0_count = int(meta.get("res0_count", 10))
+        if "ctrl" in meta:
+            c = dict(meta["ctrl"])
+            c["forces_hist"] = [np.asarray(f, float) for f in c["forces_hist"]]
+            c["q_start"] = arrays.get("ctrl_q_start")
+            self._ctrl = c
+        if "psi_frozen" in arrays:
+            self._psi_frozen = arrays["psi_frozen"]
+        if self._vortex is not None and meta.get("vortex_gamma") is not None:
+            self._vortex["resume_gamma"] = float(meta["vortex_gamma"])
+        return True
 
     def _relative(self, norms):
         """Résidus normalisés par le maximum observé sur les 10 premières itérations ;

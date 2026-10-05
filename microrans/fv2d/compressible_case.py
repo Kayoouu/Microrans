@@ -163,7 +163,8 @@ def build_compressible_solver(cfg: dict, base_dir=".", verbose=False, mesh=None)
         if not path.is_file():
             raise FileNotFoundError(f"Fichier de reprise introuvable : {path}")
         solver.restart_info = load_checkpoint(
-            solver, path, fields_only=init.get("restart_mode", "exact") == "fields")
+            solver, path, fields_only=init.get("restart_mode", "exact") == "fields",
+            steady=sc.get("mode", "steady") == "steady")
         if verbose:
             ri = solver.restart_info
             print(f"Reprise ({ri['mode']}) depuis {path} : itération {ri['iteration']}, "
@@ -175,14 +176,17 @@ def build_compressible_solver(cfg: dict, base_dir=".", verbose=False, mesh=None)
 def save_checkpoint(solver, path, history=None, mode="steady") -> Path:
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
+    meta = {"steady": mode == "steady", "history": history or [],
+            "res0": None if solver._res0 is None else [float(v) for v in solver._res0]}
     data = {"format": np.array(1), "compressible": np.array(1),
             "cell_centers": np.asarray(solver.mesh.cell_centers),
             "n_faces": np.array([solver.ni, solver.nb]), "Q": solver.Q,
-            "time": np.array(solver.time), "iteration": np.array(solver.iterations_total),
-            "meta": np.array(json.dumps({
-                "steady": mode == "steady", "history": history or [],
-                "res0": None if solver._res0 is None else [float(v) for v in solver._res0]},
-                default=float))}
+            "time": np.array(solver.time), "iteration": np.array(solver.iterations_total)}
+    if mode == "steady":
+        # pilotage du CFL, limiteur gelé, tourbillon : reprise identique au calcul continu
+        meta["state"], arrays = solver.restart_state()
+        data.update({f"state_{k}": v for k, v in arrays.items()})
+    data["meta"] = np.array(json.dumps(meta, default=float))
     tmp = path.with_name(path.name + ".tmp")
     with open(tmp, "wb") as fh:
         np.savez_compressed(fh, **data)
@@ -190,9 +194,10 @@ def save_checkpoint(solver, path, history=None, mode="steady") -> Path:
     return path
 
 
-def load_checkpoint(solver, path, fields_only=False) -> dict:
-    """Même maillage : état conservatif exact (+ itération, temps, historique) ; sinon
-    variables primitives interpolées (restart.py : Delaunay + plus proche voisin)."""
+def load_checkpoint(solver, path, fields_only=False, steady=True) -> dict:
+    """Même maillage : état conservatif exact (+ itération, temps, historique ; calcul
+    stationnaire repris en stationnaire : pilotage du CFL, limiteur gelé, tourbillon) ;
+    sinon variables primitives interpolées (restart.py : Delaunay + plus proche voisin)."""
     from .restart import _interpolator, _size
     with np.load(Path(path), allow_pickle=False) as z:
         d = {k: z[k] for k in z.files}
@@ -224,6 +229,11 @@ def load_checkpoint(solver, path, fields_only=False) -> dict:
                 # normalisation des résidus conservée (reprise sans saut)
                 solver._res0 = np.array(meta["res0"], float)
                 solver._res0_count = 10
+            if steady and "state" in meta:
+                arrays = {k[6:]: v for k, v in d.items() if k.startswith("state_")}
+                info["controller"] = ("repris" if solver.set_restart_state(meta["state"],
+                                                                           arrays)
+                                      else "neuf (réglages ou écoulement amont changés)")
         else:
             solver.series_restart = list(meta.get("history") or [])
     return info

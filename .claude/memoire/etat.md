@@ -1,11 +1,13 @@
-# État du projet (mis à jour le 2026-10-04)
+# État du projet (mis à jour le 2026-10-05)
 
 ## Où on en est
 
 - microrans : outil RANS / URANS 1D, 2D, 3D (périmètre réduit) avec mailleur, interface
   PySide6 et exécutables PyInstaller Windows / Linux (CI GitHub Actions).
-- Dernier lot terminé : **F1 — résultats faux, calculs perdus** (2026-10-04, relance
-  quotidienne) : P1 (1 fil BLAS), C11, C13, C14, C18, C20, C21, U14, U17 corrigés, un test
+- Dernier lot terminé : **F1b — plantages et reprises** (2026-10-05, relance quotidienne) :
+  C16 (perturbation 3D), C17 (reprise compressible implicite exacte au bit près), C19
+  (Ctrl-C écrit tout, code 130), C22 (polaire 3D), C23 (multigrille sur extrusion fine) ;
+  campagne 7 : 18/18 exemples repris au bit près. Avant : **F1** (2026-10-04) : P1 (1 fil BLAS), C11, C13, C14, C18, C20, C21, U14, U17 corrigés, un test
   par point (chacun échoue sur l'ancien code). Puis **C15** (l'utilisateur m'a laissé
   choisir « la meilleure solution ») : une seule vitesse de référence. Avant : audit 2
   approfondi (576a0bc, e5deb38).
@@ -13,7 +15,7 @@
   (Windows : artefact 11312506814, Linux : 11312313419 ; expirent le 2027-01-02). CI verte
   (tests https://github.com/Kayoouu/Microrans/actions/runs/37227167554). Exécutable F1
   construit en local : 1 fil BLAS effectif (plaque : CPU 9.4 s pour 9.6 s).
-- Suite de tests : 469 (468 réussis, 1 ignoré), 5 à 8 min en série sur la machine de session.
+- Suite de tests : 475 (474 réussis, 1 ignoré), 5 à 8 min en série sur la machine de session.
 - Aucune release publiée depuis cet environnement (tag refusé) : c'est à l'utilisateur.
 - Autonomie : routine quotidienne `trig_01RCTjquBZw82GuKW83rPuSG` (cron `53 3 * * *` UTC,
   dans cette session), 1 lot par jour sauf exception ; première relance 2026-10-03.

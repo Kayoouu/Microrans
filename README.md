@@ -121,10 +121,16 @@ Sorties d'un calcul 2D : `summary.json` (convergence, Cd, Cl, y⁺, Strouhal, Nu
 pour l'ancien format texte à 10 chiffres), figures, `checkpoint.npz` (sauvegarde pour
 reprise).
 
-**Sauvegarde et reprise** : `checkpoint.npz` est écrit à la fin, à l'arrêt demandé et toutes
-les 5 minutes (`[output] checkpoint_minutes`). Sur le **même maillage**, la reprise est
-exacte (champs, flux aux faces, niveaux de temps de BDF2/AB2, Δt adaptatif, historique) :
-un calcul interrompu puis repris donne un résultat identique au bit près (tests). Sur un
+**Sauvegarde et reprise** : `checkpoint.npz` est écrit à la fin, à l'arrêt demandé (bouton
+« Arrêter » de l'interface ; en ligne de commande, un premier Ctrl-C termine l'itération en
+cours et écrit tous les fichiers, un second arrête sans rien écrire) et toutes les 5 minutes
+(`[output] checkpoint_minutes`). Sur le **même maillage**, la reprise est exacte (champs,
+flux aux faces, niveaux de temps de BDF2/AB2, Δt adaptatif, historique ; en compressible
+stationnaire, aussi le pilotage du CFL implicite, le limiteur gelé et la circulation du
+tourbillon de champ lointain) : un calcul interrompu puis repris donne un résultat
+identique au bit près (tests ; campagne 7 de `docs/audit_utilisateur.md` sur les exemples).
+Si les réglages du solveur compressible ou l'écoulement amont changent à la reprise, le
+pilotage du CFL repart de zéro (comme un nouveau calcul). Sur un
 **autre maillage**, les champs sont interpolés (comme `mapFields` d'OpenFOAM) : cavité 128²
 démarrée depuis une solution 32², 508 itérations au lieu de 1 135 (19 s au lieu de 45 s).
 Changer de modèle de turbulence est possible (les variables absentes partent des valeurs

@@ -3,6 +3,35 @@
 Détail des chiffres : README (§ 6 validation, § 7 performances, § 8 limites) et messages de
 commit. Ce journal sert à retrouver ce qui a été fait, pourquoi, et ce qui a été constaté.
 
+## 2026-10-05 — Lot F1b : plantages et reprises
+
+- Relance quotidienne (03:53 UTC). Un test par point, chacun vérifié en échec sur l'ancien
+  code (`git stash push <fichiers>`).
+- C16 : `perturbation_center` en 3D : [x, y] = tube selon z, ou [x, y, z] ; autre taille
+  refusée (case.py, doc de la clé, reference_cas.md régénéré).
+- C22 : `_freestream_change.rot` (sweep.py) ne tourne que les 2 premières composantes.
+- C23 : `restart._interpolator` retire les axes d'épaisseur ≤ 1e-9 × taille avant
+  Delaunay (couche unique au niveau grossier). Canal 3D, fmg_levels = 1, tol 1e-10 :
+  écart 3.7e-8 avec le calcul sans FMG ; 2 629 it (+102 grossières) contre 3 321.
+- C19 : cli.py `_ctrl_c_stops_cleanly` : 1er Ctrl-C = drapeau d'arrêt (fin d'itération,
+  tous les fichiers, code 130), 2e = KeyboardInterrupt ; workers de balayage ignorent
+  SIGINT. Campagne 11 : 3/3 cas avec checkpoint, résumé, champs, historique, CSV paroi,
+  reprise ok ; balayage parallèle arrêté en 0.4 s, 2 points écrits. Windows non vérifié
+  (test ignoré sous win32).
+- C17 : état du pilotage gardé par le solveur (`_ctrl` : cfl, cfl_cap, prev, best, since,
+  cuts, path, q_start, derniers relevés d'efforts), `_res0_count`, `_psi_frozen`, Γ du
+  tourbillon que l'itération suivante lirait (calculé avant le résidu final, ou à la
+  sauvegarde automatique) → `restart_state()` / `set_restart_state()` dans le checkpoint
+  (méta JSON + tableaux `state_*`). Relevés monitor / monitor_tol sur `gi % 10` (avant
+  `it % 10`, décalés à la reprise). Restauré seulement si stationnaire → stationnaire et
+  signature (réglages hors max_iter/tol/monitor_tol/log_every, gaz, amont) inchangée ;
+  sinon pilotage neuf (`restart.controller` dans summary.json). Vérifié : N + N = 2N au
+  bit près (NACA 120+120, 90+90 fenêtre 50, arrêt sur efforts à 240 repris à 205, plaque
+  limiter_freeze 20, rampe) ; calcul continu = ancien code au bit près (5 variantes) ;
+  campagne 7 : 18/18 exemples exacts (Sod non découpable).
+- Suite : 474 réussis, 1 ignoré (6 min 30 s). README (reprise, Ctrl-C), dépannage § 5,
+  audit (statuts) mis à jour.
+
 ## 2026-10-04 — C15 : une seule vitesse de référence
 
 - Demande : « La meilleure solution pour C15 » (choix délégué). Mesuré d'abord : 4 usages,
