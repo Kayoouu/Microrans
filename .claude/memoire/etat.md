@@ -19,7 +19,8 @@
 - Objectif accepté le 2026-10-05 : jalon A (2D académique crédible), puis B (3D
   académique, petite géométrie) ; C (pré-industriel) non visé. Détail : `a_faire.md`.
 - Méthode outillée (2026-10-05) : skill `lot`, `tools/dev/`, hooks avant poussée et fin de
-  tour, CI au démarrage, `bilan_lots.md` (estimé / réel, rétrospectives).
+  tour, CI au démarrage, `bilan_lots.md` (estimé / réel, rétrospectives). Commit b81d766, CI
+  verte : https://github.com/Kayoouu/Microrans/actions/runs/37388788153
 - Aucune release publiée depuis cet environnement (tag refusé) : c'est à l'utilisateur.
 - Autonomie : routine quotidienne `trig_01RCTjquBZw82GuKW83rPuSG` (cron `53 3 * * *` UTC,
   dans cette session), 1 lot par jour sauf exception ; première relance 2026-10-03.

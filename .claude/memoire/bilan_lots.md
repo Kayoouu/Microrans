@@ -17,6 +17,7 @@ et trouvés plus tard (à remplir rétroactivement).
 | 2026-10-04 | F1 (9 points) | 1 lot | ≈ 50 min (relance 03:53 → 04:41) | 11 | — | C15 bloqué sur une décision de l'utilisateur → poser la question tôt, continuer le reste |
 | 2026-10-04 | C15 | 1 lot | ? (début non noté) | 3 | — | — |
 | 2026-10-05 | F1b (5 points) | 1 à 2 lots | ≈ 45 min (03:53 → 04:35) | 6 | — | `git stash` à la main pour prouver chaque test, comparaisons avant / après réécrites à chaque fois, suite lancée pendant l'édition de la doc (course connue) → outils tools/dev (echoue_avant, ab, suite) |
+| 2026-10-05 | Outillage (demande de l'utilisateur) | non estimé | ≈ 35 min (≈ 23:05 → CI verte 23:37) | 4 | — | 3 défauts des outils trouvés en les essayant (--ref avalé, erreurs déclarées identiques, « git push » cité pris pour une poussée) → essayer chaque outil sur un cas connu avant de s'y fier |
 
 ## Indicateur du jalon A : résultats faux silencieux trouvés par audit
 
