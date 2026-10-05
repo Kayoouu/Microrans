@@ -11,9 +11,9 @@
   par point (chacun échoue sur l'ancien code). Puis **C15** (l'utilisateur m'a laissé
   choisir « la meilleure solution ») : une seule vitesse de référence. Avant : audit 2
   approfondi (576a0bc, e5deb38).
-- Exécutables de ff11d8f (C15) : run https://github.com/Kayoouu/Microrans/actions/runs/37227170227
-  (Windows : artefact 11312506814, Linux : 11312313419 ; expirent le 2027-01-02). CI verte
-  (tests https://github.com/Kayoouu/Microrans/actions/runs/37227167554). Exécutable F1
+- Exécutables de 898cffa (F1b) : run https://github.com/Kayoouu/Microrans/actions/runs/37263377558
+  (Windows : artefact 11325098571, Linux : 11324344878 ; expirent le 2027-01-03). CI verte
+  (tests https://github.com/Kayoouu/Microrans/actions/runs/37263373865). Exécutable F1
   construit en local : 1 fil BLAS effectif (plaque : CPU 9.4 s pour 9.6 s).
 - Suite de tests : 475 (474 réussis, 1 ignoré), 5 à 8 min en série sur la machine de session.
 - Aucune release publiée depuis cet environnement (tag refusé) : c'est à l'utilisateur.
