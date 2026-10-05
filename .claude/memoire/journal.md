@@ -3,6 +3,19 @@
 Détail des chiffres : README (§ 6 validation, § 7 performances, § 8 limites) et messages de
 commit. Ce journal sert à retrouver ce qui a été fait, pourquoi, et ce qui a été constaté.
 
+## 2026-10-05 — Jalons A, B, C inscrits dans a_faire.md
+
+- Question de l'utilisateur (2026-10-04) : délai pour un usage académique / pré-industriel.
+  Réponse : A (2D académique crédible) fin octobre à mi-novembre 2026, B (3D académique,
+  petite géométrie) janvier–février 2027, C (pré-industriel) pas atteignable avec
+  l'architecture actuelle. Estimations, pas des mesures. Accord pour les inscrire :
+  « oui écris ».
+- Réordonnancement qui en découle : GCI et maillage en C + NASA TMR (jalon A) passent
+  avant l'import Gmsh 3D et le multi-cœur (jalon B) ; ajout de l'audit 3 (critère du
+  jalon A : plus de résultat faux silencieux) et d'un cas 3D turbulent comparé à des
+  données publiées (jalon B). Compressible turbulent : seulement sur demande.
+- Restes de l'estimation A après C15 et F1b (faits en 2 lots, estimés 2 à 3) : 9 à 16 lots.
+
 ## 2026-10-05 — Lot F1b : plantages et reprises
 
 - Relance quotidienne (03:53 UTC). Un test par point, chacun vérifié en échec sur l'ancien

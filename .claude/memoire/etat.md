@@ -16,6 +16,8 @@
   (tests https://github.com/Kayoouu/Microrans/actions/runs/37263373865). Exécutable F1
   construit en local : 1 fil BLAS effectif (plaque : CPU 9.4 s pour 9.6 s).
 - Suite de tests : 475 (474 réussis, 1 ignoré), 5 à 8 min en série sur la machine de session.
+- Objectif accepté le 2026-10-05 : jalon A (2D académique crédible), puis B (3D
+  académique, petite géométrie) ; C (pré-industriel) non visé. Détail : `a_faire.md`.
 - Aucune release publiée depuis cet environnement (tag refusé) : c'est à l'utilisateur.
 - Autonomie : routine quotidienne `trig_01RCTjquBZw82GuKW83rPuSG` (cron `53 3 * * *` UTC,
   dans cette session), 1 lot par jour sauf exception ; première relance 2026-10-03.
