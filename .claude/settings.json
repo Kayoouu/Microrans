@@ -6,7 +6,7 @@
           {
             "type": "command",
             "command": "sh \"$CLAUDE_PROJECT_DIR/.claude/hooks/memoire_session.sh\"",
-            "timeout": 10
+            "timeout": 20
           }
         ]
       }
@@ -18,6 +18,18 @@
             "type": "command",
             "command": "sh \"$CLAUDE_PROJECT_DIR/.claude/hooks/memoire_stop.sh\"",
             "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$CLAUDE_PROJECT_DIR/tools/dev/avant_push.py\" --hook",
+            "timeout": 60
           }
         ]
       }

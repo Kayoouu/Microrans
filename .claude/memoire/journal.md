@@ -3,6 +3,32 @@
 Détail des chiffres : README (§ 6 validation, § 7 performances, § 8 limites) et messages de
 commit. Ce journal sert à retrouver ce qui a été fait, pourquoi, et ce qui a été constaté.
 
+## 2026-10-05 — Outils et automatismes de travail (demande de l'utilisateur)
+
+- Demande : « améliore autonomement ton workflow », avant les lots quotidiens.
+- Constats tirés des derniers lots : preuve « le test échoue avant » faite à la main
+  (`git stash`, risque de perdre du travail) ; comparaisons avant / après et mesures
+  (getrusage) réécrites à chaque fois ; suite lancée pendant l'édition de la doc (course
+  avec test_reference_document_up_to_date) ; attente de la CI par boucles de sleep + MCP ;
+  règles de CLAUDE.md (ruff, suite, pas de force, pas de nom de modèle, tomllib) vérifiées
+  de mémoire ; aucune mesure estimé / réel alors que des délais sont annoncés.
+- Fait : `tools/dev/` (suite.py, echoue_avant.py, ab.py egalite / temps, ci.py,
+  avant_push.py, _commun.py) ; hook PreToolUse (Bash) avant poussée ; hook Stop étendu
+  (travail non commité / non poussé) ; état de la CI au démarrage (SessionStart) ; skill
+  `lot` (procédure) ; `bilan_lots.md` (estimé / réel, indicateur du jalon A : résultats
+  faux silencieux par audit 8 → 3 → 2, campagnes de non-régression) ; routine mise à jour
+  (suit le skill ; campagnes le lundi). Accès API : add_repo Kayoouu/Microrans (push), car
+  `gh api` refusait le dépôt (ancien nom → chemin numérique refusé par le proxy).
+- Essais : echoue_avant sur les tests de F1b contre 898cffa~1 : 3 « échoue avant : OK »,
+  C17 « preuve faible » (KeyError avant l'égalité des champs : juste), test FMG préexistant
+  « ne prouve pas » (juste). ab egalite : cavité identique ; conduite 3D avant / après C15 :
+  coefficients ×9, champs identiques (déjà mesuré à la main). ab temps : cavité 200 it,
+  B / A = 1.007. ci.py : état et artefacts du run 37263377558 relus.
+- Défauts trouvés en essayant : ab avalait --ref avec la commande, et deux exécutions en
+  erreur donnaient « identique » (corrigés) ; le hook prenait « git push » cité dans un
+  texte pour une poussée et bloquait sa propre correction (motif limité à la position de
+  commande ; correction faite avec l'outil Edit). Tests : tests/test_outils_dev.py (4).
+
 ## 2026-10-05 — Jalons A, B, C inscrits dans a_faire.md
 
 - Question de l'utilisateur (2026-10-04) : délai pour un usage académique / pré-industriel.

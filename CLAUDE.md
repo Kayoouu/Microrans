@@ -29,9 +29,29 @@ est à lire quand il faut retrouver le détail d'un lot passé.
 - Tout chiffre écrit dans le README, la doc ou un message d'avertissement doit avoir été
   mesuré ; préciser les conditions (machine virtuelle 4 cœurs, durées variables de ±50 %
   d'un jour à l'autre : mesurer les comparaisons côte à côte, machine libre).
-- Avant de pousser : `ruff check microrans`, tests concernés, puis suite complète si le
-  changement touche le solveur ou l'interface. Après la poussée : vérifier la CI (workflow
+- Avant de pousser : ruff, tests concernés, suite complète si microrans/ ou tests/
+  changent (le hook avant poussée le vérifie). Après la poussée : vérifier la CI (workflow
   `tests`, et `executables` si l'exécutable est concerné).
+
+## Procédure et outils (détail : skill `lot`, `.claude/skills/lot/SKILL.md`)
+
+- Chaque lot suit le skill `lot` : départ (CI, tâche), un test qui échoue sans la
+  correction, comparaisons avant / après, suite, poussée, CI, mémoire, rétrospective.
+- `tools/dev/` (scripts, `-h` pour l'aide) :
+  - `suite.py` : suite complète sur une copie de l'arbre (arrière-plan ; on peut éditer
+    pendant ce temps) ;
+  - `echoue_avant.py` : le test échoue-t-il sur l'ancien code ? (sans `git stash`) ;
+  - `ab.py egalite | temps` : mêmes sorties au bit près, ou temps / CPU / mémoire
+    A B B A, entre une révision et l'arbre de travail ;
+  - `ci.py etat | attendre [--executables]` : CI par l'API (gh api), artefacts ;
+  - `avant_push.py` : contrôles avant poussée.
+- Hooks (`.claude/settings.json`) :
+  - démarrage : mémoire + état de la CI du dernier commit poussé ;
+  - avant une poussée (commande Bash) : branche, pas de force ni de tag, ruff, pas de nom
+    de modèle ni de `tomllib` dans les tests, suite passée sur ce code exact ;
+  - fin de tour : mémoire à jour, rien de non commité ni de non poussé.
+- `.claude/memoire/bilan_lots.md` : estimé / réel par lot, rétrospectives, indicateur du
+  jalon A (résultats faux silencieux par audit).
 
 ## Autonomie
 
@@ -66,20 +86,26 @@ chiffres), puis lot suivant.
 
 ## Pièges connus de l'environnement
 
-- Pas de `pytest-xdist` (`-n 4` refusé) : suite complète en série, ~8 min
-  (`python -m pytest -q -p no:cacheprovider`), à lancer en arrière-plan.
+- Pas de `pytest-xdist` (`-n 4` refusé) : suite complète en série, 5 à 8 min
+  (`python tools/dev/suite.py`, en arrière-plan).
 - Scripts hors du dépôt : `PYTHONPATH=/home/user/Claude-test` ; interface hors écran :
   `QT_QPA_PLATFORM=offscreen` (et `MICRORANS_RESULTS=<dossier>` pour les sorties).
-- Pas de `/usr/bin/time` : mesurer temps et pic mémoire avec un petit script Python
-  (`subprocess.run` + `resource.getrusage(RUSAGE_CHILDREN).ru_maxrss`).
+- Pas de `/usr/bin/time` : temps, CPU et pic mémoire par `tools/dev/ab.py temps`.
 - `pkill -f motif` tue aussi le shell qui le lance (code 144) : viser un PID.
 - `sleep` au premier plan est bloqué : boucles `for i in $(seq ..); do sleep 20; done` dans
   une commande, ou tâche en arrière-plan.
 - Le téléchargement des artefacts de CI (blob.core.windows.net) est refusé par le proxy :
   vérifier les exécutables par les codes de retour des étapes de CI.
 - Le workflow `executables` ne part tout seul que si `packaging/` ou
-  `.github/workflows/build.yml` change ; sinon le lancer (workflow_dispatch, outil MCP
-  `actions_run_trigger`, workflow `build.yml`, ref = la branche).
+  `.github/workflows/build.yml` change ; sinon `python tools/dev/ci.py attendre
+  --executables` (ou outil MCP `actions_run_trigger`, workflow `build.yml`).
+- API GitHub par `gh api` : seulement avec le nom `Kayoouu/Microrans` (dépôt ajouté à la
+  session par add_repo, access push, le 2026-10-05) ; l'ancien nom `Claude-test` redirige
+  vers un chemin numérique refusé par le proxy. API refusée : outils MCP (owner
+  `Kayoouu`, repo `Claude-test`).
+- Le hook avant poussée lit les commandes Bash : une commande qui commence par
+  « git push » dans un texte (heredoc) est prise pour une poussée ; éditer alors avec
+  l'outil Edit / Write.
 - La CI (`tests`) lance `python -m microrans verify` puis `pytest` sous Python 3.10 et 3.12,
   mais pas `ruff` : le lancer en local. `ruff check tests` signale une erreur E731
   préexistante (`tests/test_mesh2d.py:74`). Pas de `import tomllib` dans les tests

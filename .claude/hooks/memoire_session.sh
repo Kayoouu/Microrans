@@ -13,4 +13,8 @@ done
 echo
 echo "Journal détaillé des lots : .claude/memoire/journal.md (à lire si un détail manque)."
 echo "Dernier commit : $(git log -1 --format='%h %ad %s' --date=short 2>/dev/null)"
+# état de la CI du dernier commit poussé (API GitHub ; rouge → la corriger d'abord)
+ci=$(timeout 10 python3 tools/dev/ci.py etat --court 2>/dev/null) || ci=""
+echo "${ci:-CI : état inconnu (API inaccessible) ; vérifier avec les outils MCP.}"
+echo "Outils : tools/dev (suite, echoue_avant, ab, ci, avant_push) ; procédure : skill lot."
 exit 0
