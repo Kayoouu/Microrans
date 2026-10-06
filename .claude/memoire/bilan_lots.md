@@ -18,7 +18,7 @@ et trouvés plus tard (à remplir rétroactivement).
 | 2026-10-04 | C15 | 1 lot | ? (début non noté) | 3 | — | — |
 | 2026-10-05 | F1b (5 points) | 1 à 2 lots | ≈ 45 min (03:53 → 04:35) | 6 | — | `git stash` à la main pour prouver chaque test, comparaisons avant / après réécrites à chaque fois, suite lancée pendant l'édition de la doc (course connue) → outils tools/dev (echoue_avant, ab, suite) |
 | 2026-10-05 | Outillage (demande de l'utilisateur) | non estimé | ≈ 35 min (≈ 23:05 → CI verte 23:37) | 4 | — | 3 défauts des outils trouvés en les essayant (--ref avalé, erreurs déclarées identiques, « git push » cité pris pour une poussée) → essayer chaque outil sur un cas connu avant de s'y fier |
-| 2026-10-06 | F2 (12 points) | 1 lot (F2 à F4 : 3 à 5) | ≈ 20 min jusqu'au commit (03:53 → 04:12), plus suite et CI | 12 | — | cas de reproduction mal écrits deux fois (compressible sans `compressible = true` ni état amont ; 3D sans faces d'extrusion) → partir d'un exemple existant modifié plutôt qu'écrire un cas à la main. Outils : echoue_avant 12 preuves en 1 appel, ab egalite 5 exemples en < 1 min : utiles |
+| 2026-10-06 | F2 (12 points) | 1 lot (F2 à F4 : 3 à 5) | 34 min (03:53 → CI verte 04:27 ; 2 commits, 2 suites, 2 constructions) | 12 | — | cas de reproduction mal écrits deux fois (compressible sans `compressible = true` ni état amont ; 3D sans faces d'extrusion) → partir d'un exemple existant modifié plutôt qu'écrire un cas à la main. Outils : echoue_avant 12 preuves en 1 appel, ab egalite 5 exemples en < 1 min : utiles |
 
 ## Indicateur du jalon A : résultats faux silencieux trouvés par audit
 
@@ -44,6 +44,7 @@ expliquer avant le lot. Sorties en dehors du dépôt (scratchpad), seulement le 
 | c6 interface = ligne de commande | 2026-10-04 (C15) | 22 exemples identiques au bit près (hors chemins), Sod ignoré |
 | c7 reprise exacte | 2026-10-05 (F1b) | 18 / 18 au bit près, Sod non découpable |
 | c8 2D = 3D une couche | 2026-10-03 (audit 2 approfondi) | convergé : écart ≤ 2·10⁻⁶ ; perturbation 3D corrigée depuis (C16) |
+| c3b / c3c clés numériques (texte, −1) | 2026-10-06 (F2) | 92 / 92 et 24 / 24 refusés clairement avant le calcul |
 
 ## Changements de méthode (rétrospectives) et effet constaté
 
@@ -53,3 +54,5 @@ expliquer avant le lot. Sorties en dehors du dépôt (scratchpad), seulement le 
   un appel (avant : un `git stash` par test) ; comparaisons avant / après sur 5 exemples
   sans script à écrire ; état de la CI lu au démarrage. Pas encore d'erreur évitée par le
   hook avant poussée.
+- 2026-10-06 (rétro F2) : heure de fin écrite de tête (04:48, réel 04:12) → la procédure
+  (skill `lot`, § 5) impose de lire les heures (git log, date -u).

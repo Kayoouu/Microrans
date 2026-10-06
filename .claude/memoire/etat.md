@@ -13,10 +13,9 @@
   par point (chacun échoue sur l'ancien code). Puis **C15** (l'utilisateur m'a laissé
   choisir « la meilleure solution ») : une seule vitesse de référence. Avant : audit 2
   approfondi (576a0bc, e5deb38).
-- Exécutables de 898cffa (F1b) : run https://github.com/Kayoouu/Microrans/actions/runs/37263377558
-  (Windows : artefact 11325098571, Linux : 11324344878 ; expirent le 2027-01-03). CI verte
-  (tests https://github.com/Kayoouu/Microrans/actions/runs/37263373865). Exécutable F1
-  construit en local : 1 fil BLAS effectif (plaque : CPU 9.4 s pour 9.6 s).
+- Exécutables de 6137d9c (F2) : run https://github.com/Kayoouu/Microrans/actions/runs/37413244158
+  (Windows : artefact 11389769577, Linux : 11390515647 ; expirent le 2027-01-04). CI verte
+  (tests https://github.com/Kayoouu/Microrans/actions/runs/37413241410).
 - Suite de tests : 491 (489 réussis, 2 ignorés), 5 à 8 min en série sur la machine de session.
 - Objectif accepté le 2026-10-05 : jalon A (2D académique crédible), puis B (3D
   académique, petite géométrie) ; C (pré-industriel) non visé. Détail : `a_faire.md`.

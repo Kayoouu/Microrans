@@ -61,7 +61,9 @@ dans `CLAUDE.md` ; cette page dit comment les appliquer avec les outils `tools/d
 
 1. Mémoire : `etat.md` (dernier lot, liens CI / exécutables), `a_faire.md` (« En cours »
    vidé, tâche retirée), `journal.md` (détail, chiffres), `bilan_lots.md` (ligne : estimé,
-   réel = relance → dernier commit, tests ajoutés, rétro).
+   réel = relance → dernier commit, tests ajoutés, rétro). Heures lues, jamais estimées :
+   `git log -1 --format=%ad --date=format:%H:%M` et `date -u` (F2 : 04:48 écrit de tête,
+   04:12 en réalité).
 2. **Rétrospective (2 min)** : qu'est-ce qui a coûté du temps ou causé une erreur ? Si un
    outil, un hook ou une ligne de cette procédure l'évite : le faire tout de suite si
    c'est moins de 15 min, sinon l'ajouter aux « Petits travaux ». Noter le changement et,
