@@ -33,7 +33,7 @@ from ..fv2d.compressible import COMP_BC_TYPES
 from ..fv2d.solver import BC_TYPES, TIME_SCHEMES
 from ..linalg import SOLVERS
 from ..solver import TIME_SCHEMES_1D
-from ..tomlio import dumps, loads
+from ..tomlio import dumps, loads, read_text
 from .widgets import (Binder, PlotCanvas, SciEdit, Vec2, Worker, apply_plot_style, combo,
                       debounce, set_combo)
 
@@ -1223,7 +1223,7 @@ class MainWindow(QMainWindow):
                 return
         path = Path(path)
         try:
-            text = path.read_text(encoding="utf-8")
+            text, note = read_text(path)             # BOM, Windows-1252 (M20)
             cfg = json.loads(text) if path.suffix == ".json" else loads(text)
         except Exception as exc:                     # noqa: BLE001
             QMessageBox.warning(self, "Lecture impossible", str(exc))
@@ -1238,6 +1238,8 @@ class MainWindow(QMainWindow):
         self._mesh_only_file = mesh_only
         self.setWindowTitle(f"{APP_NAME} — {path.name}")
         self.log(f"Cas ouvert : {path}")
+        if note:
+            self.log(f"ATTENTION : {note}")
         self.nav.setCurrentRow(2)
         if cfg.get("mesh", {}).get("type") not in ("blocks",):
             self.canvas.message(f"{path.stem}\nCliquez « Générer le maillage ».")

@@ -473,11 +473,10 @@ class Solver2D:
         extra = [k for k in boundaries if k not in names and k not in periodic]
         missing = [n for n in names if n not in boundaries]
         if missing:
-            from .validate import _suggest
+            from .validate import _suggest, missing_bc_message
             hint = "".join(f" ; [boundary.{e}] ne correspond à aucune frontière"
                            f"{_suggest(e, missing)}" for e in extra)
-            raise ValueError(f"Conditions aux limites manquantes pour les patches {missing}"
-                             f"{hint}.")
+            raise ValueError(missing_bc_message(missing, BC_TYPES, hint))
         if extra:
             import warnings
 

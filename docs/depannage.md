@@ -40,6 +40,13 @@ calculé tant qu'il en reste une.
 | `3 composantes attendues [x, y, z] (maillage 3D …)` | cas 3D (`type = "box"` ou `[mesh.extrude]`) avec un vecteur à 2 composantes | écrire `U = [ux, uy, uz]`, `body_force = [fx, fy, fz]`… |
 | `Maillage 3D (…) : … disponible(s) en 2D seulement` | option sans version 3D (axisymétrique, swirl, poreux, disques, couplé, animation, compressible) | la retirer, ou calculer en 2D |
 | `reprise d'un calcul 2D sur un maillage 3D impossible` | `restart` d'un calcul d'une autre dimension | repartir d'un calcul de même dimension |
+| `syntaxe TOML incorrecte (ligne …, colonne …)` | guillemets typographiques, virgule décimale (`nu = 0,01`), clé sans valeur | corriger la ligne indiquée |
+| `… n'est pas en UTF-8 : lu comme Latin-1 / Windows-1252` (ATTENTION) | fichier enregistré par un ancien éditeur | l'enregistrer en UTF-8 (le BOM du Bloc-notes est accepté) |
+| `frontière « … » inexistante. Frontières du maillage : …` | nom mal écrit dans `periodic` | prendre un nom de la liste |
+| `Conditions aux limites manquantes pour : …` | frontière sans `[boundary.<nom>]` (en 3D extrudé : faces `back`, `front`) | ajouter la section ; faces d'extrusion : `type = "symmetry"` ou `[mesh.extrude] periodic` |
+| `fichier Gmsh binaire, non lu` | `.msh` exporté en binaire | le réexporter en texte |
+| `… cellule(s) sans face intérieure` | une seule maille (`nx = ny = 1`) | au moins 2 cellules |
+| `clé de [output] : la déplacer` (ATTENTION) | clé écrite dans une autre section | la déplacer dans la section indiquée |
 
 ## 2. Le calcul diverge
 

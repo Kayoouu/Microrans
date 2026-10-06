@@ -359,11 +359,17 @@ def examples_dir() -> Path:
 def resolve_example(name) -> Path:
     """Chemin d'un fichier de cas ; à défaut, nom d'un exemple fourni (avec ou sans .toml)."""
     p = Path(name)
-    if p.exists():
+    if p.is_file():
         return p
     for cand in (examples_dir() / p.name, examples_dir() / (p.name + ".toml")):
-        if cand.exists():
+        if cand.is_file():
+            if p.is_dir():                          # M22 : un dossier de résultats homonyme
+                warnings.warn(f"« {name} » est aussi un dossier ici : exemple {cand.name} "
+                              "utilisé.", stacklevel=2)
             return cand
+    if p.is_dir():
+        raise ValueError(f"« {name} » est un dossier, pas un fichier de cas (.toml) ; "
+                         "exemples : microrans examples")
     raise ValueError(f"Fichier de cas introuvable : {name} (exemples : microrans examples)")
 
 
@@ -665,6 +671,16 @@ def _error_text(exc) -> str:
         return f"accès refusé : {exc.filename}"
     if isinstance(exc, IsADirectoryError) and exc.filename:
         return f"un fichier est attendu, pas un dossier : {exc.filename}"
+    if isinstance(exc, FileExistsError) and exc.filename:   # M20 : -o vers un fichier
+        return (f"« {exc.filename} » existe déjà et n'est pas un dossier : choisir un autre "
+                "dossier de sortie (-o).")
+    if isinstance(exc, NotADirectoryError) and exc.filename:
+        return f"un dossier est attendu, pas un fichier : {exc.filename}"
+    if "Factor is exactly singular" in str(exc):     # SciPy (factorisation LU), M21
+        return ("système linéaire singulier (« Factor is exactly singular ») : vérifier les "
+                "conditions aux limites (une vitesse ou une pression imposée quelque part), "
+                "le maillage (cellules isolées, au moins 2 cellules) ; si le calcul tournait "
+                "déjà, il a divergé : voir docs/depannage.md § 2.")
     return str(exc)
 
 

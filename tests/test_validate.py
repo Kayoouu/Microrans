@@ -226,7 +226,8 @@ def test_condition_for_missing_patch():
     c = _ex("cavite_re100")
     c["mesh"].update(nx=6, ny=6)
     c["boundary"]["lidd"] = c["boundary"].pop("lid")
-    with pytest.raises(ValueError, match=r"manquantes pour les patches \['lid'\] ; "
+    with pytest.raises(ValueError, match=r"manquantes pour : lid — ajouter \[boundary.lid\] "
+                                         r"avec type = un de : wall, inlet.* ; "
                                          r"\[boundary.lidd\] ne correspond à aucune frontière"
                                          r" — vouliez-vous dire « lid » \?"):
         build_solver(c)

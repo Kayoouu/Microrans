@@ -8,7 +8,26 @@ un corps, hors maillage) : NaN.
 """
 from __future__ import annotations
 
+import re
+
 import numpy as np
+
+
+_DECIMAL_COMMA = re.compile(r"^[+-]?(\d+(,\d*)?|,\d+)([eE][+-]?\d+)?$")
+
+
+def _point_values(text: str, dim: int) -> list:
+    """Un point « x y » : virgule décimale acceptée quand les coordonnées sont séparées
+    par des espaces (« 0,25 0,75 », U16) ; sinon la virgule sépare (« 0.25, 0.75 »)."""
+    mots = text.split()
+    if (len(mots) == dim and any("," in m for m in mots)
+            and all(_DECIMAL_COMMA.match(m) for m in mots)):
+        return [float(m.replace(",", ".")) for m in mots]
+    try:
+        return [float(v) for v in text.replace(",", " ").split()]
+    except ValueError:
+        raise ValueError(f"Points invalides : « {text.strip()} » n'est pas une liste de "
+                         "nombres.") from None
 
 
 def parse_points(spec, dim: int = 2) -> np.ndarray:
@@ -16,8 +35,7 @@ def parse_points(spec, dim: int = 2) -> np.ndarray:
     if spec is None:
         return np.zeros((0, dim))
     if isinstance(spec, str):
-        pts = [[float(v) for v in p.replace(",", " ").split()] for p in spec.split(";")
-               if p.strip()]
+        pts = [_point_values(p, dim) for p in spec.split(";") if p.strip()]
     else:
         pts = [[float(v) for v in p] for p in spec]
     if any(len(p) != dim for p in pts):

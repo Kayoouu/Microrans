@@ -78,8 +78,30 @@ def dumps(cfg: dict) -> str:
 
 
 def loads(text: str) -> dict:
+    """TOML → dict ; erreur de syntaxe → ValueError en français (ligne, colonne)."""
     try:
         import tomllib
     except ModuleNotFoundError:                    # Python 3.10
         import tomli as tomllib
-    return tomllib.loads(text)
+    try:
+        return tomllib.loads(text)
+    except tomllib.TOMLDecodeError as exc:
+        m = re.search(r"\(at line (\d+), column (\d+)\)", str(exc))
+        where = f"ligne {m.group(1)}, colonne {m.group(2)}" if m else "position inconnue"
+        raise ValueError(f"syntaxe TOML incorrecte ({where}) : {exc}. Rappels : texte entre "
+                         "guillemets droits (\"wall\"), point décimal (0.5), une clé par "
+                         "ligne, sections entre crochets ([solver]).") from None
+
+
+def read_text(path) -> tuple[str, str | None]:
+    """Texte d'un fichier de cas et, s'il y a lieu, une remarque à afficher : UTF-8 avec
+    BOM (Bloc-notes, PowerShell) lu sans remarque ; fichier qui n'est pas en UTF-8 (Latin-1
+    / Windows-1252 d'anciens éditeurs) lu en Windows-1252, avec une remarque."""
+    from pathlib import Path
+    raw = Path(path).read_bytes()
+    try:
+        return raw.decode("utf-8-sig"), None
+    except UnicodeDecodeError:
+        return raw.decode("cp1252", errors="replace"), (
+            f"{Path(path).name} n'est pas en UTF-8 : lu comme Latin-1 / Windows-1252 (accents "
+            "des commentaires à vérifier) ; l'enregistrer en UTF-8.")

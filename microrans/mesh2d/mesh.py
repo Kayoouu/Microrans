@@ -8,6 +8,7 @@ Organisation « à la OpenFOAM » :
 """
 from __future__ import annotations
 
+import difflib
 import warnings
 from dataclasses import dataclass
 
@@ -16,6 +17,32 @@ import numpy as np
 from . import bvh
 
 PATCH_TYPES = ("wall", "patch", "symmetry", "empty")
+# noms français fréquents (M15)
+_TYPE_ALIASES = {"paroi": "wall", "mur": "wall", "symetrie": "symmetry",
+                 "symétrie": "symmetry", "sym": "symmetry", "vide": "empty",
+                 "libre": "patch", "ouvert": "patch"}
+
+
+def unknown_patch_type(ptype, name=None) -> str:
+    """Message pour un type de frontière inconnu : choix et suggestion (M15)."""
+    low = str(ptype).lower()
+    alt = _TYPE_ALIASES.get(low) or next(iter(difflib.get_close_matches(
+        low, PATCH_TYPES, n=1, cutoff=0.6)), None)
+    return (f"Type de frontière inconnu « {ptype} »" + (f" (frontière {name})" if name else "")
+            + f". Choix : {', '.join(PATCH_TYPES)}"
+            + (f" — vouliez-vous dire « {alt} » ?" if alt else "."))
+
+
+def check_patch_names(wanted, names, what: str):
+    """ValueError si un nom de `wanted` n'est pas une frontière du maillage : liste des
+    frontières et suggestion (M13)."""
+    known = [n for n in names if not str(n).startswith("_")]
+    for w in wanted:
+        if w not in names:
+            alt = difflib.get_close_matches(str(w), known, n=1, cutoff=0.6)
+            raise ValueError(f"{what} : frontière « {w} » inexistante. Frontières du "
+                             f"maillage : {', '.join(known)}"
+                             + (f" — vouliez-vous dire « {alt[0]} » ?" if alt else "."))
 
 
 @dataclass
@@ -165,6 +192,7 @@ class Mesh2D:
         self._periodic_owner = {}
         for spec in periodic:
             pa, pb = spec[0], spec[1]
+            check_patch_names((pa, pb), names, f"periodic = [\"{pa}\", \"{pb}\"]")
             ia, ib = names.index(pa), names.index(pb)
             fa, fb = np.nonzero(tag == ia)[0], np.nonzero(tag == ib)[0]
             if len(fa) != len(fb):
@@ -213,7 +241,7 @@ class Mesh2D:
                 continue        # patch interne temporaire (raccord) devenu vide
             ptype = patch_types.get(name, "patch")
             if ptype not in PATCH_TYPES:
-                raise ValueError(f"Type de patch inconnu '{ptype}' ({name}).")
+                raise ValueError(unknown_patch_type(ptype, name))
             self.patches.append(Patch(name, ptype, pos, len(sel)))
             fn_blocks.append(fn_b[sel])
             own_blocks.append(owner_b[sel])
@@ -454,7 +482,7 @@ class Mesh2D:
         for p in self.patches:
             if p.name in types:
                 if types[p.name] not in PATCH_TYPES:
-                    raise ValueError(f"Type de patch inconnu '{types[p.name]}'.")
+                    raise ValueError(unknown_patch_type(types[p.name], p.name))
                 p.type = types[p.name]
         self.patch_types = {p.name: p.type for p in self.patches}
         if self.wall_patches != walls_before:      # distance à recalculer

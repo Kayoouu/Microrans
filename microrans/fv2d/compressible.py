@@ -546,12 +546,12 @@ class CompressibleSolver2D:
         names = {p.name for p in m.patches}
         missing = [p.name for p in m.patches if p.name not in boundaries and p.type != "empty"]
         if missing:
-            raise ValueError(f"Conditions aux limites manquantes pour : {missing} "
-                             f"(types : {', '.join(COMP_BC_TYPES)})")
+            from .validate import missing_bc_message
+            raise ValueError(missing_bc_message(missing, COMP_BC_TYPES))
         for name in boundaries:
             if name not in names and name not in periodic:
-                raise ValueError(f"[boundary.{name}] : patch absent du maillage "
-                                 f"({sorted(names)}).")
+                raise ValueError(f"[boundary.{name}] : aucune frontière « {name} » dans le "
+                                 f"maillage (frontières : {', '.join(sorted(names))}).")
         C = m.face_centers[self.ni:]
         vortex = []
         for patch in m.patches:

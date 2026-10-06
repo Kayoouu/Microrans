@@ -403,6 +403,18 @@ def _suggest(key: str, known, section=False) -> str:
     return f" — vouliez-vous dire [{best}] ?" if section else f" — vouliez-vous dire « {best} » ?"
 
 
+def missing_bc_message(missing, types, extra_hint: str = "") -> str:
+    """Conditions aux limites manquantes (M17) : noms en clair, types possibles, et pour
+    les faces d'extrusion (back, front) la condition d'un écoulement 2D."""
+    ext = [n for n in missing if n in ("back", "front")]
+    tip = (" ; faces d'extrusion " + " et ".join(ext) + " : type = \"symmetry\" (écoulement "
+           "2D extrudé) ou [mesh.extrude] periodic = [[\"back\", \"front\"]]") if ext else ""
+    return (f"Conditions aux limites manquantes pour : {', '.join(missing)} — ajouter "
+            + " et ".join(f"[boundary.{n}]" for n in missing[:3])
+            + ("…" if len(missing) > 3 else "")
+            + f" avec type = un de : {', '.join(types)}{tip}{extra_hint}.")
+
+
 def _where(parts) -> str:
     s, after = "", ""
     for p in parts:
@@ -416,10 +428,17 @@ def _where(parts) -> str:
 
 
 class _Check:
-    def __init__(self, kind: str, mesh_type: str):
-        self.kind, self.mesh_type = kind, mesh_type
+    def __init__(self, kind: str, mesh_type: str, root: Table | None = None):
+        self.kind, self.mesh_type, self.root = kind, mesh_type, root
         self.warnings: list[str] = []
         self.errors: list[str] = []
+
+    def _home(self, key: str, here: str) -> list[str]:
+        """Sections (premier niveau) qui connaissent `key` (M16 : clé mal placée)."""
+        if self.root is None:
+            return []
+        return [s for s, t in self.root.keys.items()
+                if s != here and isinstance(t, Table) and not t.free and key in t.keys]
 
     def table(self, value, spec: Table, parts):
         if spec.free:
@@ -460,8 +479,12 @@ class _Check:
                     self.warnings.append(f"Section [{k}] inconnue, ignorée"
                                          f"{_suggest(k, spec.keys, section=True)}")
                 else:
+                    home = self._home(k, str(parts[0]))
                     self.warnings.append(f"{_where(parts)} {k} : clé inconnue, ignorée"
-                                         f"{_suggest(k, spec.keys)}")
+                                         + (" — clé de " + " ou de ".join(
+                                             f"[{h}]" for h in home) + " : la déplacer"
+                                            if home and len(parts) == 1
+                                            else _suggest(k, spec.keys)))
                 continue
             what = f"Section [{k}]" if not parts else f"{_where(parts)} {k}"
             if sub.only and sub.only != self.kind:
@@ -513,6 +536,11 @@ class _Values:
         elif le is not None and not v <= le:
             self.errors.append(f"[{sec}] {key} = {v!r} : doit être ≤ {le:g}.")
         return float(v)
+
+    def boolean(self, sec: str, d: dict, key: str):
+        if isinstance(d, dict) and d.get(key) is not None and not isinstance(d[key], bool):
+            self.errors.append(f"[{sec}] {key} = {d[key]!r} : true ou false attendu (sans "
+                               "guillemets).")
 
     def choice(self, sec: str, d: dict, key: str, choices, *, lower=True):
         if not isinstance(d, dict) or d.get(key) is None:
@@ -750,6 +778,12 @@ def _check_values(cfg: dict, kind: str, mesh_type: str, mesh_only: bool, errors:
         errors.append(f"[output] vtk_format = {vf!r} inconnu : binary (défaut, valeurs exactes) "
                       "ou ascii (texte).")
     V.num("solver", sc, "log_every", ge=1, integer=True)
+    if oc.get("probes") is not None:                # U16 : avant, refus au lancement
+        from .sampling import parse_points
+        try:
+            parse_points(oc["probes"], dim)
+        except (ValueError, TypeError) as exc:
+            errors.append(f"[output] probes = {oc['probes']!r} : {exc}")
     if kind == INC:
         for k in ("relax_U", "relax_p", "relax_turb", "relax_T", "relax_scalar"):
             V.num("solver", sc, k, gt=0, le=1)
@@ -768,10 +802,44 @@ def _check_values(cfg: dict, kind: str, mesh_type: str, mesh_only: bool, errors:
             V.choice("solver", sc, k, tuple(SOLVERS), lower=False)
         from .solver import TIME_SCHEMES
         V.choice("solver", sc, "time_scheme", ("auto", *TIME_SCHEMES), lower=False)
+        # clés « expert » (M18 : texte → erreur interne, valeurs hors bornes acceptées)
+        th = sc.get("cn_theta")
+        if _isnum(th) and not 0.5 <= th <= 1:
+            errors.append(f"[solver] cn_theta = {th!r} : entre 0.5 (Crank-Nicolson, ordre 2) "
+                          "et 1 (Euler implicite) ; θ < 0.5 est instable.")
+        else:
+            V.num("solver", sc, "cn_theta")
+        for k in ("ddt_phi_coeff", "nonorth_limit"):
+            V.num("solver", sc, k, ge=0, le=1)
+        V.num("solver", sc, "threads", ge=0, integer=True)
+        V.num("solver", sc, "fmg_tol", gt=0)
+        for k in ("adjust_dt", "numba", "turbulence_every_outer"):
+            V.boolean("solver", sc, k)
     else:
         for k in ("cfl", "cfl_max"):
             V.num("solver", sc, k, gt=0)
         V.num("solver", sc, "first_order_iter", ge=0, integer=True)
+        # clés « expert » (M14, M18)
+        from .compressible import FLUXES, LIMITERS, STEADY_SCHEMES
+        V.choice("solver", sc, "flux", FLUXES)
+        lim = str(sc.get("limiter", "")).lower().replace("-", "_")
+        if lim not in ("venkat", "venkatakrishnan_wang", "barth", "bj"):
+            V.choice("solver", sc, "limiter", LIMITERS)
+        V.choice("solver", sc, "steady_scheme", STEADY_SCHEMES)
+        V.choice("solver", sc, "implicit_jacobian", ("roe", "rusanov"))
+        V.choice("solver", sc, "linear_solver", ("gmres", "sgs"))
+        if sc.get("order") is not None and sc["order"] not in (1, 2):
+            errors.append(f"[solver] order = {sc['order']!r} : 1 ou 2 attendu.")
+        V.num("solver", sc, "venkat_k", gt=0)
+        V.num("solver", sc, "entropy_fix", ge=0)
+        V.num("solver", sc, "viscous_factor", gt=0)
+        for k in ("cfl_growth", "cfl_adapt"):
+            V.num("solver", sc, k, ge=1)
+        V.num("solver", sc, "linear_tol", gt=0, le=1)
+        for k in ("limiter_freeze", "cfl_cuts"):
+            V.num("solver", sc, k, ge=0, integer=True)
+        for k in ("linear_sweeps", "linear_iter"):
+            V.num("solver", sc, k, ge=1, integer=True)
     # [boundary.*], [initial]
     bnd = cfg.get("boundary") if isinstance(cfg.get("boundary"), dict) else {}
     for name, spec in bnd.items():
@@ -855,7 +923,11 @@ def _check_bodies(cfg: dict, mesh_type: str, errors: list, warns: list):
     from ..mesh2d.geometry import NACA_TE
     for b in bodies if isinstance(bodies, list) else []:
         te = b.get("trailing_edge") if isinstance(b, dict) else None
-        if te is not None and str(te).lower() not in NACA_TE:
+        if te is not None and str(b.get("type", "")).lower() != "naca":
+            warns.append(f"[[bodies]] « {b.get('name', b.get('type'))} » : trailing_edge "
+                         f"sans effet (type = \"{b.get('type')}\" ; seulement pour type = "
+                         "\"naca\").")                            # M19
+        elif te is not None and str(te).lower() not in NACA_TE:
             errors.append(f"[[bodies]] « {b.get('name', b.get('type'))} » : trailing_edge = "
                           f"{te!r} inconnu (" + ", ".join(NACA_TE) + ").")
     if mesh_type == OGRID and (not isinstance(bodies, list) or len(bodies) != 1):
@@ -962,7 +1034,7 @@ def check_case(cfg: dict, mesh_only: bool = False, values: bool = True) -> list[
                             if k not in ("domain", "bodies")},
                    **{k: v for k, v in cfg.items() if k in ("domain", "bodies")}}
             mesh_type = _mesh_type(cfg["mesh"])
-    c = _Check(kind, mesh_type)
+    c = _Check(kind, mesh_type, schema)
     for sec in ("domain", "bodies"):              # sans effet pour ce type de maillage
         spec = schema.keys.get(sec)
         if sec in cfg and spec is not None and mesh_type and mesh_type not in spec.types:

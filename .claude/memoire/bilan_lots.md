@@ -18,6 +18,7 @@ et trouvés plus tard (à remplir rétroactivement).
 | 2026-10-04 | C15 | 1 lot | ? (début non noté) | 3 | — | — |
 | 2026-10-05 | F1b (5 points) | 1 à 2 lots | ≈ 45 min (03:53 → 04:35) | 6 | — | `git stash` à la main pour prouver chaque test, comparaisons avant / après réécrites à chaque fois, suite lancée pendant l'édition de la doc (course connue) → outils tools/dev (echoue_avant, ab, suite) |
 | 2026-10-05 | Outillage (demande de l'utilisateur) | non estimé | ≈ 35 min (≈ 23:05 → CI verte 23:37) | 4 | — | 3 défauts des outils trouvés en les essayant (--ref avalé, erreurs déclarées identiques, « git push » cité pris pour une poussée) → essayer chaque outil sur un cas connu avant de s'y fier |
+| 2026-10-06 | F2 (12 points) | 1 lot (F2 à F4 : 3 à 5) | ≈ 20 min jusqu'au commit (03:53 → 04:12), plus suite et CI | 12 | — | cas de reproduction mal écrits deux fois (compressible sans `compressible = true` ni état amont ; 3D sans faces d'extrusion) → partir d'un exemple existant modifié plutôt qu'écrire un cas à la main. Outils : echoue_avant 12 preuves en 1 appel, ab egalite 5 exemples en < 1 min : utiles |
 
 ## Indicateur du jalon A : résultats faux silencieux trouvés par audit
 
@@ -48,5 +49,7 @@ expliquer avant le lot. Sorties en dehors du dépôt (scratchpad), seulement le 
 
 - 2026-10-05 : outils `tools/dev` (suite sur copie, echoue_avant, ab egalite / temps, ci,
   avant_push), hook avant poussée, hook de fin de tour (travail non poussé), état de la CI
-  au démarrage, skill `lot`. Effet : à constater sur les prochains lots (durée, erreurs
-  évitées), noter ici.
+  au démarrage, skill `lot`. Effet constaté au lot F2 (2026-10-06) : preuve des 12 tests en
+  un appel (avant : un `git stash` par test) ; comparaisons avant / après sur 5 exemples
+  sans script à écrire ; état de la CI lu au démarrage. Pas encore d'erreur évitée par le
+  hook avant poussée.

@@ -1,5 +1,7 @@
 # Deux objets : un profil NACA 2412 à 4° d'incidence et un profil importé (fichier Selig)
-# microrans mesh mesh_naca_multi.toml --type unstructured
+# microrans mesh mesh_naca_multi.toml                      (hybride : couches pariétales)
+# microrans mesh mesh_naca_multi.toml --type unstructured  (triangles seuls : [mesh] layers
+#                                                          est alors ignoré, avec un avertissement)
 [mesh]
 type = "hybrid"
 h_max = 0.5

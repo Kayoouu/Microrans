@@ -343,7 +343,19 @@ def read_gmsh(path, patch_types: dict | None = None) -> Mesh2D:
     sec = {}
     for m in re.finditer(r"\$(\w+)\s*\n(.*?)\n\$End\1", text, re.S):
         sec[m.group(1)] = m.group(2).split("\n")
-    version = float(sec["MeshFormat"][0].split()[0])
+    if "MeshFormat" not in sec:
+        raise ValueError(f"{Path(path).name} : pas un fichier Gmsh .msh (section $MeshFormat "
+                         "absente).")
+    fmt = sec["MeshFormat"][0].split()
+    version = float(fmt[0])
+    if len(fmt) > 1 and fmt[1] != "0":              # M20 : avant KeyError 'Nodes'
+        raise ValueError(f"{Path(path).name} : fichier Gmsh binaire, non lu. Le réexporter "
+                         "en texte (Gmsh : File → Export, format .msh, option binaire "
+                         "décochée).")
+    missing = [k for k in ("Nodes", "Elements") if k not in sec]
+    if missing:
+        raise ValueError(f"{Path(path).name} : section(s) Gmsh {', '.join(missing)} absente(s) "
+                         "(fichier incomplet ou tronqué).")
     phys = {}
     if "PhysicalNames" in sec:
         for ln in sec["PhysicalNames"][1:]:

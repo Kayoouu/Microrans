@@ -4,7 +4,9 @@
 
 - microrans : outil RANS / URANS 1D, 2D, 3D (périmètre réduit) avec mailleur, interface
   PySide6 et exécutables PyInstaller Windows / Linux (CI GitHub Actions).
-- Dernier lot terminé : **F1b — plantages et reprises** (2026-10-05, relance quotidienne) :
+- Dernier lot terminé : **F2 — messages** (2026-10-06, relance quotidienne) : M13 à M22,
+  U16, L6 ; 12 tests (tous « échoue avant : OK ») ; résultats de calcul inchangés au bit
+  près (ab.py, 5 exemples). Avant : **F1b — plantages et reprises** (2026-10-05) :
   C16 (perturbation 3D), C17 (reprise compressible implicite exacte au bit près), C19
   (Ctrl-C écrit tout, code 130), C22 (polaire 3D), C23 (multigrille sur extrusion fine) ;
   campagne 7 : 18/18 exemples repris au bit près. Avant : **F1** (2026-10-04) : P1 (1 fil BLAS), C11, C13, C14, C18, C20, C21, U14, U17 corrigés, un test
@@ -15,7 +17,7 @@
   (Windows : artefact 11325098571, Linux : 11324344878 ; expirent le 2027-01-03). CI verte
   (tests https://github.com/Kayoouu/Microrans/actions/runs/37263373865). Exécutable F1
   construit en local : 1 fil BLAS effectif (plaque : CPU 9.4 s pour 9.6 s).
-- Suite de tests : 475 (474 réussis, 1 ignoré), 5 à 8 min en série sur la machine de session.
+- Suite de tests : 491 (489 réussis, 2 ignorés), 5 à 8 min en série sur la machine de session.
 - Objectif accepté le 2026-10-05 : jalon A (2D académique crédible), puis B (3D
   académique, petite géométrie) ; C (pré-industriel) non visé. Détail : `a_faire.md`.
 - Méthode outillée (2026-10-05) : skill `lot`, `tools/dev/`, hooks avant poussée et fin de

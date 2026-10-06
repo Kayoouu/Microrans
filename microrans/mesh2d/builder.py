@@ -16,6 +16,7 @@ triangles → prismes ; voir mesh3d.extrude).
 from __future__ import annotations
 
 import json
+import warnings
 from pathlib import Path
 
 from .blocks import (backward_facing_step_mesh, block_mesh, cavity_mesh, channel_mesh,
@@ -30,14 +31,23 @@ MESH_TYPES = ("blocks", "rectangle", "ogrid", "unstructured", "hybrid", "file", 
 
 
 def load_config(path) -> dict:
+    """Fichier de cas TOML (ou JSON) : BOM et encodage Windows acceptés (remarque affichée
+    en avertissement), erreurs de syntaxe en français."""
+    from ..tomlio import loads, read_text
     path = Path(path)
+    text, note = read_text(path)
+    if note:
+        warnings.warn(note, stacklevel=2)
     if path.suffix.lower() == ".json":
-        return json.loads(path.read_text(encoding="utf-8"))
+        try:
+            return json.loads(text)
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"{path.name} : JSON incorrect (ligne {exc.lineno}, colonne "
+                             f"{exc.colno}) : {exc.msg}.") from None
     try:
-        import tomllib
-    except ModuleNotFoundError:          # Python 3.10
-        import tomli as tomllib
-    return tomllib.loads(path.read_text(encoding="utf-8"))
+        return loads(text)
+    except ValueError as exc:
+        raise ValueError(f"{path.name} : {exc}") from None
 
 
 def _outer(cfg) -> Rectangle:

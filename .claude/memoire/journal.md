@@ -3,6 +3,33 @@
 Détail des chiffres : README (§ 6 validation, § 7 performances, § 8 limites) et messages de
 commit. Ce journal sert à retrouver ce qui a été fait, pourquoi, et ce qui a été constaté.
 
+## 2026-10-06 — Lot F2 : messages (M13 à M22, U16, L6)
+
+- Relance quotidienne (03:53 UTC), premier lot suivant le skill `lot`. Mardi : pas de
+  campagnes de non-régression.
+- Reproduction d'abord : `tools/audit/c16_messages_f2.py` (campagne 16, 17 cas). Constats
+  en plus de l'audit : Gmsh binaire → « Erreur interne (KeyError 'Nodes') » (l'audit
+  supposait un message obscur) ; clés compressibles en texte → erreur interne
+  (UFuncTypeError).
+- Corrections : `tomlio.read_text` (BOM, repli Windows-1252 avec ATTENTION) et `loads`
+  (syntaxe TOML en français), utilisés par `load_config` et l'interface ;
+  `mesh2d.mesh.check_patch_names` / `unknown_patch_type` (2D et 3D) ;
+  `validate.missing_bc_message` (incompressible et compressible ; faces d'extrusion :
+  symmetry ou [mesh.extrude] periodic, vérifié) ; `_Check._home` (clé mal placée) ;
+  clés expert de [solver] vérifiées (nombres, entiers, bornes, choix, booléens) ;
+  `build_solver` refuse 0 face intérieure ; `_error_text` (fichier existant, pas un
+  dossier, « Factor is exactly singular ») ; `resolve_example` (dossier homonyme) ;
+  `parse_points` (virgule décimale, U16) et sondes vérifiées avant le lancement ;
+  résumé : bruit d'arrondi de U moyen → 0 (L6) ; trailing_edge hors NACA → ATTENTION ;
+  `--steps-per-period` dans le message de la phase ; en-tête de mesh_naca_multi.
+- Non fait (choix) : abréviations d'options (argparse) laissées actives ; seul le message
+  de M19 change.
+- Vérifié : 12 tests (`tests/test_messages.py`), 12 « échoue avant : OK » (echoue_avant,
+  aucune preuve faible) ; `ab.py egalite` identique au bit près sur cavité, rampe M = 2,
+  conduite 3D, filtre poreux, cylindre URANS (sondes) ; les 23 exemples de calcul passent
+  la vérification ; campagne 16 après : chaque cas a un message en français avec choix
+  ou suggestion.
+
 ## 2026-10-05 — Outils et automatismes de travail (demande de l'utilisateur)
 
 - Demande : « améliore autonomement ton workflow », avant les lots quotidiens.

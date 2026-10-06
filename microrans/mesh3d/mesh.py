@@ -15,7 +15,7 @@ import warnings
 import numpy as np
 
 from ..mesh2d import bvh as _bvh
-from ..mesh2d.mesh import PATCH_TYPES, Patch
+from ..mesh2d.mesh import PATCH_TYPES, Patch, check_patch_names, unknown_patch_type
 
 # faces locales des cellules (numérotation VTK) ; l'orientation est corrigée ensuite
 # (normale sortante) à partir de la géométrie, l'ordre de ces listes est indifférent
@@ -191,6 +191,7 @@ class Mesh3D:
         self._periodic_owner = {}
         for spec in periodic:
             pa, pb = spec[0], spec[1]
+            check_patch_names((pa, pb), names, f"periodic = [\"{pa}\", \"{pb}\"]")
             ia, ib = names.index(pa), names.index(pb)
             fa, fb = np.nonzero(tag == ia)[0], np.nonzero(tag == ib)[0]
             if len(fa) != len(fb):
@@ -237,7 +238,7 @@ class Mesh3D:
             sel = np.nonzero(tag == i)[0]
             ptype = patch_types.get(name, "patch")
             if ptype not in PATCH_TYPES:
-                raise ValueError(f"Type de patch inconnu '{ptype}' ({name}).")
+                raise ValueError(unknown_patch_type(ptype, name))
             self.patches.append(Patch(name, ptype, pos, len(sel)))
             fn_blocks.append(fn_b[sel])
             own_blocks.append(owner_b[sel])
@@ -536,7 +537,7 @@ class Mesh3D:
         for p in self.patches:
             if p.name in types:
                 if types[p.name] not in PATCH_TYPES:
-                    raise ValueError(f"Type de patch inconnu '{types[p.name]}'.")
+                    raise ValueError(unknown_patch_type(types[p.name], p.name))
                 p.type = types[p.name]
         self.patch_types = {p.name: p.type for p in self.patches}
         if self.wall_patches != walls_before:      # distance à recalculer

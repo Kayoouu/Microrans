@@ -166,8 +166,11 @@ def run_pulsating_channel(model: str = "sa", re_tau: float = 395.0, n_cells: int
     avec une constante de temps de l'ordre de 6 h/u_τ à Re_τ = 395, il faut donc
     ~80 h/u_τ avant d'atteindre le régime périodique (⟨τ_w⟩ → 1 à ~1e-4 près).
     """
-    if steps_per_period % n_phases:
-        raise ValueError("steps_per_period doit être un multiple de n_phases.")
+    if steps_per_period % n_phases:                       # M19 : noms de la ligne de commande
+        lo = steps_per_period // n_phases * n_phases
+        raise ValueError(f"--steps-per-period = {steps_per_period} : doit être un multiple de "
+                         f"{n_phases} (nombre de phases de la moyenne de phase), par exemple "
+                         f"{max(lo, n_phases)} ou {lo + n_phases}.")
     omega = omega_plus * re_tau
     period = 2.0 * np.pi / omega
     if n_periods is None:

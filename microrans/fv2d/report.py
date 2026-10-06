@@ -168,7 +168,14 @@ def summary_text(s: dict) -> str:
         where = ", ".join(_g(p[a]) for a in "xyz" if a in p)
         other.append(f"Sonde ({where}) : {vals}.")
     if s.get("U_mean") and not comp:
-        other.append(f"Vitesse moyenne dans le domaine : {_g(s['U_mean'])}.")
+        u = s["U_mean"]
+        if isinstance(u, (list, tuple)):              # L6 : bruit d'arrondi (1e-17…) → 0
+            ref = max((abs(x) for x in u if isinstance(x, (int, float))), default=0.0)
+            u = "(" + ", ".join("0" if isinstance(x, float) and abs(x) < 1e-9 * ref
+                                else _g(x) for x in u) + ")"
+        else:
+            u = _g(u)
+        other.append(f"Vitesse moyenne dans le domaine : {u}.")
     if other:
         out.append("")
         out.extend(other)

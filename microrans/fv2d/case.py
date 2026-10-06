@@ -139,6 +139,10 @@ def build_solver(cfg: dict, base_dir=".", verbose=False, mesh=None):
     """Solveur prêt à calculer (maillage construit, ou fourni via `mesh`)."""
     if mesh is None:
         mesh = case_mesh(cfg, base_dir, verbose)
+    if getattr(mesh, "n_internal", 1) == 0:           # M21 : avant « Factor is exactly singular »
+        raise ValueError(f"Maillage de {mesh.n_cells} cellule(s) sans face intérieure : le "
+                         "système de pression est singulier. Il faut au moins 2 cellules "
+                         "voisines (nx, ny ≥ 2).")
     ph = cfg.get("physics", {})
     dim = getattr(mesh, "dim", 2)
     axi = bool(ph.get("axisymmetric", False))
