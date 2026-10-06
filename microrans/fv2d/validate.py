@@ -768,6 +768,9 @@ def _check_values(cfg: dict, kind: str, mesh_type: str, mesh_only: bool, errors:
         V.num("solver", sc, "t_end", gt=0, required=True, why=" (mode transient : temps final)")
         V.num("solver", sc, "dt", gt=0, required=kind == INC,
               why=" (mode transient : pas de temps)")
+    else:                                           # stationnaire : non lues, mais vérifiées
+        for k in ("t_end", "dt"):
+            V.num("solver", sc, k, gt=0)
     V.num("solver", sc, "max_iter", ge=1, integer=True)
     V.num("solver", sc, "tol", ge=0)
     V.num("solver", sc, "monitor_tol", gt=0)

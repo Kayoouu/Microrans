@@ -29,6 +29,14 @@ commit. Ce journal sert à retrouver ce qui a été fait, pourquoi, et ce qui a 
   conduite 3D, filtre poreux, cylindre URANS (sondes) ; les 23 exemples de calcul passent
   la vérification ; campagne 16 après : chaque cas a un message en français avec choix
   ou suggestion.
+- Campagnes relancées : 3c (12 clés « expert » dans un cas où elles servent, texte puis
+  −1) : 24 / 24 erreurs claires avant calcul (audit : erreurs internes et acceptations
+  silencieuses) ; 3b (toutes les clés numériques) : 88 erreurs claires, 4 acceptées en
+  silence (dt, t_end invalides dans un cas stationnaire, où ils ne servent pas) →
+  désormais vérifiés aussi en stationnaire (second commit, test complété) ; 3b refaite :
+  92 / 92 erreurs claires.
+- CI de a063d20 verte (tests 37412579973, exécutables 37412583026) ; suite après le second
+  commit : 489 réussis, 2 ignorés.
 
 ## 2026-10-05 — Outils et automatismes de travail (demande de l'utilisateur)
 

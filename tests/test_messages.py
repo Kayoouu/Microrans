@@ -88,12 +88,13 @@ def test_expert_solver_keys_checked_before_the_run():
                  "implicit_jacobian = 'roee' inconnu", "order = 3 : 1 ou 2"):
         assert part in msg, part
     c = _cavity()
-    c["solver"].update(cn_theta=-1, nonorth_limit=1.5, threads="4", numba="oui")
+    c["solver"].update(cn_theta=-1, nonorth_limit=1.5, threads="4", numba="oui", dt="abc")
     with pytest.raises(ValueError) as e:
         check_case(c)
     msg = str(e.value)
     for part in ("cn_theta = -1 : entre 0.5", "nonorth_limit = 1.5 : doit être ≤ 1",
-                 "threads = '4' : nombre entier", "numba = 'oui' : true ou false"):
+                 "threads = '4' : nombre entier", "numba = 'oui' : true ou false",
+                 "dt = 'abc' : nombre attendu"):          # stationnaire : dt non lu
         assert part in msg, part
     for name in sorted(os.listdir(examples_dir())):   # aucun exemple refusé à tort
         if name.endswith(".toml") and not name.startswith("mesh_"):
