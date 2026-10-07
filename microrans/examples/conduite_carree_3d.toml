@@ -3,7 +3,8 @@
 # Vitesse débitante exacte 3.5144 ; calculée : U_mean[0] dans summary.json
 # (3.5670 sur 16², +1.50 % ; 3.5276 sur 32², +0.38 % : ordre 2 ; ~8 s). Pas d'écoulement
 # secondaire (Uy = Uz = 0 à 1e-12) : attendu en laminaire.
-# Champs 3D : results/conduite_carree_3d/fields.vtk (ParaView) ; figures : plan z médian.
+# Champs 3D : results/conduite_carree_3d/fields.vtk (ParaView) ; figures : section x = cte
+# ([output] slice_axis ; défaut des cas 3D : plan z médian).
 # microrans run2d conduite_carree_3d
 [mesh]
 type = "box"
@@ -47,6 +48,7 @@ tol = 1e-7
 
 [output]
 directory = "results/conduite_carree_3d"
+slice_axis = "x"                   # figures dans la section (défaut : plan z médian)
 probes = [[0.25, 0.0, 0.0]]
 [[output.lines]]
 name = "diagonale"

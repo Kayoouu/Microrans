@@ -21,7 +21,8 @@ par itération du § 4).
 
 Activation : `[physics] compressible = true` ; `run_case` délègue alors tout le calcul à
 `fv2d/compressible_case.py`. Mêmes sorties que l'incompressible (`summary.json`,
-`history.csv`, `wall_<patch>.csv` avec Cp, C_f, y⁺, T, q ; `fields.vtk` avec ρ, U, p, T,
+`history.csv`, `wall_<patch>.csv` avec Cp, C_f, y⁺, T, q, aire, normale et vecteur
+frottement (F = Σ ((p − p∞) n + τ) × aire redonne les efforts du résumé) ; `fields.vtk` avec ρ, U, p, T,
 Mach, Cp, entropie ; figures ; `checkpoint.npz` et reprise exacte ou interpolée).
 
 ## 2. Méthodes (et pourquoi)

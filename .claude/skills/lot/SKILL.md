@@ -27,7 +27,9 @@ dans `CLAUDE.md` ; cette page dit comment les appliquer avec les outils `tools/d
 2. **Le test prouve la correction** :
    `python tools/dev/echoue_avant.py tests/test_x.py::test_y`. Attendu : « échoue avant :
    OK ». « Preuve faible » (échec par fonction ou clé absente) : ajouter une assertion sur
-   le comportement, qui échoue sur l'ancien code.
+   le comportement, qui échoue sur l'ancien code. Pour l'éviter d'emblée (F3) : importer
+   un module nouveau à la fin du test, et poser dans le test la valeur qu'un exemple
+   modifié apporte, au lieu de la lire dans l'exemple.
 3. **Résultats inchangés là où ils doivent l'être** : `python tools/dev/ab.py egalite --
    run2d <exemple> -o {out} --no-plot -q --set solver.max_iter=30` sur les exemples
    touchés ; une différence doit être voulue et expliquée.
@@ -43,7 +45,10 @@ dans `CLAUDE.md` ; cette page dit comment les appliquer avec les outils `tools/d
 ## 3. Avant de pousser
 
 1. `python tools/dev/suite.py` **en arrière-plan** (suite complète sur une copie : on peut
-   éditer la doc pendant ce temps). Le hook avant poussée la **réclame** si microrans/ ou
+   éditer la doc pendant ce temps), **une fois le code du lot fini** (F3 : une suite lancée
+   sur un arbre provisoire, à refaire). Avant, si un format de sortie change (en-tête CSV,
+   clé JSON, titre de figure) : `grep -rn "<ancien texte>" tests/` et mettre à jour les
+   tests trouvés (F3 : en-tête de wall_*.csv figé dans test_case3d, vu après 10 min). Le hook avant poussée la **réclame** si microrans/ ou
    tests/ changent ; il vérifie aussi ruff, branche, force, tags, noms de modèles, tomllib.
 2. Docs (README, référence des clés : `python -m microrans.fv2d.validate >
    docs/reference_cas.md` si une clé change), statuts de l'audit.

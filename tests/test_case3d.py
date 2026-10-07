@@ -198,7 +198,7 @@ def test_run_case_3d_matches_2d_with_incidence(tmp_path):
               "line_wake.csv", "wall_cylinder.csv", "checkpoint.npz"):
         assert (out / f).is_file(), f
     assert (out / "wall_cylinder.csv").read_text().splitlines()[0] == \
-        "x,y,z,tau_w,Cf,Cp,yplus"
+        "x,y,z,tau_w,Cf,Cp,yplus,p,area,nx,ny,nz,tau_x,tau_y,tau_z"     # L7 (lot F3)
     assert (out / "line_wake.csv").read_text().splitlines()[0].startswith("s,x,y,z,Ux,Uy,Uz")
     from microrans.fv2d.report import summary_text
     txt = summary_text(s3)

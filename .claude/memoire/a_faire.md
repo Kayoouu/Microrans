@@ -7,7 +7,7 @@ inutile (mesure à l'appui), l'écrire dans le journal et passer à la suivante.
 
 ## En cours
 
-(rien ; F2 fait le 2026-10-06)
+(rien ; F3 fait le 2026-10-07)
 
 ## À faire
 
@@ -21,19 +21,16 @@ des points d'audit : `docs/audit_utilisateur.md` ; campagnes à relancer après 
 
 Usages : TP, projets d'étudiants, études paramétriques 2D laminaire / RANS sur cas
 classiques. **Atteint quand** : un audit complet ne trouve plus aucun résultat faux
-silencieux, et les points 3 et 4 sont faits (ou leur impossibilité écrite). Côté
+silencieux, et les points 2 et 3 sont faits (ou leur impossibilité écrite). Côté
 utilisateur (je ne peux pas le faire) : publier une release, faire essayer l'exécutable
 Windows par un humain sur un vrai PC (jamais fait : la CI vérifie seulement qu'il démarre).
 
-1. **F3 — interface 3D, figures, sorties** : U15, U18, U19, U20 (Arrêter pendant le
-   maillage), L5, L7 (aire et normale dans les CSV pariétaux), P2 (interface 2 fois plus
-   lente : mesurer la cause d'abord).
-2. **F4 — textes et documentation** : T1, T2, D5 à D8.
-3. **Étude de convergence en maillage (GCI)** sur 2 ou 3 cas de validation du README.
-4. **Maillage en C pour les profils + comparaison NASA TMR** (plaque plane, NACA 0012, SA /
+1. **F4 — textes et documentation** : T1, T2, D5 à D8.
+2. **Étude de convergence en maillage (GCI)** sur 2 ou 3 cas de validation du README.
+3. **Maillage en C pour les profils + comparaison NASA TMR** (plaque plane, NACA 0012, SA /
    SST). Vérifier d'abord que les données TMR sont accessibles depuis l'environnement ;
    sinon l'écrire (validation partielle) et passer.
-5. **Audit 3** (même méthode que l'audit 2 approfondi : campagnes `tools/audit/` + nouvelles),
+4. **Audit 3** (même méthode que l'audit 2 approfondi : campagnes `tools/audit/` + nouvelles),
    puis lots de correction. S'il trouve encore un résultat faux silencieux : corriger puis
    refaire un audit ; le jalon n'est pas atteint avant.
 
@@ -86,6 +83,9 @@ turbulence, viscoélasticité.
 - Audit 2, observations : `mesh_naca_multi` 14 233 triangles → pic 1.2 Go (cause à
   mesurer) ; pas de garde mémoire en ligne de commande pour un très gros maillage 3D ;
   `microrans mesh` écrit toujours dans results/mesh.
+- Après F3 : la page Résultats de l'interface ne lit pas `[output] slice_axis` /
+  `slice_value` (plan des figures en ligne de commande) ; un plan hors du domaine n'est
+  signalé qu'après le calcul (figures omises, ATTENTION), pas avant.
 
 
 ## Décisions qui appartiennent à l'utilisateur (ne pas trancher seul)

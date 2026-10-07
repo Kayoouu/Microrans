@@ -1,4 +1,5 @@
-"""Figures d'un calcul 2D (3D : plan z médian) : champs, convergence, efforts."""
+"""Figures d'un calcul 2D (3D : plan x, y ou z = cte, défaut z médian) : champs,
+convergence, efforts."""
 from __future__ import annotations
 
 from pathlib import Path
@@ -6,7 +7,7 @@ from pathlib import Path
 import numpy as np
 
 from ..mesh2d.plot import plot_field, plot_mesh
-from ..postprocess import MODEL_COLORS, REF_COLOR, _pyplot
+from ..postprocess import MODEL_COLORS, REF_COLOR, _pyplot, log_values
 
 
 def _body_size(solver):
@@ -32,22 +33,31 @@ def _zoom(solver, downstream: float = 4.0):
     return (x0 - 1.0 * L, x1 + downstream * L, y0 - 1.5 * L, y1 + 1.5 * L)
 
 
-def plot_case(solver, hist, out: Path, mode, force_patches, qdyn):
-    """Figures du calcul ; 3D : champs dans le plan z médian (maillages en couches selon z :
-    pavé, extrusion), champs complets dans fields.vtk."""
+def plot_case(solver, hist, out: Path, mode, force_patches, qdyn, slice_axis="z",
+              slice_value=None):
+    """Figures du calcul ; 3D : champs dans le plan slice_axis = slice_value ([output],
+    défaut : plan z médian), champs complets dans fields.vtk."""
     plt = _pyplot()
     zoom = _zoom(solver, 4.0 if mode == "steady" else 14.0)
     f = solver.fields()
     mir = 1 if solver.axisymmetric else None          # image miroir par rapport à l'axe
     mesh, sel, plane = solver.mesh, slice(None), ""
+    axis = str(slice_axis or "z").lower() if solver.dim == 3 else "z"
     if solver.dim == 3:
-        from ..mesh3d.slice import ZSlice
+        # L5 : avant, toujours le plan z médian (conduite carrée : bande de 2 mailles le
+        # long de l'axe, la section x = cte est la figure utile)
+        from ..mesh3d.slice import slice_mesh
         try:
-            mesh = ZSlice(solver.mesh)
-        except ValueError:
+            mesh = slice_mesh(solver.mesh, axis, slice_value)
+        except ValueError as exc:
             mesh = None                               # pas de coupe : figures de champs omises
+            import warnings
+            warnings.warn(f"Figures de champs omises : {exc} Champs complets : fields.vtk "
+                          "(ParaView).", stacklevel=2)
         else:
-            sel, plane = mesh.cells, f" (plan z = {mesh.z:.4g})"
+            sel, plane = mesh.cells, f" (plan {mesh.axis} = {mesh.value:.4g})"
+            if axis != "z":
+                zoom = None                           # zoom calculé dans le plan x, y
     if mesh is not None:
         if solver.dim == 2:
             plot_mesh(mesh, out / "mesh.png", zoom=zoom)
@@ -55,14 +65,15 @@ def plot_case(solver, hist, out: Path, mode, force_patches, qdyn):
                    cmap="viridis", mirror=mir)
         plot_field(mesh, f["p"][sel], out / "p.png", title="p (cinématique)" + plane,
                    zoom=zoom, cmap="RdBu_r", mirror=mir)
-        omz = solver.grad_U(solver.U)
-        omz = (omz[:, 1, 0] - omz[:, 0, 1])[sel]
+        omz = solver.grad_U(solver.U)                 # composante normale au plan
+        i, j = {"x": (2, 1), "y": (0, 2), "z": (1, 0)}[axis]
+        omz = (omz[:, i, j] - omz[:, j, i])[sel]
         # échelle de couleur calée hors couche limite (sinon le sillage paraît délavé)
         _, L = _body_size(solver)
         far = (solver.mesh.wall_distance[sel] > 0.2 * L if L
                else np.ones(len(omz), dtype=bool))
         lim = np.percentile(np.abs(omz[far]) if np.any(far) else np.abs(omz), 99)
-        plot_field(mesh, omz, out / "vorticity.png", title="vorticité ω_z" + plane,
+        plot_field(mesh, omz, out / "vorticity.png", title=f"vorticité ω_{axis}" + plane,
                    zoom=zoom, cmap="RdBu_r", vmin=-lim, vmax=lim, mirror=mir and -1)
         if "nut_over_nu" in f:
             plot_field(mesh, f["nut_over_nu"][sel], out / "nut.png", title="ν_t/ν" + plane,
@@ -84,7 +95,7 @@ def plot_case(solver, hist, out: Path, mode, force_patches, qdyn):
         styles = ["-", "--", "-.", ":", (0, (5, 1)), (0, (3, 1, 1, 1))]
         it = [h["iteration"] for h in hist]
         for i, k in enumerate(keys):
-            ax.semilogy(it, [max(h.get(k, np.nan), 1e-300) for h in hist], ls=styles[i % 6],
+            ax.semilogy(it, log_values([h.get(k, np.nan) for h in hist]), ls=styles[i % 6],
                         color=color if k.startswith("U") else REF_COLOR, label=k)
         ax.set(xlabel="itération", ylabel="résidu normalisé", title="Convergence")
         ax.legend()

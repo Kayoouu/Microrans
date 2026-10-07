@@ -19,6 +19,7 @@ et trouvés plus tard (à remplir rétroactivement).
 | 2026-10-05 | F1b (5 points) | 1 à 2 lots | ≈ 45 min (03:53 → 04:35) | 6 | — | `git stash` à la main pour prouver chaque test, comparaisons avant / après réécrites à chaque fois, suite lancée pendant l'édition de la doc (course connue) → outils tools/dev (echoue_avant, ab, suite) |
 | 2026-10-05 | Outillage (demande de l'utilisateur) | non estimé | ≈ 35 min (≈ 23:05 → CI verte 23:37) | 4 | — | 3 défauts des outils trouvés en les essayant (--ref avalé, erreurs déclarées identiques, « git push » cité pris pour une poussée) → essayer chaque outil sur un cas connu avant de s'y fier |
 | 2026-10-06 | F2 (12 points) | 1 lot (F2 à F4 : 3 à 5) | 34 min (03:53 → CI verte 04:27 ; 2 commits, 2 suites, 2 constructions) | 12 | — | cas de reproduction mal écrits deux fois (compressible sans `compressible = true` ni état amont ; 3D sans faces d'extrusion) → partir d'un exemple existant modifié plutôt qu'écrire un cas à la main. Outils : echoue_avant 12 preuves en 1 appel, ab egalite 5 exemples en < 1 min : utiles |
+| 2026-10-07 | F3 (7 points) | 1 à 2 lots | 55 min (03:53 → commit 04:48 ; 3 suites dont 2 en trop, 10 min chacune) | 8 (+1 outil) | — | suite lancée trop tôt et en-tête CSV figé dans un ancien test → skill § 3.1 (suite sur le code fini, grep de l'ancien format). Outils : echoue_avant a signalé 2 preuves faibles, corrigées ; ab.py amélioré (colonnes ajoutées) |
 
 ## Indicateur du jalon A : résultats faux silencieux trouvés par audit
 
@@ -32,6 +33,11 @@ la tendance est indicative.
 | 1 (avant D4) | 8 | C1, C4, C5, C6, C7, C8, C9, C10 |
 | 2 | 3 | C13, U14, U17 |
 | 2 approfondi | 2 (+1 limite) | C15, C21 ; limite : C17 (reprise annoncée exacte, ne l'était pas) |
+
+Trouvés hors audit, en travaillant : 2026-10-07 (F3, en mesurant P2) figure de convergence
+de la cavité illisible depuis toujours (résidu nul tracé à 1e-300 : axe sur 330 décades),
+interface et ligne de commande. Affichage trompeur sans message : l'audit 3 doit regarder
+les figures produites, pas seulement les chiffres.
 
 ## Campagnes de non-régression (tools/audit) : dernier relevé
 
@@ -55,4 +61,9 @@ expliquer avant le lot. Sorties en dehors du dépôt (scratchpad), seulement le 
   sans script à écrire ; état de la CI lu au démarrage. Pas encore d'erreur évitée par le
   hook avant poussée.
 - 2026-10-06 (rétro F2) : heure de fin écrite de tête (04:48, réel 04:12) → la procédure
-  (skill `lot`, § 5) impose de lire les heures (git log, date -u).
+  (skill `lot`, § 5) impose de lire les heures (git log, date -u). Effet constaté au lot F3 (2026-10-07) : heures lues (date -u) à chaque étape.
+- 2026-10-07 (rétro F3) : suite complète lancée sur un arbre provisoire (à refaire) puis
+  échec d'un ancien test qui figeait l'en-tête de wall_*.csv (vu après 10 min) : ≈ 20 min
+  de suites en trop → skill `lot` § 3.1 : suite une fois le code fini ; format de sortie
+  changé → `grep` de l'ancien texte dans tests/ avant. Preuves faibles évitées : import des
+  modules nouveaux en fin de test (§ 2.2).

@@ -76,17 +76,26 @@ def _comparer_csv(fa, fb):
         la, lb = list(csv.reader(ha)), list(csv.reader(hb))
     if la == lb:
         return []
-    if len(la) != len(lb) or not la or la[0] != lb[0]:
+    if len(la) != len(lb) or not la or not lb:
         return [f"{len(la)} / {len(lb)} lignes, en-têtes {la[:1]} / {lb[:1]}"]
     diff = []
-    for j, nom in enumerate(la[0]):
+    if la[0] != lb[0]:              # colonnes ajoutées ou retirées : communes comparées
+        plus = [c for c in lb[0] if c not in la[0]]
+        moins = [c for c in la[0] if c not in lb[0]]
+        diff.append("colonnes" + (f" ajoutées en B : {', '.join(plus)}" if plus else "")
+                    + (f" retirées en B : {', '.join(moins)}" if moins else "")
+                    + ("" if plus or moins else " dans un autre ordre"))
+    for nom in [c for c in la[0] if c in lb[0]]:
+        i, j = la[0].index(nom), lb[0].index(nom)
         try:
-            ca = [float(r[j]) for r in la[1:]]
+            ca = [float(r[i]) for r in la[1:]]
             cb = [float(r[j]) for r in lb[1:]]
         except (ValueError, IndexError):
-            ca, cb = [r[j:j + 1] for r in la[1:]], [r[j:j + 1] for r in lb[1:]]
+            ca, cb = [r[i:i + 1] for r in la[1:]], [r[j:j + 1] for r in lb[1:]]
         if ca != cb:
             diff.append(f"colonne {nom} : {_ecart(ca, cb)}")
+    if la[0] != lb[0] and len(diff) == 1:
+        diff[0] += " ; colonnes communes identiques"
     return diff
 
 

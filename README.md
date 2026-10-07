@@ -21,8 +21,9 @@ Outil de simulation d'écoulements **incompressibles** (laminaires ou turbulents
 - **3D, périmètre réduit** : maillages hexaédriques (pavé, ou extrusion selon z de
   n'importe quel maillage 2D : hexaèdres et prismes), incompressible laminaire et turbulent
   (mêmes modèles qu'en 2D), stationnaire (SIMPLE/SIMPLEC) et instationnaire (PIMPLE,
-  Runge-Kutta), sortie VTK (ParaView) ; interface graphique (figures dans un plan x, y ou
-  z = constante) et ligne de commande (plan z médian) ; pas de mailleur 3D général : voir
+  Runge-Kutta), sortie VTK (ParaView) ; figures dans un plan x, y ou z = constante
+  (interface, ou `[output] slice_axis` / `slice_value` en ligne de commande, défaut : plan
+  z médian) ; pas de mailleur 3D général : voir
   § 3 « Cas 3D » et les limites § 8 ;
 - **1D** : canal plan turbulent intégré jusqu'à la paroi (RANS et URANS pulsé), très rapide,
   idéal pour comparer les modèles ;
@@ -116,13 +117,16 @@ microrans schemes -o docs                       # étude précision / coût des 
 ```
 
 Sorties d'un calcul 2D : `summary.json` (convergence, Cd, Cl, y⁺, Strouhal, Nusselt),
-`history.csv`, `wall_<patch>.csv` (Cp, Cf, y⁺, T, flux), `fields.vtk` (ParaView ; VTK
+`history.csv`, `wall_<patch>.csv` (Cp, Cf, y⁺, T, flux ; p, aire, normale et vecteur
+frottement des faces : F = Σ (p n + τ) × aire redonne exactement les efforts du résumé, n
+sortant du fluide, `tau_w` = composante tangentielle de τ), `fields.vtk` (ParaView ; VTK
 « legacy » binaire, valeurs exactes en double précision ; `[output] vtk_format = "ascii"`
 pour l'ancien format texte à 10 chiffres), figures, `checkpoint.npz` (sauvegarde pour
 reprise).
 
 **Sauvegarde et reprise** : `checkpoint.npz` est écrit à la fin, à l'arrêt demandé (bouton
-« Arrêter » de l'interface ; en ligne de commande, un premier Ctrl-C termine l'itération en
+« Arrêter » de l'interface, qui interrompt aussi un maillage non structuré ou hybride en
+moins de 2 s ; en ligne de commande, un premier Ctrl-C termine l'itération en
 cours et écrit tous les fichiers, un second arrête sans rien écrire) et toutes les 5 minutes
 (`[output] checkpoint_minutes`). Sur le **même maillage**, la reprise est exacte (champs,
 flux aux faces, niveaux de temps de BDF2/AB2, Δt adaptatif, historique ; en compressible
@@ -166,7 +170,9 @@ microrans mesh mon_cas_3d.toml         # maillage seul : .vtk (ParaView)
 ```
 
 Sorties : `fields.vtk` (hexaèdres, prismes ; vitesse à 3 composantes) à ouvrir dans
-ParaView, figures dans le plan z médian, sondes et profils `[x, y, z]`, `wall_<patch>.csv`
+ParaView, figures dans le plan z médian (ou `[output] slice_axis = "x"` / `"y"`,
+`slice_value` = cote ; conduite carrée : section x = cte), sondes et profils `[x, y, z]`,
+`wall_<patch>.csv`
 avec z (τ_w = norme du frottement). Efforts : totaux, rapportés à ½U²·A_ref avec
 `[physics] reference_area` (défaut L_ref × étendue en z : mêmes C_d, C_l, C_m que le 2D
 pour un corps extrudé), C_s = effort latéral (selon z), C_m autour de l'axe parallèle à z
@@ -873,9 +879,10 @@ redonne l'ancien fichier texte, identique octet pour octet.
 17. **3D (périmètre réduit)** :
    - maillages : pavés et extrusions seulement (hexaèdres, prismes) ; pas de mailleur 3D
      général, pas d'import de maillage 3D (Gmsh, OpenFOAM), export VTK seulement ;
-     incompressible seulement ; figures dans un plan x, y ou z = constante (interface) ou
-     dans le plan z médian (ligne de commande) ; plans obliques et isosurfaces : ParaView ;
-     le « Zoom sur les corps » ne s'applique qu'aux coupes z ;
+     incompressible seulement ; figures dans un plan x, y ou z = constante (interface, ou
+     `[output] slice_axis` / `slice_value` en ligne de commande) ; plans obliques et
+     isosurfaces : ParaView ;
+     le « Zoom sur les corps » ne s'applique qu'aux coupes z (grisé sinon) ;
    - non disponibles : axisymétrique (sans objet), swirl, zones poreuses, disques
      actuateurs, solveur couplé, animations, compressible, profil de débit parabolique ;
    - coût (§ 7) : ~8.5 à 14 s par itération et ~3 Go pour 10⁶ cellules en laminaire, plus

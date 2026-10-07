@@ -424,11 +424,18 @@ def run_compressible_case(cfg: dict, base_dir=".", out_dir=None, verbose=True, p
         xf, tau, yp = solver.wall_shear(name)
         pb = solver.boundary_p()[solver.patch_slices[name]]
         Tw, qw = solver.wall_heat_flux(name)
-        cols = [xf, pb, (pb - fs.p) / qinf, tau, tau / qinf, yp, Tw, qw]
+        # L7 : aire, normale (sortant du fluide) et vecteur frottement, pour refaire
+        # l'intégration du résumé : F = Σ ((p − p∞) n + τ) × area (par mètre d'envergure)
+        sl = solver.patch_slices[name]
+        area = solver.magSb[sl]
+        tv = solver._viscous_traction(sl) / area[:, None]
+        cols = [xf, pb, (pb - fs.p) / qinf, tau, tau / qinf, yp, Tw, qw, area,
+                *solver.nb_hat[sl].T, *tv.T]
         if gas.viscous:
             summary[name].update(yplus_max=float(yp.max()), yplus_mean=float(yp.mean()))
         np.savetxt(out / f"wall_{name}.csv", np.column_stack(cols), delimiter=",",
-                   header="x,y,p,Cp,tau_w,Cf,yplus,T_wall,q", comments="", encoding="utf-8")
+                   header="x,y,p,Cp,tau_w,Cf,yplus,T_wall,q,area,nx,ny,tau_x,tau_y",
+                   comments="", encoding="utf-8")
     if hist:
         keys = list(dict.fromkeys(k for h in hist for k in h))
         with open(out / "history.csv", "w", newline="", encoding="utf-8") as fh:
@@ -470,7 +477,7 @@ def _merge(history, monitor):
 # ------------------------------------------------------------------ figures
 def plot_compressible(solver, hist, out: Path, mode, force_patches, qinf):
     from ..mesh2d.plot import plot_field, plot_mesh
-    from ..postprocess import _pyplot
+    from ..postprocess import _pyplot, log_values
     from .post import _zoom
     plt = _pyplot()
     zoom = _zoom(solver, 2.0)
@@ -502,7 +509,7 @@ def plot_compressible(solver, hist, out: Path, mode, force_patches, qinf):
         fig, ax = plt.subplots(figsize=(7, 4))
         it = [h["iteration"] for h in hist]
         for k, ls in zip(("rho", "rhoU", "rhoV", "rhoE"), ("-", "--", "-.", ":")):
-            ax.semilogy(it, [max(h[k], 1e-300) for h in hist], ls=ls, label=k)
+            ax.semilogy(it, log_values([h[k] for h in hist]), ls=ls, label=k)
         ax.set(xlabel="itération", ylabel="résidu relatif (RMS)", title="Convergence")
         ax.grid(True, which="both", alpha=0.3)
         ax.legend()

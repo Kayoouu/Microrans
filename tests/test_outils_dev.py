@@ -64,6 +64,11 @@ def test_compare_output_folders(tmp_path):
     assert res["checkpoint.npz"] == []
     assert res["fig.png"] is None
     assert res["history.csv"] == ["colonne Ux : écart max 0.25"]
+    # colonne ajoutée (lot F3, CSV pariétaux) : colonnes communes comparées quand même
+    (a / "w.csv").write_text("x,tau\n1,2\n", encoding="utf-8")
+    (b / "w.csv").write_text("x,tau,area\n1,2,3\n", encoding="utf-8")
+    assert ab.comparer_dossiers(a, b)["w.csv"] == [
+        "colonnes ajoutées en B : area ; colonnes communes identiques"]
 
 
 def test_code_tree_ids():

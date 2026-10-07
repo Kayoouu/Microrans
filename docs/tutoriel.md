@@ -56,7 +56,9 @@ Lancer `microrans gui`, ou l'exécutable `microrans-gui` (`microrans-gui.exe` so
    - Page 6 : « Lancer le calcul ».
    - Le résumé affiche `Re = U L / ν = 400` et « Convergé en 312 itérations ».
 7. **Garder son cas** : menu Fichier, « Enregistrer sous… ». Le fichier `.toml` enregistré
-   est le même que celui de la ligne de commande (§ 3).
+   est le même que celui de la ligne de commande (§ 3). Dans un autre dossier, les fichiers
+   qu'il cite en relatif (contour `.dat`, maillage importé) sont copiés à côté ; un fichier
+   de reprise est cité par son chemin complet.
 
 Les sections 4 et 5 se font aussi dans l'interface :
 - **Profil sur une ligne** : page « 7. Résultats », « Tracer le profil ».

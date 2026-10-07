@@ -14,6 +14,7 @@ import warnings
 import numpy as np
 from scipy.spatial import Delaunay
 
+from ..stop import check_stop
 from .geometry import Polygon, Shape, signed_area
 from .mesh import Mesh2D
 from .ogrid import _normals
@@ -59,6 +60,7 @@ def _initial_points(domain: Shape, h, bbox, h_min, h_max, rng):
     pts = []
     level_h = h_max
     while True:
+        check_stop()                               # U20 : « Arrêter » de l'interface
         dx = level_h
         dy = dx * np.sqrt(3) / 2
         xs = np.arange(x0, x1 + dx, dx)
@@ -134,6 +136,7 @@ def triangulate(domain: Shape, h_max: float, refinements=(), h=None, fixed_point
     pold = np.full_like(p, np.inf)
     bars = None
     for it in range(max_iter):
+        check_stop()                               # U20 : avant, maillage mené à son terme
         hp = hfun(p)
         # re-triangulation si les points ont notablement bougé (centile : quelques nœuds
         # oscillant près d'une frontière ne doivent pas tout déclencher)

@@ -270,6 +270,8 @@ SCHEMA = Table({
         "vtk_format": K("binary (défaut : binaire, valeurs exactes, 30 à 50 fois plus rapide "
                         "à écrire, ~30 % plus petit) | ascii (texte, 10 chiffres)"),
         "plots": K("figures (défaut true)"),
+        "slice_axis": K("3D : plan des figures de champs, x | y | z (défaut z)"),
+        "slice_value": K("3D : cote du plan des figures (défaut : plan médian)"),
         "average_from": K("instationnaire : moyennes à partir de t", INC),
         "animate": K("instationnaire : grandeur animée (vorticity, U_mag, p…)", INC),
         "animate_every": K("une image tous les N pas", INC),
@@ -781,6 +783,12 @@ def _check_values(cfg: dict, kind: str, mesh_type: str, mesh_only: bool, errors:
         errors.append(f"[output] vtk_format = {vf!r} inconnu : binary (défaut, valeurs exactes) "
                       "ou ascii (texte).")
     V.num("solver", sc, "log_every", ge=1, integer=True)
+    V.choice("output", oc, "slice_axis", ("x", "y", "z"))
+    V.num("output", oc, "slice_value")
+    if (dim == 2 and warns is not None
+            and any(oc.get(k) is not None for k in ("slice_axis", "slice_value"))):
+        warns.append("[output] slice_axis / slice_value : sans effet en 2D (plan des "
+                        "figures d'un calcul 3D).")
     if oc.get("probes") is not None:                # U16 : avant, refus au lancement
         from .sampling import parse_points
         try:

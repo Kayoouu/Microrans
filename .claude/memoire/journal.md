@@ -3,6 +3,41 @@
 Détail des chiffres : README (§ 6 validation, § 7 performances, § 8 limites) et messages de
 commit. Ce journal sert à retrouver ce qui a été fait, pourquoi, et ce qui a été constaté.
 
+## 2026-10-07 — Lot F3 : interface 3D, figures, sorties (P2, L7, L5, U15, U18, U19, U20)
+
+- Relance quotidienne (03:53 UTC). Mercredi : pas de campagnes. CI verte au départ (53acaf5).
+- P2 mesuré d'abord (cavité, défaut, 351 it, 4 cœurs, A/B alternés) : interface 34 à 46 s,
+  sans la courbe de convergence 8.1 à 9.1 s, ligne de commande 9.6 s (démarrage et figures
+  compris ; solveur 5.9 à 6.2 s). Fil de l'interface : 30 s de processeur contre 0.2 s sans
+  courbe → la courbe (figure reconstruite toutes les 0.25 s, 0.15 à 0.5 s par tracé, verrou
+  de Python tenu) bloquait le calcul. Trouvé en mesurant : un résidu nul tracé à 1e-300,
+  axe de 1e-314 à 1e14 (convergence.png de la ligne de commande aussi : figure de la cavité
+  illisible depuis toujours). Corrigé : `postprocess.log_values` (≤ 0 → non tracé, 4
+  endroits) ; retracé quand le temps écoulé atteint 10 × le coût processeur du tracé (≤ 2 s),
+  courbes mises à jour sans reconstruire la figure, ≤ 2000 points. Après : 8.9 à 9.6 s avec
+  courbe contre 8.7 à 8.8 s sans.
+- L7 : colonnes p, area, nx, ny (, nz), tau_x, tau_y (, tau_z) dans tous les CSV
+  pariétaux (aire sur 360° en axisymétrique) ; Σ (p n + τ) A redonne C_d de pression et de
+  frottement du résumé à 1e-10 (cylindre, sphère axisymétrique, conduite 3D, plaque
+  compressible). Efforts non changés (choix : 0.08 % du C_d du cylindre, écart de
+  discrétisation qui tend vers 0 ; ne pas changer les chiffres publiés pour cela).
+- L5 : `[output] slice_axis` / `slice_value` (vérifiés avant calcul ; hors domaine :
+  ATTENTION et figures omises) ; conduite carrée : section x ; noms d'axes ; figure moins
+  large pour un domaine haut (1500 → 840 px).
+- U20 : `microrans/stop.py` (fonction de test installée par la tâche de l'interface,
+  `check_stop()` dans les boucles de `triangulate`) ; arrêt du maillage hybride 0.07 à
+  1.5 s après la demande (avant 21.8 à 39 s), signal `stopped` (pas de message d'échec).
+- U15 : sondes / lignes à 3 composantes (z = milieu) à l'extrusion et retour ; extrusion
+  refusée tout de suite avec des options 2D seulement ; extrusion proposée en multi-blocs.
+  U19 : profil par défaut à travers le domaine, bouton animation, zoom grisé en coupe x / y,
+  légende de la vue 3D sous la vue, types de frontière en clair (`patch_label`). U18 :
+  fichiers relatifs copiés à l'« Enregistrer sous » ailleurs, reprise en chemin absolu.
+- Outil : `ab.py` compare les colonnes communes quand des colonnes sont ajoutées (avant :
+  « DIFFÉRENT » sans détail) ; test ajouté.
+- Vérifié : 8 tests (`tests/test_sorties_f3.py`), 8 « échoue avant : OK » ; `ab.py egalite`
+  sur 6 exemples (cylindre, sphère axisymétrique, conduite 3D, plaque compressible, cavité,
+  NACA SA) : tout identique au bit près sauf les colonnes ajoutées.
+
 ## 2026-10-06 — Lot F2 : messages (M13 à M22, U16, L6)
 
 - Relance quotidienne (03:53 UTC), premier lot suivant le skill `lot`. Mardi : pas de

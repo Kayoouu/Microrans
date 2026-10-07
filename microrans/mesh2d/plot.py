@@ -7,6 +7,18 @@ PATCH_COLORS = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300"
                 "#e34948"]
 
 
+_PATCH_TYPE_FR = {"wall": "paroi", "symmetry": "symétrie", "cyclic": "périodique",
+                  "empty": "vide (2D)"}
+
+
+def patch_label(name: str, ptype: str) -> str:
+    """« inlet », « cylinder (paroi) », « front (périodique) » : types du maillage en clair
+    (U19 : avant « patch » / « cyclic », jargon OpenFOAM, affichés avant même le choix des
+    conditions limites ; « patch » = sans type, condition à choisir)."""
+    t = _PATCH_TYPE_FR.get(ptype)
+    return f"{name} ({t})" if t else name
+
+
 def _plt():
     import matplotlib
     matplotlib.use("Agg")
@@ -20,8 +32,11 @@ def _figsize(mesh, zoom, width=10.0, extra=0.0):
     else:
         b = mesh.bbox()
         dx, dy = b[2] - b[0], b[3] - b[1]
-    h = float(np.clip((width - extra) * dy / max(dx, 1e-300) + 0.8, 3.0, 9.0))
-    return (width, h)
+    ratio = dy / max(dx, 1e-300)
+    h = (width - extra) * ratio + 0.8
+    if h > 9.0:          # domaine haut : figure moins large (avant : grande marge blanche, L5)
+        width, h = max(extra + (9.0 - 0.8) / ratio, 4.0), 9.0
+    return (width, float(max(h, 3.0)))
 
 
 def plot_mesh(mesh, path=None, ax=None, title=None, zoom=None, linewidth=0.3, show_patches=True):
@@ -39,7 +54,7 @@ def plot_mesh(mesh, path=None, ax=None, title=None, zoom=None, linewidth=0.3, sh
         for k, (name, ptype, edges) in enumerate(mesh.all_boundary_patches()):
             segs = mesh.points[edges]
             ax.add_collection(LineCollection(segs, colors=PATCH_COLORS[k % len(PATCH_COLORS)],
-                                             linewidths=1.8, label=f"{name} ({ptype})"))
+                                             linewidths=1.8, label=patch_label(name, ptype)))
         ax.legend(loc="upper right", fontsize=8, frameon=True)
     ax.set_aspect("equal")
     if zoom:
@@ -118,6 +133,9 @@ def plot_field(mesh, values, path=None, ax=None, title=None, cmap="viridis", zoo
         ax.autoscale_view()
     if title:
         ax.set_title(title, fontsize=10)
+    if own:                                   # noms d'axes (coupe 3D : axes du plan)
+        ax.set(xlabel=getattr(mesh, "labels", ("x", "y"))[0],
+               ylabel=getattr(mesh, "labels", ("x", "y"))[1])
     if own and path:
         fig.tight_layout()
         fig.savefig(path, dpi=150)

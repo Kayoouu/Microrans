@@ -476,6 +476,8 @@ Contenu libre, sous la forme `nom = valeur`.
 | `vtk` | écrit fields.vtk (défaut true) |  |
 | `vtk_format` | binary (défaut : binaire, valeurs exactes, 30 à 50 fois plus rapide à écrire, ~30 % plus petit) \| ascii (texte, 10 chiffres) |  |
 | `plots` | figures (défaut true) |  |
+| `slice_axis` | 3D : plan des figures de champs, x \| y \| z (défaut z) |  |
+| `slice_value` | 3D : cote du plan des figures (défaut : plan médian) |  |
 | `average_from` | instationnaire : moyennes à partir de t | incompressible seulement |
 | `animate` | instationnaire : grandeur animée (vorticity, U_mag, p…) | incompressible seulement |
 | `animate_every` | une image tous les N pas | incompressible seulement |

@@ -13,6 +13,7 @@ import json
 import os
 import re
 import sys
+import time
 from pathlib import Path
 
 import numpy as np
@@ -32,10 +33,12 @@ from ..cli import examples_dir
 from ..fv2d.compressible import COMP_BC_TYPES
 from ..fv2d.solver import BC_TYPES, TIME_SCHEMES
 from ..linalg import SOLVERS
+from ..mesh2d.plot import patch_label
+from ..postprocess import log_values
 from ..solver import TIME_SCHEMES_1D
 from ..tomlio import dumps, loads, read_text
-from .widgets import (Binder, PlotCanvas, SciEdit, Vec2, Worker, apply_plot_style, combo,
-                      debounce, set_combo)
+from .widgets import (Binder, PlotCanvas, SciEdit, Vec2, Worker, _points_text,
+                      apply_plot_style, combo, debounce, set_combo)
 
 APP_NAME = "microrans"
 PAGES = ["Accueil", "Canal 1D", "Maillage", "Physique", "Conditions limites", "Numérique",
@@ -962,6 +965,7 @@ class MainWindow(QMainWindow):
         hl.addWidget(self.slice_value, 1)
         for wid in (self.slice_axis, self.slice_value):
             wid.setEnabled(False)
+        self.slice_axis.currentIndexChanged.connect(lambda *_: self._zoom_state())
         f.addRow("Plan de coupe (3D)", row)
         f.addRow("Palette", self.cmap_combo)
         f.addRow(self.zoom_check)
@@ -1000,8 +1004,12 @@ class MainWindow(QMainWindow):
         self.summary_view.setMinimumHeight(180)
         lay.addWidget(QLabel("<b>Résumé</b>"))
         lay.addWidget(self.summary_view)
-        b = QPushButton("Ouvrir l'animation")
+        b = self.anim_btn = QPushButton("Ouvrir l'animation")
         b.clicked.connect(self.open_animation)
+        # U19 : avant, actif aussi en 3D (pas d'animation) et sans calcul
+        b.setEnabled(False)
+        b.setToolTip("Calcul instationnaire 2D avec une grandeur animée (Numérique → Sorties "
+                     "→ Animation).")
         lay.addWidget(b)
         b = QPushButton("Ouvrir le dossier de résultats")
         b.clicked.connect(lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(str(self.out_dir()))))
@@ -1255,8 +1263,45 @@ class MainWindow(QMainWindow):
         path, _ = QFileDialog.getSaveFileName(self, "Enregistrer le cas",
                                               str(results_root() / "cas.toml"), "Cas (*.toml)")
         if path:
+            old = self.base_dir()
             self.case_path = Path(path)
+            self._store_forms()
+            self._follow_relative_files(old, self.case_path.parent)
             self.save_case()
+
+    def _follow_relative_files(self, old: Path, new: Path):
+        """U18 : enregistrement dans un autre dossier — fichiers d'entrée relatifs (maillage
+        importé, contours [[bodies]] type = "file") copiés à côté du cas, comme `microrans
+        examples` ; fichier de reprise (résultat) : chemin rendu absolu. Avant : introuvables
+        au maillage suivant."""
+        import shutil
+        if old.resolve() == new.resolve():
+            return
+        m = self.cfg.get("mesh") or {}
+        refs = [(m, "path", self.mesh_path)] if str(m.get("type")) == "file" else []
+        refs += [(b, "path", None) for b in self.cfg.get("bodies") or []
+                 if isinstance(b, dict) and b.get("type") == "file"]
+        ini = self.cfg.get("initial") or {}
+        for d, key, widget in refs + [(ini, "restart", self.restart_path)]:
+            rel = Path(str(d.get(key) or ""))
+            if not str(d.get(key) or "").strip() or rel.is_absolute():
+                continue
+            src, dst = old / rel, new / rel
+            if not src.is_file():
+                continue
+            if (d is not ini and ".." not in rel.parts
+                    and (not dst.exists() or dst.read_bytes() == src.read_bytes())):
+                dst.parent.mkdir(parents=True, exist_ok=True)
+                if not dst.exists():
+                    shutil.copyfile(src, dst)
+                self.log(f"Fichier du cas copié à côté du nouveau cas : {dst}")
+            else:                                    # reprise, ou nom déjà pris : absolu
+                d[key] = str(src.resolve())
+                if widget is not None:
+                    widget.blockSignals(True)
+                    widget.setText(d[key])
+                    widget.blockSignals(False)
+                self.log(f"{key} = {d[key]} (chemin absolu : fichier laissé à sa place)")
 
     # ------------------------------------------------------------------ maillage
     def _mesh_type_changed(self):
@@ -1265,7 +1310,7 @@ class MainWindow(QMainWindow):
         self.box_rect.setTitle("Pavé 3D : directions x et y" if box3d else "Rectangle")
         self.box_z.setVisible(box3d)
         self.box_z.setEnabled(box3d)
-        self.box_extrude.setVisible(not box3d and kind != "blocks")
+        self.box_extrude.setVisible(not box3d)       # U15 : multi-blocs compris
         self.grading_edit.set_dim(3 if box3d else 2)
         self.grading_label.setText("Progression (dernière/1re) x, y" + (", z" if box3d else ""))
         if box3d:
@@ -1296,11 +1341,26 @@ class MainWindow(QMainWindow):
         kind = self.mesh_type.currentData()
         if kind == "box":
             return 3
-        if kind == "blocks":                         # extrusion : onglet TOML seulement
-            return 3 if self.cfg.get("mesh", {}).get("extrude") else 2
         return 3 if self.extrude_on.isChecked() else 2
 
     def _extrude_toggled(self, on=None):
+        if self.extrude_on.isChecked():
+            # U15 : avant, extrusion acceptée ici et refusée seulement au lancement
+            from ..fv2d.validate import COMP, INC, _check_3d
+            errs = []
+            _check_3d(self.cfg, COMP if self._compressible() else INC, errs)
+            if errs:
+                self.extrude_on.blockSignals(True)
+                self.extrude_on.setChecked(False)
+                self.extrude_on.blockSignals(False)
+                msg = (errs[0].replace("Maillage 3D ([mesh] type = \"box\" ou [mesh.extrude])",
+                                       "Extrusion 3D impossible")
+                       + " Retirer d'abord ces options (pages correspondantes ou onglet "
+                       "« Fichier de cas (TOML) »).")
+                self.errors.append(msg)
+                if not self.quiet:
+                    QMessageBox.information(self, "Extrusion 3D", msg)
+                return
         for w in self.ext_widgets:
             w.setEnabled(self.extrude_on.isChecked())
         self._dim_changed()
@@ -1317,8 +1377,30 @@ class MainWindow(QMainWindow):
                 w.set_dim(dim)
             self.slice_axis.setEnabled(dim == 3)
             self.slice_value.setEnabled(dim == 3)
+            self._zoom_state()
         if hasattr(self, "bc_table"):
             self._style_bc_table()
+
+    def _zoom_state(self):
+        """U19 : « Zoom sur les corps » grisé en coupe x / y (sans effet ; avant : coché, sans
+        rien dire)."""
+        on = self._dim() == 2 or (self.slice_axis.currentData() or "z") == "z"
+        self.zoom_check.setEnabled(on)
+        self.zoom_check.setToolTip("" if on else "Coupes x = cte et y = cte : vue complète "
+                                   "(zoom pour les coupes z = cte seulement).")
+
+    def _default_profile_line(self, mesh):
+        """U19 : profil par défaut à travers le domaine, selon x par son centre (avant :
+        (0, 0, 0) → (1, 0, 0), même hors du domaine) ; une ligne saisie est gardée."""
+        cur = (tuple(self.line_start.value()), tuple(self.line_end.value()))
+        if cur not in (((0.0, 0.0), (1.0, 0.0)), ((0.0, 0.0, 0.0), (1.0, 0.0, 0.0)),
+                       getattr(self, "_line_auto", None)):
+            return
+        lo, hi = mesh.points.min(axis=0), mesh.points.max(axis=0)
+        mid = [float(c) for c in 0.5 * (lo[1:] + hi[1:])]
+        self.line_start.set_value([float(lo[0]), *mid])
+        self.line_end.set_value([float(hi[0]), *mid])
+        self._line_auto = (tuple(self.line_start.value()), tuple(self.line_end.value()))
 
     def _load_extrude(self):
         e = self.cfg.get("mesh", {}).get("extrude")
@@ -1352,7 +1434,7 @@ class MainWindow(QMainWindow):
         """[mesh.extrude] depuis le formulaire (faces z : noms back / front par défaut ;
         noms et réglages avancés de l'onglet TOML conservés)."""
         m = self.cfg.setdefault("mesh", {})
-        if m.get("type") in ("box", "blocks"):
+        if m.get("type") == "box":
             return
         if not self.extrude_on.isChecked():
             m.pop("extrude", None)
@@ -1384,6 +1466,32 @@ class MainWindow(QMainWindow):
             U = spec.get("U") if isinstance(spec, dict) else None
             if isinstance(U, list) and len(U) in (2, 3) and len(U) != dim:
                 spec["U"] = (U + [0.0])[:3] if dim == 3 else U[:2]
+        # U15 : sondes et lignes de profil aussi (avant : refus au lancement, après le
+        # maillage) ; z ajouté = milieu du domaine en z
+        m = self.cfg.get("mesh") or {}
+        e = m.get("extrude") if isinstance(m.get("extrude"), dict) else m
+        try:
+            zm = 0.5 * (float(e.get("z0", 0.0)) + float(e.get("z1", 1.0)))
+        except (TypeError, ValueError):
+            zm = 0.0
+
+        def fit(p):
+            if (isinstance(p, list) and len(p) in (2, 3) and len(p) != dim
+                    and all(isinstance(c, (int, float)) for c in p)):
+                return [*p, zm] if dim == 3 else p[:2]
+            return p
+        oc = self.cfg.get("output") or {}
+        pr = oc.get("probes")
+        if isinstance(pr, list) and [fit(p) for p in pr] != pr:
+            oc["probes"] = [fit(p) for p in pr]
+            self.probes_edit.blockSignals(True)
+            self.probes_edit.setText(_points_text(oc["probes"]))
+            self.probes_edit.blockSignals(False)
+        for ln in oc.get("lines") or []:
+            if isinstance(ln, dict):
+                for k in ("start", "end"):
+                    if k in ln:
+                        ln[k] = fit(ln[k])
 
     def _body_buttons_state(self):
         """Maillage en O : un seul corps (avant : « Ajouter » en créait un second, refusé
@@ -1571,10 +1679,11 @@ class MainWindow(QMainWindow):
             f"{q['non_orthogonality_max_deg']:.1f}°, moyenne {q['non_orthogonality_mean_deg']:.1f}°"
             f"<br>asymétrie max {q['skewness_max']:.2f}, allongement max "
             f"{q['aspect_ratio_max']:.0f}<br>patches : "
-            + ", ".join(f"{n} ({t})" for n, t, _ in mesh.all_boundary_patches())
+            + ", ".join(patch_label(n, t) for n, t, _ in mesh.all_boundary_patches())
             + "".join(f"<br><b>ATTENTION : {html.escape(w)}</b> (seuil usuel : précision et "
                       "convergence dégradées)" for w in mesh.check()))
         self._sync_bc_with_mesh()
+        self._default_profile_line(mesh)
         self.draw_mesh()
         self.log(f"Maillage : {q['n_cells']} cellules.")
 
@@ -1618,7 +1727,7 @@ class MainWindow(QMainWindow):
             polys = [m.points[f[f >= 0]] for f in fn[::step]]
             ax1.add_collection3d(Poly3DCollection(polys, facecolor=colors[k % 8], alpha=0.25,
                                                   edgecolor=colors[k % 8], linewidths=0.2,
-                                                  label=f"{name} ({ptype})"))
+                                                  label=patch_label(name, ptype)))
         lo, hi = m.points.min(axis=0), m.points.max(axis=0)
         ax1.set(xlim=(lo[0], hi[0]), ylim=(lo[1], hi[1]), zlim=(lo[2], hi[2]),
                 xlabel="x", ylabel="y", zlabel="z")
@@ -1626,7 +1735,10 @@ class MainWindow(QMainWindow):
         ax1.set_box_aspect(np.maximum(hi - lo, 0.15 * np.max(hi - lo)))
         ax1.locator_params(nbins=4)
         ax1.tick_params(labelsize=7, pad=0)
-        ax1.legend(loc="upper left", fontsize=7)
+        # U19 : légende sous la vue (avant : sur le dessin), écart avec la coupe (avant :
+        # étiquette z collée à la figure voisine)
+        ax1.legend(loc="upper center", bbox_to_anchor=(0.5, -0.2), ncol=2, fontsize=7)
+        self.canvas.fig.get_layout_engine().set(wspace=0.12)
         ax1.set_title(f"{q['n_cells']} cellules ({types})", fontsize=9)
         try:
             sl = self._slice()
@@ -2295,6 +2407,7 @@ class MainWindow(QMainWindow):
             self.worker.progress.connect(on_progress)
         self.worker.done.connect(self._finish)
         self.worker.failed.connect(self._failed)
+        self.worker.stopped.connect(self._stopped)
         self.progress.setVisible(True)
         self.progress.setRange(0, 0)
         self.statusBar().showMessage(message)
@@ -2319,6 +2432,14 @@ class MainWindow(QMainWindow):
         self._cleanup()
         self.statusBar().showMessage("Terminé", 5000)
         on_done(res)
+
+    def _stopped(self, msg):
+        """Arrêt demandé pendant le maillage (U20) : rien n'est remplacé."""
+        self._cleanup()
+        self.log(f"{msg} Maillage et résultats précédents conservés.")
+        self.statusBar().showMessage("Arrêté", 5000)
+        if self.mesh is None:
+            self.canvas.message("Maillage arrêté à la demande.")
 
     def _failed(self, msg):
         self.errors.append(msg)
@@ -2475,6 +2596,7 @@ class MainWindow(QMainWindow):
         if not self._case_ok(cfg):
             return
         self._it0 = None
+        self._plot_t = self._plot_cost = 0.0
         mesh = self._valid_mesh()
         self._run_mesh_sig = self._mesh_sig()
         base = self.base_dir()
@@ -2514,40 +2636,69 @@ class MainWindow(QMainWindow):
         elif "time" in rec:
             self.progress.setValue(int(1000 * rec["time"] / max(t_end, 1e-300)))
             self.run_info.setText(f"t = {rec['time']:.4g} (Δt = {rec['dt']:.3g})")
-        self._plot_history()
+        # P2 : le tracé (matplotlib, fil de l'interface) garde le verrou de Python et bloque
+        # le calcul pendant ce temps. Avant : un tracé complet tous les 0.25 s, cavité 5 à 6
+        # fois plus lente (34 à 41 s au lieu de 6.6 s). Retracé quand le temps écoulé depuis
+        # le dernier tracé atteint 10 fois son coût en temps processeur (≈ 10 %), et au plus
+        # tard après 2 s (le 1er tracé, qui construit la figure, coûte 3 fois plus).
+        t = time.perf_counter()
+        if t - self._plot_t >= min(10.0 * self._plot_cost, 2.0):
+            c = time.thread_time()
+            self._plot_history(now=True)
+            self._plot_t = time.perf_counter()
+            self._plot_cost = time.thread_time() - c
 
-    def _plot_history(self, final=False):
+    def _plot_history(self, final=False, now=False):
         hist = self.history
         if final and self.solver is not None and self.solver.history:
             hist = self.solver.history
         if not hist:
             return
-        ax = self.canvas.axes()
-        colors = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300", "#4a3aa7"]
-        if "iteration" in hist[-1]:
-            it = [h["iteration"] for h in hist]
+        if len(hist) > 2000:                     # coût du tracé borné (au plus ≈ 2000 points)
+            hist = hist[::-(-len(hist) // 2000)] + hist[-1:]
+        steady = "iteration" in hist[-1]
+        if steady:
+            x = [h["iteration"] for h in hist]
             keys = [k for k in hist[-1] if k != "iteration"]
-            for i, k in enumerate(keys):
-                ax.semilogy(it, [max(h.get(k, np.nan), 1e-300) for h in hist],
-                            color=colors[i % len(colors)], label=k)
-            ax.set(xlabel="itération", ylabel="résidu normalisé", title="Convergence")
+            ys = [log_values([h.get(k, np.nan) for h in hist]) for k in keys]
         else:
-            t = [h["time"] for h in hist]
+            x = [h["time"] for h in hist]
             keys = [k for k in hist[-1] if k.startswith(("Cd_", "Cl_"))]
-            for i, k in enumerate(keys):
-                ax.plot(t, [h.get(k, np.nan) for h in hist], color=colors[i % len(colors)],
-                        label=k)
-            ax.set(xlabel="t", ylabel="coefficient", title="Efforts")
-        ax.grid(True)
-        if len(keys) > 1:
-            ax.legend(loc="best")
-        self.canvas.draw()
+            ys = [[h.get(k, np.nan) for h in hist] for k in keys]
+        live = getattr(self, "_live_plot", None)
+        if (live is not None and live[0] == (steady, keys)
+                and live[1] in self.canvas.fig.axes):
+            # même figure qu'au tracé précédent : nouvelles données seulement (≈ 2 fois
+            # moins cher que de reconstruire la figure)
+            ax = live[1]
+            for line, y in zip(ax.get_lines(), ys):
+                line.set_data(x, y)
+            ax.relim()
+            ax.autoscale_view()
+        else:
+            ax = self.canvas.axes()
+            colors = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300",
+                      "#4a3aa7"]
+            plot = ax.semilogy if steady else ax.plot
+            for i, (k, y) in enumerate(zip(keys, ys)):
+                plot(x, y, color=colors[i % len(colors)], label=k)
+            if steady:
+                ax.set(xlabel="itération", ylabel="résidu normalisé", title="Convergence")
+            else:
+                ax.set(xlabel="t", ylabel="coefficient", title="Efforts")
+            ax.grid(True)
+            if len(keys) > 1:
+                ax.legend(loc="best")
+            self._live_plot = ((steady, keys), ax)
+        self.canvas.draw(now)
         self.tabs.setCurrentIndex(0)
 
     def _run_done(self, res):
         summary, solver = res
         self.summary, self.solver = summary, solver
+        self.anim_btn.setEnabled(bool(summary.get("animation")))
         self.mesh = solver.mesh
+        self._default_profile_line(solver.mesh)          # maillage refait par le calcul
         self._mesh_of = getattr(self, "_run_mesh_sig", None)
         from ..fv2d.report import summary_text
         self.summary_view.setPlainText(summary_text(summary))   # avant : JSON brut

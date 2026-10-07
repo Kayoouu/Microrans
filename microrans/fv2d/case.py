@@ -462,6 +462,16 @@ def run_case(cfg: dict, base_dir=".", out_dir=None, verbose=True, plot=True, cal
                 Tb = solver.bulk_temperature(xf[:, 0])
                 cols += [Tb, q * Lref / (alpha * (Tw - Tb))]
                 header += ",T_bulk,Nu_bulk"
+        # L7 : de quoi refaire l'intégration des efforts du résumé (tableur, autre code) :
+        # F = Σ (p n + τ) × area, n normale unitaire sortant du fluide (vers la paroi),
+        # τ = ν (U_P − U_paroi) / d vecteur frottement du résumé (tau_w en est la composante
+        # tangentielle) ; area : par unité d'envergure en 2D, sur 360° en axisymétrique
+        sl, fvm = solver.patch_slices[name], solver.fvm
+        tv = (solver.nu_wall[sl] / fvm.dperp[sl])[:, None] * (solver.U[fvm.Pb[sl]]
+                                                             - solver.U_fixed[sl])
+        cols += [pb, fvm.magSb[sl] * (2 * np.pi if axi else 1.0), *fvm.nb_hat[sl].T, *tv.T]
+        header += ",p,area," + ",".join(f"n{c}" for c in "xyz"[:dim]) + "," + ",".join(
+            f"tau_{c}" for c in "xyz"[:dim])
         np.savetxt(out / f"wall_{name}.csv", np.column_stack(cols), delimiter=",",
                    header=header, comments="", encoding="utf-8")
     if hist:
@@ -500,7 +510,8 @@ def run_case(cfg: dict, base_dir=".", out_dir=None, verbose=True, plot=True, cal
                   binary=str(oc.get("vtk_format", "binary")).lower() != "ascii")
     if plot and oc.get("plots", True):
         from .post import plot_case
-        plot_case(solver, hist, out, mode, force_patches, qdyn)
+        plot_case(solver, hist, out, mode, force_patches, qdyn, oc.get("slice_axis", "z"),
+                  oc.get("slice_value"))
     if verbose:                                     # avant : JSON brut de ~40 lignes
         from .report import summary_text
         print("\n" + summary_text(summary))

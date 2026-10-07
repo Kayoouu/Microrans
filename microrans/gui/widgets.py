@@ -12,6 +12,8 @@ from PySide6.QtGui import QRegularExpressionValidator
 from PySide6.QtWidgets import (QCheckBox, QComboBox, QHBoxLayout, QLineEdit, QSpinBox,
                                QVBoxLayout, QWidget)
 
+from ..stop import StopRequested, stop_check
+
 # ----------------------------------------------------------------------------- saisie
 
 
@@ -294,12 +296,18 @@ class PlotCanvas(QWidget):
 
     def axes(self, n=1, **kw):
         self.fig.clear()
+        self.fig.get_layout_engine().set(wspace=0.02)     # défaut (vue 3D : plus large)
         if n == 1:
             return self.fig.add_subplot(111, **kw)
         return self.fig.subplots(1, n, **kw)
 
-    def draw(self):
-        self.canvas.draw_idle()
+    def draw(self, now=False):
+        """now : tracé immédiat (durée mesurable) ; sinon au prochain passage de la boucle
+        d'événements."""
+        if now:
+            self.canvas.draw()
+        else:
+            self.canvas.draw_idle()
 
     def message(self, text):
         import textwrap
@@ -349,6 +357,7 @@ class Worker(QObject):
     log = Signal(str)
     done = Signal(object)
     failed = Signal(str)
+    stopped = Signal(str)               # arrêt demandé pendant une étape sans point d'arrêt
 
     def __init__(self, fn):
         super().__init__()
@@ -372,9 +381,14 @@ class Worker(QObject):
                     warnings.simplefilter("always")
                     warnings.showwarning = (lambda msg, cat, *a, **k:
                                             print(f"Attention : {msg}"))
-                    res = self.fn(self)
+                    # U20 : le maillage teste l'arrêt (avant : mené à son terme)
+                    with stop_check(lambda: self.stop_requested):
+                        res = self.fn(self)
             stream.flush()
             self.done.emit(res)
+        except StopRequested as exc:
+            stream.flush()
+            self.stopped.emit(str(exc))
         except Exception as exc:                    # noqa: BLE001 — remonté à l'interface
             stream.flush()
             self.failed.emit(f"{type(exc).__name__} : {exc}\n\n{traceback.format_exc()}")

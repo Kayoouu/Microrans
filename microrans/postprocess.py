@@ -91,6 +91,14 @@ def _pyplot():
     return plt
 
 
+def log_values(values) -> np.ndarray:
+    """Valeurs d'un axe logarithmique : ≤ 0 (ou absentes) → NaN, non tracées. Avant :
+    remplacées par 1e-300, l'axe couvrait 330 décades et les courbes étaient écrasées en
+    haut (résidu Uy nul à la 1re itération de la cavité)."""
+    v = np.asarray(values, dtype=float)
+    return np.where(v > 0, v, np.nan)
+
+
 def _color(name: str) -> str:
     return MODEL_COLORS.get(name, "#4a3aa7")
 
@@ -178,7 +186,7 @@ def plot_rans(result, path: Path):
         it = np.arange(1, len(sol.residuals) + 1)
         styles = ["-", "--", "-."]
         for i, k in enumerate(names):
-            a.semilogy(it, [max(r[k], 1e-300) for r in sol.residuals], color=c,
+            a.semilogy(it, log_values([r[k] for r in sol.residuals]), color=c,
                        ls=styles[i % 3], label=k)
         a.legend()
     a.set(xlabel="itération", ylabel="variation relative max", title="Convergence")
