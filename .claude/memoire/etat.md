@@ -1,22 +1,26 @@
-# État du projet (mis à jour le 2026-10-05)
+# État du projet (mis à jour le 2026-10-07)
 
 ## Où on en est
 
 - microrans : outil RANS / URANS 1D, 2D, 3D (périmètre réduit) avec mailleur, interface
   PySide6 et exécutables PyInstaller Windows / Linux (CI GitHub Actions).
-- Dernier lot terminé : **F2 — messages** (2026-10-06, relance quotidienne) : M13 à M22,
-  U16, L6 ; 12 tests (tous « échoue avant : OK ») ; résultats de calcul inchangés au bit
-  près (ab.py, 5 exemples). Avant : **F1b — plantages et reprises** (2026-10-05) :
+- Dernier lot terminé : **F3 — interface 3D, figures, sorties** (2026-10-07, relance
+  quotidienne) : P2 (cause mesurée : courbe de convergence retracée toutes les 0.25 s dans
+  le fil de l'interface ; cavité 34 à 46 s → 8.9 à 9.6 s), axe des résidus sur 330 décades
+  (trouvé en mesurant), L7 (aire, normale, vecteur frottement dans les CSV), L5
+  (`[output] slice_axis` / `slice_value`), U15, U18, U19, U20 (arrêt du maillage 0.07 à
+  1.5 s) ; 8 tests (tous « échoue avant : OK ») ; calculs identiques au bit près (ab.py,
+  6 exemples). Avant : **F2 — messages** (2026-10-06) : M13 à M22, U16, L6. Avant : **F1b — plantages et reprises** (2026-10-05) :
   C16 (perturbation 3D), C17 (reprise compressible implicite exacte au bit près), C19
   (Ctrl-C écrit tout, code 130), C22 (polaire 3D), C23 (multigrille sur extrusion fine) ;
   campagne 7 : 18/18 exemples repris au bit près. Avant : **F1** (2026-10-04) : P1 (1 fil BLAS), C11, C13, C14, C18, C20, C21, U14, U17 corrigés, un test
   par point (chacun échoue sur l'ancien code). Puis **C15** (l'utilisateur m'a laissé
   choisir « la meilleure solution ») : une seule vitesse de référence. Avant : audit 2
   approfondi (576a0bc, e5deb38).
-- Exécutables de 6137d9c (F2) : run https://github.com/Kayoouu/Microrans/actions/runs/37413244158
-  (Windows : artefact 11389769577, Linux : 11390515647 ; expirent le 2027-01-04). CI verte
-  (tests https://github.com/Kayoouu/Microrans/actions/runs/37413241410).
-- Suite de tests : 491 (489 réussis, 2 ignorés), 5 à 8 min en série sur la machine de session.
+- Exécutables de 8298420 (F3) : run https://github.com/Kayoouu/Microrans/actions/runs/37573281289
+  (Windows : artefact 11461299759, Linux : 11461103367 ; expirent le 2027-01-05). CI verte
+  (tests https://github.com/Kayoouu/Microrans/actions/runs/37573278790).
+- Suite de tests : 499 (497 réussis, 2 ignorés), 5 à 10 min en série sur la machine de session.
 - Objectif accepté le 2026-10-05 : jalon A (2D académique crédible), puis B (3D
   académique, petite géométrie) ; C (pré-industriel) non visé. Détail : `a_faire.md`.
 - Méthode outillée (2026-10-05) : skill `lot`, `tools/dev/`, hooks avant poussée et fin de

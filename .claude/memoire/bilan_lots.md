@@ -51,6 +51,7 @@ expliquer avant le lot. Sorties en dehors du dépôt (scratchpad), seulement le 
 | c7 reprise exacte | 2026-10-05 (F1b) | 18 / 18 au bit près, Sod non découpable |
 | c8 2D = 3D une couche | 2026-10-03 (audit 2 approfondi) | convergé : écart ≤ 2·10⁻⁶ ; perturbation 3D corrigée depuis (C16) |
 | c3b / c3c clés numériques (texte, −1) | 2026-10-06 (F2) | 92 / 92 et 24 / 24 refusés clairement avant le calcul |
+| c15 arrêts et durée de l'interface | 2026-10-07 (F3) | arrêt maillage 0.5 s après la demande (audit 2 : 21.8 s) ; cavité interface 9.8 s / ligne de commande 9.4 s (audit 2 : 10.2 / 4.9) ; arrêt calcul 4.4 s (2.4 s ; machine ≈ 2 fois plus lente ce jour : ligne de commande 9.4 s contre 4.9) ; balayage 1.2 s ; mémoire stable (347 → 340 Mo) |
 
 ## Changements de méthode (rétrospectives) et effet constaté
 
