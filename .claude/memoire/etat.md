@@ -1,11 +1,15 @@
-# État du projet (mis à jour le 2026-10-07)
+# État du projet (mis à jour le 2026-10-08)
 
 ## Où on en est
 
 - microrans : outil RANS / URANS 1D, 2D, 3D (périmètre réduit) avec mailleur, interface
   PySide6 et exécutables PyInstaller Windows / Linux (CI GitHub Actions).
-- Dernier lot terminé : **F3 — interface 3D, figures, sorties** (2026-10-07, relance
-  quotidienne) : P2 (cause mesurée : courbe de convergence retracée toutes les 0.25 s dans
+- Dernier lot terminé : **F4 — textes et documentation** (2026-10-08, relance
+  quotidienne) : T1, T2 (la 3D dans --help, « À propos », paquet, message d'ouverture), D5
+  (extrait 3D du README complet et calculé), D6 (tutoriel § 7 « Un cas 3D »), D7 (glossaire
+  3D, dépannage), D8 (chiffres du README : un cœur mesuré ; cylindre RK3 1 780 s ce jour
+  contre 1 061 s à l'audit, même code côte à côte → « 16 à 30 min ») ; 5 tests. Fin des
+  lots F de l'audit 2. Avant : **F3 — interface 3D, figures, sorties** (2026-10-07) : P2 (cause mesurée : courbe de convergence retracée toutes les 0.25 s dans
   le fil de l'interface ; cavité 34 à 46 s → 8.9 à 9.6 s), axe des résidus sur 330 décades
   (trouvé en mesurant), L7 (aire, normale, vecteur frottement dans les CSV), L5
   (`[output] slice_axis` / `slice_value`), U15, U18, U19, U20 (arrêt du maillage 0.07 à
@@ -17,10 +21,10 @@
   par point (chacun échoue sur l'ancien code). Puis **C15** (l'utilisateur m'a laissé
   choisir « la meilleure solution ») : une seule vitesse de référence. Avant : audit 2
   approfondi (576a0bc, e5deb38).
-- Exécutables de 8298420 (F3) : run https://github.com/Kayoouu/Microrans/actions/runs/37573281289
-  (Windows : artefact 11461299759, Linux : 11461103367 ; expirent le 2027-01-05). CI verte
-  (tests https://github.com/Kayoouu/Microrans/actions/runs/37573278790).
-- Suite de tests : 499 (497 réussis, 2 ignorés), 5 à 10 min en série sur la machine de session.
+- Exécutables de 7ae9435 (F4) : run https://github.com/Kayoouu/Microrans/actions/runs/37729297414
+  (Windows : artefact 11529422177, Linux : 11528438905 ; expirent le 2027-01-06). CI verte
+  (tests https://github.com/Kayoouu/Microrans/actions/runs/37729295235).
+- Suite de tests : 504 (502 réussis, 2 ignorés), 5 à 10 min en série sur la machine de session.
 - Objectif accepté le 2026-10-05 : jalon A (2D académique crédible), puis B (3D
   académique, petite géométrie) ; C (pré-industriel) non visé. Détail : `a_faire.md`.
 - Méthode outillée (2026-10-05) : skill `lot`, `tools/dev/`, hooks avant poussée et fin de
