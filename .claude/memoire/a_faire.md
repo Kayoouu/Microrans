@@ -7,7 +7,7 @@ inutile (mesure à l'appui), l'écrire dans le journal et passer à la suivante.
 
 ## En cours
 
-(rien ; F3 fait le 2026-10-07)
+(rien ; F4 fait le 2026-10-08)
 
 ## À faire
 
@@ -21,16 +21,15 @@ des points d'audit : `docs/audit_utilisateur.md` ; campagnes à relancer après 
 
 Usages : TP, projets d'étudiants, études paramétriques 2D laminaire / RANS sur cas
 classiques. **Atteint quand** : un audit complet ne trouve plus aucun résultat faux
-silencieux, et les points 2 et 3 sont faits (ou leur impossibilité écrite). Côté
+silencieux, et les points 1 et 2 sont faits (ou leur impossibilité écrite). Côté
 utilisateur (je ne peux pas le faire) : publier une release, faire essayer l'exécutable
 Windows par un humain sur un vrai PC (jamais fait : la CI vérifie seulement qu'il démarre).
 
-1. **F4 — textes et documentation** : T1, T2, D5 à D8.
-2. **Étude de convergence en maillage (GCI)** sur 2 ou 3 cas de validation du README.
-3. **Maillage en C pour les profils + comparaison NASA TMR** (plaque plane, NACA 0012, SA /
+1. **Étude de convergence en maillage (GCI)** sur 2 ou 3 cas de validation du README.
+2. **Maillage en C pour les profils + comparaison NASA TMR** (plaque plane, NACA 0012, SA /
    SST). Vérifier d'abord que les données TMR sont accessibles depuis l'environnement ;
    sinon l'écrire (validation partielle) et passer.
-4. **Audit 3** (même méthode que l'audit 2 approfondi : campagnes `tools/audit/` + nouvelles),
+3. **Audit 3** (même méthode que l'audit 2 approfondi : campagnes `tools/audit/` + nouvelles),
    puis lots de correction. S'il trouve encore un résultat faux silencieux : corriger puis
    refaire un audit ; le jalon n'est pas atteint avant.
 

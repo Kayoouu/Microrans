@@ -27,8 +27,10 @@ est à lire quand il faut retrouver le détail d'un lot passé.
 - Tags et releases : l'envoi d'un tag est refusé (403) depuis cet environnement ; ne pas
   contourner. La publication d'une release est faite par l'utilisateur.
 - Tout chiffre écrit dans le README, la doc ou un message d'avertissement doit avoir été
-  mesuré ; préciser les conditions (machine virtuelle 4 cœurs, durées variables de ±50 %
-  d'un jour à l'autre : mesurer les comparaisons côte à côte, machine libre).
+  mesuré ; préciser les conditions (machine virtuelle 4 cœurs, durées variables d'un jour à
+  l'autre, jusqu'à 1.7 fois pour le même code — cylindre RK3 : 1 061 s puis 1 780 s — et pas
+  dans le même sens pour tous les cas : mesurer les comparaisons côte à côte, machine libre ;
+  une durée publiée se donne en fourchette de mesures datées).
 - Avant de pousser : ruff, tests concernés, suite complète si microrans/ ou tests/
   changent (le hook avant poussée le vérifie). Après la poussée : vérifier la CI (workflow
   `tests`, et `executables` si l'exécutable est concerné).

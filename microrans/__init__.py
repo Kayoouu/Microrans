@@ -1,4 +1,5 @@
-"""microrans — solveur RANS / URANS 1D (canal plan) et 2D (volumes finis, mailleur intégré).
+"""microrans — solveur RANS / URANS 1D (canal plan), 2D et 3D (volumes finis, mailleur 2D
+intégré, 3D : pavé ou extrusion).
 
 Modèles : Spalart-Allmaras, k-ε Launder-Sharma, k-ω Wilcox 2006, k-ω SST Menter 2003.
 """

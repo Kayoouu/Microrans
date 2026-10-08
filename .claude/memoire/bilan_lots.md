@@ -20,6 +20,7 @@ et trouvés plus tard (à remplir rétroactivement).
 | 2026-10-05 | Outillage (demande de l'utilisateur) | non estimé | ≈ 35 min (≈ 23:05 → CI verte 23:37) | 4 | — | 3 défauts des outils trouvés en les essayant (--ref avalé, erreurs déclarées identiques, « git push » cité pris pour une poussée) → essayer chaque outil sur un cas connu avant de s'y fier |
 | 2026-10-06 | F2 (12 points) | 1 lot (F2 à F4 : 3 à 5) | 34 min (03:53 → CI verte 04:27 ; 2 commits, 2 suites, 2 constructions) | 12 | — | cas de reproduction mal écrits deux fois (compressible sans `compressible = true` ni état amont ; 3D sans faces d'extrusion) → partir d'un exemple existant modifié plutôt qu'écrire un cas à la main. Outils : echoue_avant 12 preuves en 1 appel, ab egalite 5 exemples en < 1 min : utiles |
 | 2026-10-07 | F3 (7 points) | 1 à 2 lots | 55 min (03:53 → commit 04:48 ; 3 suites dont 2 en trop, 10 min chacune) | 8 (+1 outil) | — | suite lancée trop tôt et en-tête CSV figé dans un ancien test → skill § 3.1 (suite sur le code fini, grep de l'ancien format). Outils : echoue_avant a signalé 2 preuves faibles, corrigées ; ab.py amélioré (colonnes ajoutées) |
+| 2026-10-08 | F4 (6 points) | 1 lot | 03:53 → commit 04:48 (dont 30 min de mesure du cylindre RK3 en arrière-plan et 10 min d'A/B raccourci ; 1 suite) | 5 | — | chiffre du README faux de ×1.7 le même code selon le jour → durées en fourchette datée (CLAUDE.md) ; écart inattendu → A/B raccourci d'abord |
 
 ## Indicateur du jalon A : résultats faux silencieux trouvés par audit
 
@@ -67,4 +68,9 @@ expliquer avant le lot. Sorties en dehors du dépôt (scratchpad), seulement le 
   échec d'un ancien test qui figeait l'en-tête de wall_*.csv (vu après 10 min) : ≈ 20 min
   de suites en trop → skill `lot` § 3.1 : suite une fois le code fini ; format de sortie
   changé → `grep` de l'ancien texte dans tests/ avant. Preuves faibles évitées : import des
-  modules nouveaux en fin de test (§ 2.2).
+  modules nouveaux en fin de test (§ 2.2). Effet constaté au lot F4 (2026-10-08) : `grep` des anciens textes avant la suite
+  (rien à corriger), une seule suite ; 5 preuves fortes sur 5 du premier coup.
+- 2026-10-08 (rétro F4) : durée du README remesurée (30 min en arrière-plan, lancée tôt :
+  bien) puis A/B raccourci (t_end = 10) contre la révision de l'ancienne mesure pour
+  séparer code et machine (10 min) : variation de ×1.7 le même code → CLAUDE.md : durées
+  publiées en fourchette de mesures datées ; écart inattendu → A/B raccourci d'abord.

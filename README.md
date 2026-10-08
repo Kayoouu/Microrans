@@ -100,7 +100,7 @@ microrans examples cavite_re100                 # copie modifiable dans le dossi
 microrans run2d cavite_re100                    # calcul 2D (nom d'exemple ou fichier .toml)
 microrans run2d plaque_plane_sa --set physics.model=sst --set solver.max_iter=3000
 microrans run2d convection_naturelle_ra1e5
-microrans run2d cylindre_re100_urans --set solver.time_scheme=rk3 --set solver.adjust_dt=true
+microrans run2d cylindre_re100_urans --set solver.time_scheme=rk3 --set solver.adjust_dt=true  # 16 à 30 min
 microrans run2d cylindre_re100_urans --continue --set solver.t_end=200   # poursuivre un calcul
 microrans run2d mon_cas_fin.toml --restart results/mon_cas/checkpoint.npz # partir d'un autre calcul
 microrans polar naca0012_polaire --alpha -4 14 2      # polaire Cl(α), Cd(α), Cm(α)
@@ -152,14 +152,37 @@ formules peuvent utiliser `z` :
 type = "ogrid"
 n_around = 128
 n_radial = 64
+farfield_radius = 40.0
+first_height = 0.01
 [mesh.extrude]
 z0 = 0.0
 z1 = 4.0
 nz = 16
-periodic = [["back", "front"]]        # ou patch_types = { back = "symmetry", … }
+periodic = [["back", "front"]]        # faces z (back : z0, front : z1) périodiques
+[[bodies]]
+type = "circle"
+center = [0.0, 0.0]
+radius = 0.5
+name = "cylinder"
+[physics]
+reynolds = 20
+[boundary.cylinder]
+type = "wall"
 [boundary.farfield]
 type = "farfield"
-U = [1.0, 0.0, 0.0]
+U = [1.0, 0.0, 0.0]                   # 3 composantes en 3D
+```
+
+Faces z en symétrie (écoulement plan ; une seule couche donne alors le résultat 2D) :
+retirer `periodic` et donner leur condition aux limites, comme à toute frontière
+(`patch_types` ne suffit pas : sans ces lignes, « Conditions aux limites manquantes pour :
+back, front ») :
+
+```toml
+[boundary.back]
+type = "symmetry"
+[boundary.front]
+type = "symmetry"
 ```
 
 ```bash
@@ -795,8 +818,12 @@ redonne l'ancien fichier texte, identique octet pour octet.
 ## 8. Limites connues (à lire avant d'utiliser les résultats)
 
 1. **Taille des problèmes** : Python vectorisé ; ~10⁵ cellules restent raisonnables en
-   stationnaire (minutes), l'instationnaire long est lent (cylindre Re = 100 : 2 à 16 min).
-   Un calcul n'utilise qu'un cœur (seuls les balayages / polaires sont parallèles, ainsi que
+   stationnaire (minutes), l'instationnaire long est lent (cylindre Re = 100, t = 200 : 2 min
+   en BDF2 à Δt = 0.05 ; 16 à 30 min avec la commande RK3 + `adjust_dt` du § 3 — 949 s,
+   1 061 s et 1 780 s mesurés selon le jour, même durée côte à côte avant et après les
+   lots F1 à F4).
+   Un calcul n'utilise qu'un cœur (mesuré : cavité, 6.6 s de processeur pour 6.7 s
+   écoulées ; seuls les balayages / polaires sont parallèles, ainsi que
    la recherche des faces de paroi voisines pour la distance à la paroi ; noyaux
    Numba facultatifs : ~10 % de gain mesuré, multi-fil plus lent sur la machine de test).
    Bibliothèque BLAS limitée à un fil par calcul (avant : 4 cœurs occupés sans gain, deux
@@ -832,7 +859,10 @@ redonne l'ancien fichier texte, identique octet pour octet.
    plaque plane SST 5 % sous les corrélations.
 6. **Maillages** : triangles purs → traînée 3.6 % plus forte que l'hybride à tailles égales ;
    pas de maillage en C (sillage des profils mal résolu par l'O-grid, traînée de pression du
-   NACA probablement surestimée) ; DistMesh lent au-delà de ~15 000 cellules.
+   NACA probablement surestimée) ; DistMesh lent au-delà de ~15 000 cellules. Frontières
+   périodiques (`[mesh] periodic`) : maillages rectangle, multi-blocs et pavé seulement (et
+   faces z d'une extrusion) ; pour un maillage importé (Gmsh, SU2), en O, en triangles ou
+   hybride, la clé est ignorée avec un avertissement.
 7. **Cylindre Re = 100** : St 0.160–0.163 contre 0.164–0.167 publié ; pas d'étude complète de
    convergence en maillage et en taille de domaine.
 8. **Schémas explicites 2D** sur maillage colocalisé : erreur O(Δt·h²) de Rhie-Chow (§ 5.1) ;
@@ -916,7 +946,7 @@ corrections de courbure et de rotation, loi de paroi thermique et k-ε haut-Reyn
 viscoélasticité ; compressible turbulent (RANS) et axisymétrique ; solveur
 couplé : énergie et turbulence dans le système couplé, préconditionneur multigrille par blocs
 pour les grands maillages. 3D : mailleur général (tétraèdres, couches prismatiques), import
-Gmsh 3D, choix du plan des figures en ligne de commande.
+Gmsh 3D.
 
 ---
 

@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "microrans"
 version = "0.2.0"
-description = "Solveur RANS/URANS 1D et 2D (volumes finis) avec mailleur : Spalart-Allmaras, k-epsilon, k-omega, SST"
+description = "Solveur RANS/URANS 1D, 2D et 3D (volumes finis) avec mailleur 2D : Spalart-Allmaras, k-epsilon, k-omega, SST"
 readme = "README.md"
 license = {text = "MIT"}
 classifiers = ["License :: OSI Approved :: MIT License",

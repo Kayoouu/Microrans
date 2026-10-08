@@ -69,7 +69,8 @@ sans dessiner les pales. `[[actuator_disk]]`.
 ## Maillage
 
 **Maillage, cellule** — découpage du domaine en petites cellules (quadrilatères ou
-triangles) ; le solveur calcule une valeur moyenne par cellule (volumes finis). Plus il y a
+triangles ; en 3D, hexaèdres ou prismes) ; le solveur calcule une valeur moyenne par
+cellule (volumes finis). Plus il y a
 de cellules, plus c'est précis… et lent.
 
 **Frontière (patch)** — partie nommée du bord du domaine (« inlet », « wall »,
@@ -91,6 +92,28 @@ pour représenter la couche limite (`[mesh.layers]`, `first_height`).
 cellules et la normale à leur face commune) et asymétrie (skewness). Plus elles sont
 grandes, moins le calcul est précis et robuste (le seuil d'alerte usuel de
 non-orthogonalité est ~70°). Affichées par `microrans mesh` (`quality.json`).
+
+**Pavé, extrusion (3D)** — deux façons d'obtenir un maillage 3D : `[mesh] type = "box"`,
+pavé d'hexaèdres (`x0` … `z1`, `nx`, `ny`, `nz`) ; `[mesh.extrude]`, n'importe quel
+maillage 2D répété en couches selon z (`z0`, `z1`, `nz`). Les faces d'extrémité d'une
+extrusion s'appellent `back` (z = z0) et `front` (z = z1) et ont besoin d'une condition aux
+limites (ou d'être périodiques). Interface : type « Pavé 3D », ou case « Extruder le
+maillage 2D en 3D » (tutoriel, § 7).
+
+**Hexaèdre, prisme** — cellules 3D : l'hexaèdre est une « brique » à six faces
+quadrilatères (pavé, quadrilatère extrudé) ; le prisme est un triangle extrudé (deux faces
+triangulaires, trois quadrilatères).
+
+**Frontières périodiques** — deux frontières traitées comme une seule : ce qui sort par
+l'une entre par l'autre. Pour un écoulement établi (conduite, canal : `periodic =
+[["inlet", "outlet"]]`) ou invariant selon z (`[mesh.extrude] periodic = [["back",
+"front"]]`). Elles ne reçoivent pas de condition aux limites. Maillages `rectangle`,
+`blocks`, `box` et faces z d'une extrusion seulement.
+
+**Plan de coupe** — en 3D, les figures montrent les champs dans un plan x, y ou
+z = constante : interface, page « 7. Résultats », « Plan de coupe (3D) » ; ligne de
+commande, `[output] slice_axis` et `slice_value` (défaut : plan z médian). Le champ complet
+est dans `fields.vtk` (ParaView).
 
 ## Parois et efforts
 

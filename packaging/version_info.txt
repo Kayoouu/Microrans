@@ -5,7 +5,7 @@ VSVersionInfo(
   kids=[
     StringFileInfo([StringTable('040C04B0', [
       StringStruct('CompanyName', 'microrans (projet libre)'),
-      StringStruct('FileDescription', 'microrans - simulation RANS/URANS 1D et 2D'),
+      StringStruct('FileDescription', 'microrans - simulation RANS/URANS 1D, 2D et 3D'),
       StringStruct('FileVersion', '0.2.0'),
       StringStruct('InternalName', 'microrans'),
       StringStruct('LegalCopyright', 'Code source : github.com/Kayoouu/Microrans'),

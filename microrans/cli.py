@@ -498,10 +498,12 @@ class _Parser(argparse.ArgumentParser):
 def build_parser() -> argparse.ArgumentParser:
     parser = _Parser(
         prog="microrans",
-        description="Écoulements 2D en volumes finis (incompressible laminaire ou turbulent : "
-                    "SA, k-ε, k-ω, SST, transition SST-γ ; thermique, scalaires, non "
-                    "newtonien, poreux, disques actuateurs, axisymétrique ; compressible "
-                    "Euler / Navier-Stokes laminaire), mailleur 2D et canal turbulent 1D.",
+        description="Écoulements 2D et 3D en volumes finis. 2D : incompressible laminaire ou "
+                    "turbulent (SA, k-ε, k-ω, SST, transition SST-γ ; thermique, scalaires, "
+                    "non newtonien, poreux, disques actuateurs, axisymétrique) et "
+                    "compressible (Euler / Navier-Stokes laminaire). 3D (périmètre réduit) : "
+                    "incompressible laminaire ou turbulent sur pavé ou extrusion d'un "
+                    "maillage 2D. Mailleur 2D et canal turbulent 1D.",
         epilog="Premier calcul : microrans examples, puis microrans run2d cavite_re100. "
                "Aide d'une commande : microrans run2d --help. Interface : microrans gui.")
     parser.add_argument("--version", action="version", version=f"microrans {__version__}",

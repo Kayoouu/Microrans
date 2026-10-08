@@ -3,6 +3,31 @@
 Détail des chiffres : README (§ 6 validation, § 7 performances, § 8 limites) et messages de
 commit. Ce journal sert à retrouver ce qui a été fait, pourquoi, et ce qui a été constaté.
 
+## 2026-10-08 — Lot F4 : textes et documentation (T1, T2, D5 à D8)
+
+- Relance quotidienne (03:53 UTC). Jeudi : pas de campagnes. CI verte au départ (995af3e).
+- T1 : « 2D et 3D » dans `microrans --help`, « À propos » (texte sorti dans
+  `gui.app.about_text()`, paragraphe 3D), pyproject, description du fichier Windows
+  (`packaging/version_info.txt`), docstring du paquet. T2 : message d'ouverture d'un cas 3D.
+- D5 : vérifié d'abord : faces z en symétrie = `[boundary.back]` / `[boundary.front]`
+  `type = "symmetry"` suffit ; `patch_types` seul → « Conditions aux limites manquantes ».
+  README § 3 : extrait complet (cylindre extrudé) + variante symétrie, calculés par un test.
+- D6 : tutoriel § 7 « Un cas 3D » (interface, ligne de commande, extrusion du cylindre).
+  Mesuré : conduite 3.528 (+0.38 %, 406 it, 7.3 s), 16² : 3.567 (+1.50 %) ; cylindre
+  extrudé 1 couche entre symétries : C_d 2.037 en 183 it (2D : 182 it) ; `fields.vtk` lu
+  et coupé (x = 0.25) par la bibliothèque VTK 9.7 (U_x max 7.36) — ParaView lui-même non
+  essayé (absent de la machine).
+- D7 : glossaire (pavé / extrusion, hexaèdre / prisme, périodiques, plan de coupe) ;
+  dépannage : 3 lignes (type inconnu, periodic sans effet, slice en 2D) + figures omises,
+  extrusion impossible ; test : extraits cités = vrais messages.
+- D8 : « un calcul = un cœur » vrai depuis P1 (cavité : 6.6 s CPU / 6.7 s mur). Cylindre
+  RK3 + adjust_dt du § 3 : **1 780 s** aujourd'hui (audit 2 : 1 061 s, tableau : 949 s) ;
+  ab.py temps e5deb38 (avant F1) contre l'arbre, t_end = 10 : 160.2 / 160.5 s, CPU = mur
+  dans les deux cas (BLAS non parallèle sur ce cas, P1 sans effet) → pas de régression,
+  variation de la machine (la cavité, elle, était plus rapide qu'hier). README : « 16 à
+  30 min » avec les trois mesures. periodic d'un maillage importé : limite 6.
+- 5 tests (`tests/test_docs_f4.py`), 5 « échoue avant : OK ».
+
 ## 2026-10-07 — Lot F3 : interface 3D, figures, sorties (P2, L7, L5, U15, U18, U19, U20)
 
 - Relance quotidienne (03:53 UTC). Mercredi : pas de campagnes. CI verte au départ (53acaf5).

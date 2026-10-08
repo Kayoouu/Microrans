@@ -43,10 +43,19 @@ calculé tant qu'il en reste une.
 | `syntaxe TOML incorrecte (ligne …, colonne …)` | guillemets typographiques, virgule décimale (`nu = 0,01`), clé sans valeur | corriger la ligne indiquée |
 | `… n'est pas en UTF-8 : lu comme Latin-1 / Windows-1252` (ATTENTION) | fichier enregistré par un ancien éditeur | l'enregistrer en UTF-8 (le BOM du Bloc-notes est accepté) |
 | `frontière « … » inexistante. Frontières du maillage : …` | nom mal écrit dans `periodic` | prendre un nom de la liste |
+| `Type de frontière inconnu « … » (frontière …). Choix : wall, patch, symmetry, empty` | type mal écrit dans `patch_types` (`symetrie`…) | prendre un type de la liste (la suggestion est indiquée) |
+| `[mesh] periodic : sans effet pour un maillage « file »` (ou `ogrid`, `unstructured`, `hybrid`) (ATTENTION) | frontières périodiques demandées sur un maillage qui ne les gère pas | maillage `rectangle`, `blocks` ou `box` ; en 3D extrudé, `[mesh.extrude] periodic` pour les faces z |
+| `[output] slice_axis / slice_value : sans effet en 2D` (ATTENTION) | plan des figures donné pour un cas 2D | retirer ces clés (elles servent aux cas 3D) |
 | `Conditions aux limites manquantes pour : …` | frontière sans `[boundary.<nom>]` (en 3D extrudé : faces `back`, `front`) | ajouter la section ; faces d'extrusion : `type = "symmetry"` ou `[mesh.extrude] periodic` |
 | `fichier Gmsh binaire, non lu` | `.msh` exporté en binaire | le réexporter en texte |
 | `… cellule(s) sans face intérieure` | une seule maille (`nx = ny = 1`) | au moins 2 cellules |
 | `clé de [output] : la déplacer` (ATTENTION) | clé écrite dans une autre section | la déplacer dans la section indiquée |
+
+Après le calcul : `Figures de champs omises : plan x = … hors du domaine` (ATTENTION) — la
+cote `[output] slice_value` est hors du maillage ; les résultats (`fields.vtk`, CSV) sont
+écrits, seules les figures de champs manquent : corriger la cote. Dans l'interface, cocher
+« Extruder » sur un cas axisymétrique, poreux, animé… affiche `Extrusion 3D impossible : …
+disponible(s) en 2D seulement` : retirer d'abord ces options.
 
 ## 2. Le calcul diverge
 

@@ -201,6 +201,70 @@ Convergé en 545 itérations (32.2 s).
 Cd passe de 2.037 à 2.033, soit 0.2 % d'écart avec 4 fois plus de cellules. Le premier
 maillage suffisait. Ce contrôle est à faire pour tout nouveau cas.
 
+## 7. Un cas 3D : la conduite carrée
+
+Écoulement établi dans une conduite de section carrée (côté 1), poussé par une force
+volumique. Solution exacte (série de White) : vitesse débitante 3.5144.
+
+**Dans l'interface** : Accueil, groupe « 3D », « Conduite carrée laminaire (solution
+exacte) », « Ouvrir l'exemple » ; page « 2. Maillage », « Générer le maillage » (vue en
+perspective des frontières et coupe) ; page « 6. Calcul », « Lancer le calcul » ; page
+« 7. Résultats », « Plan de coupe (3D) » : `x =` et une cote vide (plan médian), puis
+« Tracer le champ » : la section de la conduite.
+
+**En ligne de commande** :
+```
+microrans examples conduite_carree_3d
+microrans run2d conduite_carree_3d.toml
+```
+
+Ce qui change par rapport à la 2D, dans le fichier :
+- `[mesh] type = "box"` : pavé d'hexaèdres, bornes `x0` … `z1`, mailles `nx`, `ny`, `nz`.
+  La conduite est selon x, avec 2 mailles seulement en x : `periodic = [["inlet",
+  "outlet"]]` rend l'écoulement établi (le même dans chaque section) ;
+- six faces nommées (`names`) : `left` / `right` (x), `bottom` / `top` (y), `back` /
+  `front` (z). Chaque face non périodique a sa condition `[boundary.…]` (ici 4 parois) ;
+- les vecteurs ont 3 composantes : `body_force = [1.0, 0.0, 0.0]`, `U = [3.0, 0.0, 0.0]`,
+  sondes `[x, y, z]` ;
+- `[output] slice_axis = "x"` : figures dans la section x = cte (défaut : plan z médian, ici
+  une bande de 2 mailles le long de l'axe, sans intérêt).
+
+```
+Cas 3D : 2048 cellules, modèle Laminaire (ν_t = 0), ν = 0.01, …, stationnaire
+  …
+  convergé en 406 itérations (7.3 s)
+…
+Sonde (0.25, 0, 0) : Ux = 7.386, Uy = 1.633e-16, Uz = 1.762e-16, p = -6.703e-15.
+Vitesse moyenne dans le domaine : (3.528, 0, 0).
+```
+
+Vitesse débitante 3.528 contre 3.5144 : +0.38 % avec 32 × 32 mailles dans la section
+(`--set mesh.ny=16 mesh.nz=16` : 3.567, +1.50 %). L'écart est divisé par 4 quand la maille
+l'est par 2 : la méthode est d'ordre 2, comme attendu.
+
+Résultats : `U.png`, `p.png` (section x = 0.25), `line_diagonale.png` (profil sur la
+diagonale de la section), `wall_*.csv` (une par paroi), et **`fields.vtk`**, le champ 3D
+complet. Dans ParaView : File → Open, choisir `fields.vtk`, « Apply » ; colorer par `U` ;
+filtre « Slice » (normale x, y ou z) pour une coupe quelconque, « Clip » pour voir
+l'intérieur.
+
+**Extruder un cas 2D.** Tout maillage 2D devient 3D avec `[mesh.extrude]` (dans
+l'interface : page « 2. Maillage », case « Extruder le maillage 2D en 3D », puis « Faces z
+min / z max »). Le cylindre de la section 6 sur une couche entre deux plans de symétrie :
+```
+microrans run2d cylindre_re20.toml --set mesh.extrude.nz=1 boundary.back.type=symmetry boundary.front.type=symmetry "boundary.farfield.U=[1,0,0]" "initial.U=[1,0,0]" -o results/cyl3d
+```
+```
+Calcul stationnaire, laminaire, 3D — 6 144 cellules.
+Convergé en 183 itérations (9.4 s).
+  cylinder      2.037         0         0         0  0.06368
+```
+Même C_d qu'en 2D (2.037). Les faces d'extrusion s'appellent `back` (z = z0) et `front`
+(z = z1) et il leur faut une condition, comme à toute frontière (sinon : « Conditions aux
+limites manquantes pour : back, front ») ; les vitesses passent à 3 composantes (sinon :
+« 3 composantes attendues »). Avec plusieurs couches, le résultat n'est plus exactement le
+2D (README, § 8, limite 17).
+
 ## Ensuite
 
 - **Autres exemples** (`microrans examples`) : turbulence (plaque plane, profil NACA 0012,
@@ -212,11 +276,5 @@ maillage suffisait. Ce contrôle est à faire pour tout nouveau cas.
 - **Turbulence** : vérifier y⁺ (colonne `y⁺ max` du résumé) : ≈ 1 en traitement résolu,
   30 à 300 avec lois de paroi.
 - **Un calcul qui diverge ou ne converge pas** : voir [`depannage.md`](depannage.md).
-- **3D** : dans l'interface, type de maillage « Pavé 3D » ou case « Extruder le maillage
-  2D en 3D » ; dans un fichier de cas, `[mesh.extrude]` (`z0`, `z1`, `nz`) sous un maillage
-  2D, ou `[mesh] type = "box"` ; les vecteurs prennent 3 composantes. Exemples :
-  `conduite_carree_3d` (solution exacte), `canal_turbulent_3d`, `cavite_cubique_re100_3d`.
-  Les figures montrent un plan x, y ou z = constante (page Résultats : « Plan de coupe »,
-  axe puis cote ; vide : plan médian) — pour une conduite selon x, le plan x = cte montre la
-  section ; le champ complet est dans `fields.vtk` (ParaView). Ce qui n'existe pas en 3D : README, § 8,
-  limite 17.
+- **3D** : section 7 ; autres exemples `canal_turbulent_3d`, `cavite_cubique_re100_3d`.
+  Ce qui n'existe pas en 3D : README, § 8, limite 17.

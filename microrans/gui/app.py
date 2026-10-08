@@ -300,16 +300,7 @@ class MainWindow(QMainWindow):
             h.addAction(a)
         h.addSeparator()
         a = QAction("À propos", self)
-        a.triggered.connect(lambda: QMessageBox.about(
-            self, "À propos", f"<b>{APP_NAME} {__version__}</b> — écoulements 2D en volumes "
-            "finis, mailleur intégré, et canal turbulent 1D.<br><br>"
-            "<b>Incompressible</b> : laminaire ou turbulent (Spalart-Allmaras, k-ε, k-ω, k-ω "
-            "SST, transition SST-γ), stationnaire (SIMPLE, SIMPLEC, couplé) ou instationnaire ; "
-            "lois de paroi, thermique (Boussinesq), scalaires transportés, fluides non "
-            "newtoniens, zones poreuses, disques actuateurs, axisymétrique avec rotation.<br>"
-            "<b>Compressible</b> : Euler et Navier-Stokes laminaire (flux de Roe ou HLLC, "
-            "ordre 2), réglé dans l'onglet « Fichier de cas ».<br><br>"
-            "Code libre (licence MIT). Écarts mesurés aux références : voir le README."))
+        a.triggered.connect(lambda: QMessageBox.about(self, "À propos", about_text()))
         h.addAction(a)
 
     # ------------------------------------------------------------------ pages
@@ -1071,8 +1062,8 @@ class MainWindow(QMainWindow):
         self._refresh_toml()
         from ..fv2d.validate import case_dim
         if case_dim(cfg) == 3:
-            self.log("Cas 3D : figures dans un plan z = constante (page Résultats) ; champs "
-                     "complets dans fields.vtk (ParaView).")
+            self.log("Cas 3D : figures dans un plan x, y ou z = constante (page Résultats, "
+                     "« Plan de coupe ») ; champs complets dans fields.vtk (ParaView).")
 
     def _load_sweep(self):
         """[sweep] du cas → page Calcul (avant : ignorée ; l'exemple de polaire ne lançait
@@ -2895,6 +2886,22 @@ class MainWindow(QMainWindow):
         ax.axis("off")
         self.canvas.draw()
         self.tabs.setCurrentIndex(0)
+
+
+def about_text() -> str:
+    """Texte de « À propos » (T1 : la 3D y manquait)."""
+    return (f"<b>{APP_NAME} {__version__}</b> — écoulements 2D et 3D en "
+            "volumes finis, mailleur 2D intégré, et canal turbulent 1D.<br><br>"
+            "<b>Incompressible</b> : laminaire ou turbulent (Spalart-Allmaras, k-ε, k-ω, k-ω "
+            "SST, transition SST-γ), stationnaire (SIMPLE, SIMPLEC, couplé) ou instationnaire ; "
+            "lois de paroi, thermique (Boussinesq), scalaires transportés, fluides non "
+            "newtoniens, zones poreuses, disques actuateurs, axisymétrique avec rotation.<br>"
+            "<b>Compressible</b> : Euler et Navier-Stokes laminaire (flux de Roe ou HLLC, "
+            "ordre 2), réglé dans l'onglet « Fichier de cas ».<br>"
+            "<b>3D</b> (périmètre réduit) : incompressible laminaire ou turbulent, pavé ou "
+            "extrusion selon z d'un maillage 2D, figures dans un plan x, y ou z = cte, champs "
+            "complets dans fields.vtk (ParaView).<br><br>"
+            "Code libre (licence MIT). Écarts mesurés aux références : voir le README.")
 
 
 def QLineEdit_(text=""):
