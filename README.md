@@ -578,8 +578,8 @@ bord de fuite du NACA (elle change C_l de près de 4 % en transsonique).
 | Poiseuille périodique | ordre en espace | 2.0 | 2 (exact) |
 | Womersley | ordre en temps, 7 schémas | voir § 5.1 | exact |
 | Tourbillon de Taylor-Green advecté 32², Courant 1 | erreur max U, RK3 / BDF2 | 9.8e-3 / 1.6e-2 | solution exacte |
-| Cavité entraînée Re = 100, 64² | profils u, v | écart max 0.004 / 0.009 | Ghia et al. (1982) |
-| Cylindre Re = 20, O-grid | C_d | 2.037 (96×64) ; 2.046 (64×40) | 2.045 (Dennis & Chang 1970) |
+| Cavité entraînée Re = 100, 64² | profils u, v | écart max 0.004 / 0.009 (l'écart au minimum de u croît en raffinant, voir « Incertitude de maillage ») | Ghia et al. (1982) |
+| Cylindre Re = 20, O-grid, champ lointain à R = 40 diamètres | C_d | 2.037 (96×64) ; 2.033 (192×128) ; incertitude de maillage 0.09 % | 2.045 (Dennis & Chang 1970) ; l'écart dépend de R : 2.080 à R = 20, 2.019 à R = 80 (voir « Incertitude de maillage ») |
 | Cylindre Re = 100 | St, C_d, C_l | tableau § 5.1 | St 0.164–0.167 ; C_d 1.32–1.35 ; C_l ≈ 0.32–0.34 |
 | Canal turbulent Re_τ = 395, SA | U_b | 17.6402 | 17.6398 (solveur 1D) |
 | Plaque plane Re_L = 5e6, SA / SST, y⁺ ≈ 0.5 (7 168 cellules) | C_f(x = 0.97) | 0.00273 / 0.00260 | 0.00273 (Schultz-Grunow), 0.00287 (White) |
@@ -678,6 +678,38 @@ Plus : conduction pure (profil linéaire exact à 1e-8), flux imposé (T paroi =
 | Canal Re_τ = 395 extrudé, périodique en x et z, SA / SST / k-ω / k-ε / SST-γ | U_b | écart au 2D ≤ 3e-6 ; SA 17.6402, τ_w = 1.000 | 2D ; 1D 17.6398 |
 | Conduite carrée turbulente, SST, Re_τ = 180 (2 048 cellules) | λ ; écoulement secondaire | 0.0419 ; nul (1e-14) | Blasius 0.0410 (ordre de grandeur) ; non nul en réalité (limite des modèles, § 8) |
 | Sortie VTK (hexaèdres, prismes) | volumes recalculés par la bibliothèque VTK 9.7 | égaux à 2e-14 (binaire ; 2e-8 en texte) | volumes du solveur |
+
+### Incertitude de maillage (GCI, Celik et al. 2008)
+
+Procédure de Celik et al., *J. Fluids Eng.* 130 (2008) 078001 (`microrans/gci.py`, vérifiée
+sur l'exemple chiffré de l'article) : trois maillages raffinés d'un facteur 2, ordre
+apparent p, valeur extrapolée (Richardson) et GCI du maillage fin (incertitude relative
+due au maillage, facteur de sécurité 1.25). Résidus à 1e-10 (1e-9 en 3D, où le résidu
+plafonne : la vitesse débitante y est à 2e-7 près de celle de 40 000 itérations).
+Étude reproductible : `python tools/validation/gci_maillage.py <dossier>` (12 calculs ;
+le plus long, la cavité 128², 99 s sur la machine virtuelle 4 cœurs, le 2026-10-09).
+
+| Cas | Grandeur | Maillages (cellules) | Grossier / moyen / fin | Ordre p | Extrapolé | GCI fin | Référence |
+|-----|----------|----------------------|------------------------|--------:|----------:|--------:|-----------|
+| Cylindre Re = 20, O-grid, R = 40 | C_d | 1 536 / 6 144 / 24 576 | 2.0573 / 2.0374 / 2.0327 | 2.08 | 2.0312 | 0.09 % | 2.045 (Dennis & Chang 1970) : hors de la bande |
+| Cavité Re = 100 | u minimal sur x = 0.5 | 32² / 64² / 128² | −0.21151 / −0.21351 / −0.21387 | 2.47 | −0.21395 | 0.05 % | −0.21090 (Ghia et al. 1982, y = 0.4531) : hors de la bande |
+| Conduite carrée laminaire 3D (raffinée en y, z) | vitesse débitante | 512 / 2 048 / 8 192 | 3.5670 / 3.5276 / 3.5177 | 1.99 | 3.51440 | 0.12 % | 3.51443 (série exacte) : dans la bande |
+
+- **Conduite** (seul cas à solution exacte) : ordre 2 et valeur extrapolée à 7e-6 près
+  (relatif) de la valeur exacte ; la procédure et le code se recoupent.
+- **Cylindre** : l'incertitude de *maillage* est petite (0.09 %), mais C_d dépend du rayon
+  R du champ lointain (96 mailles autour, première maille 0.01, même progression radiale :
+  57, 64, 72 mailles radiales) : 2.0801 (R = 20), 2.0374 (R = 40), 2.0195 (R = 80), soit
+  −2.1 % puis −0.9 % à chaque doublement de R. La même extrapolation en 1/R donne
+  C_d ≈ 2.007 pour R → ∞ (ordre apparent 1.25, incertitude 0.8 %) : une estimation, pas une
+  mesure. À R = 40, l'erreur de domaine (≈ 1.5 %) dépasse donc de loin l'incertitude de
+  maillage. L'accord à 0.6 % avec Dennis & Chang tient au choix R = 40 de l'exemple ; tant
+  que l'effet du domaine n'est pas réduit, la comparaison ne vaut pas mieux que ~2 %.
+- **Cavité** : la solution converge (ordre 2.47, incertitude 1e-4 en valeur absolue) vers
+  −0.21395, à 1.4 % de la valeur de Ghia. L'écart au point tabulé y = 0.4531 croît en
+  raffinant : −0.21095 (32²), −0.21335 (64²), −0.21383 (128²) contre −0.21090. Ghia et al.
+  n'ont qu'un maillage 129 × 129 dont l'incertitude n'est pas évaluée ici : ce tableau ne
+  permet pas de dire laquelle des deux valeurs est la plus proche de la solution exacte.
 
 ### 1D (canal plan, 192 mailles, y1⁺ = 0.2)
 
@@ -864,7 +896,8 @@ redonne l'ancien fichier texte, identique octet pour octet.
    faces z d'une extrusion) ; pour un maillage importé (Gmsh, SU2), en O, en triangles ou
    hybride, la clé est ignorée avec un avertissement.
 7. **Cylindre Re = 100** : St 0.160–0.163 contre 0.164–0.167 publié ; pas d'étude complète de
-   convergence en maillage et en taille de domaine.
+   convergence en maillage et en taille de domaine. À Re = 20, C_d varie de 2 % quand le
+   rayon du domaine double (R = 20 → 40), bien plus que l'incertitude de maillage (§ 6).
 8. **Schémas explicites 2D** sur maillage colocalisé : erreur O(Δt·h²) de Rhie-Chow (§ 5.1) ;
    le couplage de flottabilité n'a pas la correction aux faces dans la projection explicite
    (utiliser un schéma implicite pour la convection naturelle).
@@ -939,7 +972,7 @@ redonne l'ancien fichier texte, identique octet pour octet.
 
 ## 9. Feuille de route
 
-Maillage en C et validation NASA TMR (profils) ; étude de convergence en maillage (GCI) ;
+Maillage en C et validation NASA TMR (profils) ;
 parallélisme multi-cœur (Numba) ou CuPy validé sur carte ; transition avec gradient de
 pression et décollement laminaire (T3C, profils à bas Reynolds), rugosité, crossflow ;
 corrections de courbure et de rotation, loi de paroi thermique et k-ε haut-Reynolds ;

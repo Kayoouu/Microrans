@@ -3,6 +3,30 @@
 Détail des chiffres : README (§ 6 validation, § 7 performances, § 8 limites) et messages de
 commit. Ce journal sert à retrouver ce qui a été fait, pourquoi, et ce qui a été constaté.
 
+## 2026-10-09 — Lot GCI : convergence en maillage (jalon A, point 1)
+
+- Relance quotidienne (03:53 UTC). Vendredi, campagnes de moins de 7 jours : pas de
+  campagne. CI verte au départ (cea2d8a).
+- `microrans/gci.py` : procédure de Celik et al. (2008) (ordre apparent par point fixe,
+  Richardson, GCI facteur 1.25, convergence oscillante signalée) ; `tests/test_gci.py` :
+  exemple chiffré de l'article (p 1.53, φ_ext 6.1685, GCI 2.2 %), données exactes d'ordre 2
+  en 2D / 3D, entrées refusées. Pas de preuve « échoue avant » possible (module nouveau).
+- `tools/validation/gci_maillage.py` (12 calculs, cavité 128² la plus longue : 99 s) :
+  cylindre Re = 20 C_d 2.0573 / 2.0374 / 2.0327, p 2.08, extrapolé 2.0312, GCI 0.09 % ;
+  cavité u min −0.21151 / −0.21351 / −0.21387, p 2.47, extrapolé −0.21395, GCI 0.05 % ;
+  conduite 3D 3.5670 / 3.5276 / 3.5177, p 1.99, extrapolé 3.514401 contre 3.514425 exact.
+- Erreurs de ma part corrigées en cours : conduite d'abord avec r = (N1/N2)^(1/3) alors que
+  seuls y et z sont raffinés (p 2.98 faux → dim = 2, p 1.99) ; tol 1e-11 jamais atteinte en
+  3D (plancher ~1e-9) → tol 1e-9, erreur d'itération mesurée 2e-7.
+- Trouvé : l'accord du README « C_d 2.037 contre 2.045, 0.6 % » dépend du rayon du domaine :
+  R = 20 / 40 / 80 → 2.0801 / 2.0374 / 2.0195 ; extrapolé R → ∞ ≈ 2.007 (p 1.25,
+  estimation). Écrit dans README § 6 (ligne du cylindre, nouvelle section « Incertitude de
+  maillage »), limite 7, tutoriel § 6 (« Le domaine est-il assez grand ? », commandes
+  vérifiées : 2.08 et 2.02), en-tête de l'exemple, glossaire (GCI). Cavité : u min s'éloigne
+  de Ghia en raffinant (au point y = 0.4531 : −0.21095 / −0.21335 / −0.21383 contre −0.21090) ;
+  impossible de trancher sans référence plus fine vérifiée (recherche en ligne : Fornberg
+  1980 et valeurs spectrales de la cavité non vérifiables depuis l'environnement → non cités).
+
 ## 2026-10-08 — Lot F4 : textes et documentation (T1, T2, D5 à D8)
 
 - Relance quotidienne (03:53 UTC). Jeudi : pas de campagnes. CI verte au départ (995af3e).

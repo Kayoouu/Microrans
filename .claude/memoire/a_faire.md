@@ -1,4 +1,4 @@
-# Liste de travail (ordre = priorité ; mise à jour le 2026-10-05 ; jalons A, B, C)
+# Liste de travail (ordre = priorité ; mise à jour le 2026-10-09 ; jalons A, B, C)
 
 Méthode pour chaque tâche : mesurer d'abord (profil, chiffres de départ), changer, mesurer
 côte à côte dans les mêmes conditions, tests, docs (README, chiffres), commit, CI verte,
@@ -7,7 +7,7 @@ inutile (mesure à l'appui), l'écrire dans le journal et passer à la suivante.
 
 ## En cours
 
-(rien ; F4 fait le 2026-10-08)
+Rien (lot GCI terminé le 2026-10-09).
 
 ## À faire
 
@@ -21,15 +21,15 @@ des points d'audit : `docs/audit_utilisateur.md` ; campagnes à relancer après 
 
 Usages : TP, projets d'étudiants, études paramétriques 2D laminaire / RANS sur cas
 classiques. **Atteint quand** : un audit complet ne trouve plus aucun résultat faux
-silencieux, et les points 1 et 2 sont faits (ou leur impossibilité écrite). Côté
+silencieux, l'étude GCI (faite le 2026-10-09, README § 6) et le point 1 sont faits
+(ou leur impossibilité écrite). Côté
 utilisateur (je ne peux pas le faire) : publier une release, faire essayer l'exécutable
 Windows par un humain sur un vrai PC (jamais fait : la CI vérifie seulement qu'il démarre).
 
-1. **Étude de convergence en maillage (GCI)** sur 2 ou 3 cas de validation du README.
-2. **Maillage en C pour les profils + comparaison NASA TMR** (plaque plane, NACA 0012, SA /
+1. **Maillage en C pour les profils + comparaison NASA TMR** (plaque plane, NACA 0012, SA /
    SST). Vérifier d'abord que les données TMR sont accessibles depuis l'environnement ;
    sinon l'écrire (validation partielle) et passer.
-3. **Audit 3** (même méthode que l'audit 2 approfondi : campagnes `tools/audit/` + nouvelles),
+2. **Audit 3** (même méthode que l'audit 2 approfondi : campagnes `tools/audit/` + nouvelles),
    puis lots de correction. S'il trouve encore un résultat faux silencieux : corriger puis
    refaire un audit ; le jalon n'est pas atteint avant.
 
@@ -85,6 +85,12 @@ turbulence, viscoélasticité.
 - Après F3 : la page Résultats de l'interface ne lit pas `[output] slice_axis` /
   `slice_value` (plan des figures en ligne de commande) ; un plan hors du domaine n'est
   signalé qu'après le calcul (figures omises, ATTENTION), pas avant.
+- Après GCI : l'exemple `cylindre_re20` (champ lointain R = 40) donne C_d 1.5 % au-dessus
+  de l'estimation R → ∞ (≈ 2.007, extrapolée de R = 20, 40, 80) ; un domaine plus grand
+  changerait les chiffres documentés (README, tutoriel, tests 2.0 < C_d < 2.1) : à mesurer
+  (coût, R = 160 ?) avant de décider. Cylindre Re = 100 : même question (limite 7).
+- Cavité Re = 100 : u min converge vers −0.21395 ± 1e-4, à 1.4 % de Ghia (−0.21090) ;
+  pas de référence plus fine vérifiée depuis l'environnement (recherche du 2026-10-09).
 
 
 ## Décisions qui appartiennent à l'utilisateur (ne pas trancher seul)

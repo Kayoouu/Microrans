@@ -1,4 +1,5 @@
 # Cylindre, Re = 20, stationnaire — référence : Cd ≈ 2.05 (Dennis & Chang 1970)
+# Cd dépend du rayon du champ lointain : 2.080 (R = 20), 2.037 (R = 40), 2.019 (R = 80)
 # microrans run2d cylindre_re20.toml
 [mesh]
 type = "ogrid"

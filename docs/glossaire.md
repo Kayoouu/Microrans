@@ -187,6 +187,13 @@ d'être satisfaites ; le calcul stationnaire s'arrête quand ils passent sous `[
 (« convergé »), sinon après `max_iter` itérations (« NON CONVERGÉ » : résultats à
 vérifier). Courbes : `convergence.png`, `history.csv`.
 
+**Convergence en maillage, GCI** — un calcul « convergé » (résidus) garde une erreur due au
+maillage : on refait le cas sur trois maillages de plus en plus fins. L'indice de
+convergence de maillage (GCI, procédure de Celik et al. 2008, `microrans.gci`) en tire
+l'ordre apparent du schéma (≈ 2 ici), une valeur extrapolée à maillage infini et une bande
+d'incertitude du maillage fin. Il ne couvre ni la taille du domaine ni le modèle de
+turbulence. Exemples chiffrés : README § 6, « Incertitude de maillage ».
+
 **Divergence** — les valeurs explosent (vitesses infinies ou démesurées) : le calcul est
 arrêté avec des pistes. Voir [`depannage.md`](depannage.md).
 

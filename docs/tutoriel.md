@@ -185,7 +185,8 @@ Convergé en 182 itérations (2.6 s).
 ```
 
 Les grandeurs de référence sont U = 1 et le diamètre L = 1, donc Cd = traînée / (½ U² L).
-La référence de Dennis & Chang (1970) donne Cd ≈ 2.05 : l'écart est de 0.6 %.
+La référence de Dennis & Chang (1970) donne Cd ≈ 2.05 : l'écart est de 0.6 %, mais il dépend
+de la taille du domaine (ci-dessous).
 
 **Le maillage est-il assez fin ?** Refaire le calcul avec deux fois plus de mailles dans
 chaque direction et une première maille deux fois plus fine :
@@ -200,6 +201,17 @@ Convergé en 545 itérations (32.2 s).
 
 Cd passe de 2.037 à 2.033, soit 0.2 % d'écart avec 4 fois plus de cellules. Le premier
 maillage suffisait. Ce contrôle est à faire pour tout nouveau cas.
+
+**Le domaine est-il assez grand ?** Même question pour le rayon du champ lointain
+(`mesh.farfield_radius`, 40 diamètres dans l'exemple) :
+```
+microrans run2d cylindre_re20.toml --set mesh.farfield_radius=20 -o results/cyl_r20
+microrans run2d cylindre_re20.toml --set mesh.farfield_radius=80 -o results/cyl_r80
+```
+Cd affiche 2.08 puis 2.02 (contre 2.037 à R = 40) : il change de 2 % quand R double. Ici,
+c'est la taille du domaine, pas le maillage, qui limite la précision. Avec trois maillages
+ou trois domaines, la fonction Python `microrans.gci.gci` estime l'ordre de convergence, la
+valeur extrapolée et une bande d'incertitude (README § 6, « Incertitude de maillage »).
 
 ## 7. Un cas 3D : la conduite carrée
 

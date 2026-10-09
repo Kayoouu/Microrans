@@ -38,7 +38,10 @@ la tendance est indicative.
 Trouvés hors audit, en travaillant : 2026-10-07 (F3, en mesurant P2) figure de convergence
 de la cavité illisible depuis toujours (résidu nul tracé à 1e-300 : axe sur 330 décades),
 interface et ligne de commande. Affichage trompeur sans message : l'audit 3 doit regarder
-les figures produites, pas seulement les chiffres.
+les figures produites, pas seulement les chiffres. 2026-10-09 (lot GCI) : validation du
+README trompeuse (pas un résultat du code) : « C_d 2.037 contre 2.045, écart 0.6 % » tenait
+au rayon du domaine (R = 20 : 2.080 ; R = 80 : 2.019) → l'audit 3 doit aussi vérifier que
+chaque accord de validation publié résiste au maillage et à la taille du domaine.
 
 ## Campagnes de non-régression (tools/audit) : dernier relevé
 
