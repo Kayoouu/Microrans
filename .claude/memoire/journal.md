@@ -26,6 +26,9 @@ commit. Ce journal sert à retrouver ce qui a été fait, pourquoi, et ce qui a 
   de Ghia en raffinant (au point y = 0.4531 : −0.21095 / −0.21335 / −0.21383 contre −0.21090) ;
   impossible de trancher sans référence plus fine vérifiée (recherche en ligne : Fornberg
   1980 et valeurs spectrales de la cavité non vérifiables depuis l'environnement → non cités).
+- Commit d5fa2d6 (04:46) ; suite 505 réussis / 2 ignorés (6.2 min) ; CI verte 04:56 :
+  tests https://github.com/Kayoouu/Microrans/actions/runs/37885434071, exécutables
+  https://github.com/Kayoouu/Microrans/actions/runs/37885435897. Rétro : skill § 2.4.
 
 ## 2026-10-08 — Lot F4 : textes et documentation (T1, T2, D5 à D8)
 

@@ -35,7 +35,9 @@ dans `CLAUDE.md` ; cette page dit comment les appliquer avec les outils `tools/d
    touchés ; une différence doit être voulue et expliquée.
 4. **Tout chiffre écrit est mesuré** : temps et mémoire par
    `python tools/dev/ab.py temps --repet 2 -- …` (ordre A B B A, machine libre : la charge
-   est affichée) ; préciser les conditions dans le texte.
+   est affichée) ; préciser les conditions dans le texte. Étude de plusieurs minutes
+   (convergence, balayage) : d'abord sur un cas à solution exacte et petits maillages
+   (ordre, valeur exacte retrouvés ?), puis l'étude complète.
 5. Relecture adverse du diff (`git diff`) avec la liste des défauts déjà trouvés par les
    audits : chemins 2D / 3D / axisymétrique, reprise (exacte ?), interface = ligne de
    commande, dossier courant ≠ dossier du cas, Windows (chemins, encodage, virgule

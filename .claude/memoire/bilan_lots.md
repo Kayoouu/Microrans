@@ -21,6 +21,7 @@ et trouvés plus tard (à remplir rétroactivement).
 | 2026-10-06 | F2 (12 points) | 1 lot (F2 à F4 : 3 à 5) | 34 min (03:53 → CI verte 04:27 ; 2 commits, 2 suites, 2 constructions) | 12 | — | cas de reproduction mal écrits deux fois (compressible sans `compressible = true` ni état amont ; 3D sans faces d'extrusion) → partir d'un exemple existant modifié plutôt qu'écrire un cas à la main. Outils : echoue_avant 12 preuves en 1 appel, ab egalite 5 exemples en < 1 min : utiles |
 | 2026-10-07 | F3 (7 points) | 1 à 2 lots | 55 min (03:53 → commit 04:48 ; 3 suites dont 2 en trop, 10 min chacune) | 8 (+1 outil) | — | suite lancée trop tôt et en-tête CSV figé dans un ancien test → skill § 3.1 (suite sur le code fini, grep de l'ancien format). Outils : echoue_avant a signalé 2 preuves faibles, corrigées ; ab.py amélioré (colonnes ajoutées) |
 | 2026-10-08 | F4 (6 points) | 1 lot | 03:53 → commit 04:48 (dont 30 min de mesure du cylindre RK3 en arrière-plan et 10 min d'A/B raccourci ; 1 suite) | 5 | — | chiffre du README faux de ×1.7 le même code selon le jour → durées en fourchette datée (CLAUDE.md) ; écart inattendu → A/B raccourci d'abord |
+| 2026-10-09 | GCI (3 cas + taille de domaine) | 1 lot | 03:53 → commit 04:46, CI verte 04:56 (étude de 12 calculs lancée 3 fois, ≈ 5 min chacune ; 1 suite) | 3 | — | étude complète relancée pour des erreurs visibles sur le cas exact (tol 3D, r de la conduite) → skill § 2.4 : cas exact et petits maillages d'abord |
 
 ## Indicateur du jalon A : résultats faux silencieux trouvés par audit
 
@@ -77,3 +78,7 @@ expliquer avant le lot. Sorties en dehors du dépôt (scratchpad), seulement le 
   bien) puis A/B raccourci (t_end = 10) contre la révision de l'ancienne mesure pour
   séparer code et machine (10 min) : variation de ×1.7 le même code → CLAUDE.md : durées
   publiées en fourchette de mesures datées ; écart inattendu → A/B raccourci d'abord.
+- 2026-10-09 (rétro GCI) : étude complète lancée 3 fois (≈ 5 min chacune) : tol 1e-11
+  jamais atteinte en 3D, puis ordre de la conduite faux (r calculé en 3D alors que seuls
+  y, z étaient raffinés) vu seulement à la fin → skill `lot` § 2.4 : une étude longue
+  passe d'abord par le cas à solution exacte sur petits maillages.
