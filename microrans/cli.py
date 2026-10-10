@@ -554,9 +554,10 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("mesh", help="générer / convertir un maillage 2D (ou 3D : box, extrude)")
     p.add_argument("config", nargs="?", help="fichier de configuration .toml ou .json")
     p.add_argument("--preset", help="préréglage : cavity, channel, backstep, flatplate, "
-                   "cylinder-ogrid, cylinder-tri, cylinder-hybrid, naca0012-ogrid, naca0012-hybrid")
-    p.add_argument("--type", help="force le type : blocks, rectangle, ogrid, unstructured, hybrid, "
-                   "file, box")
+                   "cylinder-ogrid, cylinder-tri, cylinder-hybrid, naca0012-ogrid, naca0012-cgrid, "
+                   "naca0012-hybrid")
+    p.add_argument("--type", help="force le type : blocks, rectangle, ogrid, cgrid, unstructured, "
+                   "hybrid, file, box")
     p.add_argument("-f", "--format", nargs="+", default=None,
                    choices=["msh", "su2", "vtk", "foam"],
                    help="formats de sortie (défaut : msh vtk ; maillage 3D : vtk seulement)")

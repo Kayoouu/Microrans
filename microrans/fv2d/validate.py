@@ -41,6 +41,8 @@ class Table:
 K = Key
 RECT, BLOCKS, OGRID, TRI, HYB, FILE, BOX = ("rectangle", "blocks", "ogrid", "unstructured",
                                             "hybrid", "file", "box")
+CGRID = "cgrid"
+_OC = (OGRID, CGRID)
 _NAMES = Table({"left": K("nom du côté x = x0"), "right": K("nom du côté x = x1"),
                 "bottom": K("nom du côté y = y0"), "top": K("nom du côté y = y1")},
                "noms des frontières du rectangle")
@@ -80,7 +82,7 @@ _TRI_HYB = (TRI, HYB)
 
 SCHEMA = Table({
     "mesh": Table({
-        "type": K("rectangle | blocks | ogrid | unstructured | hybrid | file | box "
+        "type": K("rectangle | blocks | ogrid | cgrid | unstructured | hybrid | file | box "
                   "(défaut unstructured ; box : pavé 3D)"),
         "preset": K("maillage prédéfini (cavity, channel, cylinder-ogrid…) : remplace type"),
         "cut_axis": K("garde la moitié y > 0 (axisymétrique autour d'un corps)"),
@@ -121,11 +123,16 @@ SCHEMA = Table({
         "patches": Table({"*": Table({"type": K("wall | patch | symmetry | empty"),
                                       "faces": K("[[i, j], …] : paires de sommets")})},
                          "frontières nommées", types=(BLOCKS,)),
-        "n_around": K("mailles autour du corps (défaut 128)", types=(OGRID,)),
-        "n_radial": K("mailles dans la direction radiale (défaut 64)", types=(OGRID,)),
-        "farfield_radius": K("rayon du champ lointain (défaut 20)", types=(OGRID,)),
+        "n_around": K("mailles autour du corps (défaut 128)", types=_OC),
+        "n_radial": K("mailles dans la direction radiale (défaut 64)", types=_OC),
+        "farfield_radius": K("rayon du champ lointain (défaut 20 ; en C : demi-cercle "
+                             "centré au bord de fuite)", types=_OC),
         "first_height": K("hauteur de la 1re maille à la paroi (défaut 1e-3)",
-                          types=(OGRID,)),
+                          types=_OC),
+        "n_wake": K("mailles le long du sillage, de chaque côté de la coupure (défaut 32)",
+                    types=(CGRID,)),
+        "wake_length": K("longueur du sillage maillé, depuis le bord de fuite (défaut : "
+                         "farfield_radius)", types=(CGRID,)),
         "center": K("centre du maillage en O (défaut : centre du corps)", types=(OGRID,)),
         "h_max": K("taille maximale des triangles (défaut 1)", types=_TRI_HYB),
         "h_surface": K("taille des mailles sur les corps (défaut 0.05)", types=_TRI_HYB),
@@ -144,7 +151,7 @@ SCHEMA = Table({
     }, "maillage"),
     "domain": Table(_SHAPE, "domaine extérieur (défaut : rectangle [-10, 30] × [-10, 10])",
                     types=_TRI_HYB),
-    "bodies": Table(_SHAPE, "corps (obstacles)", types=(OGRID, TRI, HYB), many=True),
+    "bodies": Table(_SHAPE, "corps (obstacles)", types=(OGRID, CGRID, TRI, HYB), many=True),
     "physics": Table({
         "compressible": K("true : solveur compressible (grandeurs SI, section [flow])"),
         "nu": K("viscosité cinématique ν (m²/s)", INC),
@@ -645,11 +652,14 @@ def _check_values(cfg: dict, kind: str, mesh_type: str, mesh_only: bool, errors:
                         errors.append(f"[mesh.names] {k} : face en z, pour un maillage "
                                       "« box » seulement (rectangle : left, right, bottom, "
                                       "top).")
-        elif mesh_type == OGRID:
+        elif mesh_type in _OC:
             V.num("mesh", m, "n_around", ge=4, integer=True)
             V.num("mesh", m, "n_radial", ge=2, integer=True)
             V.num("mesh", m, "farfield_radius", gt=0)
             V.num("mesh", m, "first_height", gt=0)
+            if mesh_type == CGRID:
+                V.num("mesh", m, "n_wake", ge=1, integer=True)
+                V.num("mesh", m, "wake_length", gt=0)
         elif mesh_type in _TRI_HYB:
             for k in ("h_max", "h_surface", "growth"):
                 V.num("mesh", m, k, gt=0)
@@ -892,6 +902,9 @@ def _size_warning(m: dict, mesh_type: str) -> str | None:
             n = int(m["nx"]) * int(m["ny"])
         elif mesh_type == OGRID:
             n = int(m.get("n_around", 128)) * int(m.get("n_radial", 64))
+        elif mesh_type == CGRID:
+            n = (int(m.get("n_around", 128)) + 2 * int(m.get("n_wake", 32))) \
+                * int(m.get("n_radial", 64))
         elif mesh_type == BLOCKS:
             n = sum(int(b["cells"][0]) * int(b["cells"][1]) for b in m["blocks"])
         elif mesh_type == BOX:
@@ -941,6 +954,9 @@ def _check_bodies(cfg: dict, mesh_type: str, errors: list, warns: list):
         elif te is not None and str(te).lower() not in NACA_TE:
             errors.append(f"[[bodies]] « {b.get('name', b.get('type'))} » : trailing_edge = "
                           f"{te!r} inconnu (" + ", ".join(NACA_TE) + ").")
+    if mesh_type == CGRID and (not isinstance(bodies, list) or len(bodies) != 1):
+        errors.append(f"[[bodies]] : le maillage en C entoure exactement un profil "
+                      f"({len(bodies) if isinstance(bodies, list) else 0} donné(s)).")
     if mesh_type == OGRID and (not isinstance(bodies, list) or len(bodies) != 1):
         errors.append(f"[[bodies]] : le maillage en O entoure exactement un corps "
                       f"({len(bodies) if isinstance(bodies, list) else 0} donné(s)). "

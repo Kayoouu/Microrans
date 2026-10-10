@@ -85,6 +85,11 @@ ailleurs (`hybrid`).
 **Maillage en O (O-grid)** — maillage structuré qui entoure un corps unique par des anneaux
 successifs jusqu'au champ lointain (`type = "ogrid"`) : cylindre, profil d'aile.
 
+**Maillage en C** — maillage structuré d'un profil à bord de fuite fermé ou pointu
+(`type = "cgrid"`) : les lignes font le tour du profil puis suivent le sillage jusqu'à la
+sortie, de part et d'autre d'une « coupure » (faces internes). Le sillage reste finement
+maillé sur toute sa longueur, alors qu'en O les mailles s'élargissent derrière le profil.
+
 **Couches de paroi, première maille** — mailles très fines et aplaties le long d'une paroi,
 pour représenter la couche limite (`[mesh.layers]`, `first_height`).
 

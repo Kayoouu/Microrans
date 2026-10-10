@@ -82,6 +82,7 @@ COMP_FORM_KEYS = {("solver", "mode"), ("solver", "max_iter"), ("solver", "tol"),
                   ("physics", "angle_of_attack"), ("physics", "reference_length"),
                   ("initial", "restart")}
 MESH_TYPES = [("rectangle", "Rectangle structuré"), ("ogrid", "Structuré en O autour d'un corps"),
+              ("cgrid", "Structuré en C autour d'un profil (expérimental)"),
               ("unstructured", "Triangles (non structuré)"),
               ("hybrid", "Hybride : couches de quadrilatères + triangles"),
               ("file", "Importer un fichier (.msh Gmsh, .su2)"),
@@ -456,6 +457,8 @@ class MainWindow(QMainWindow):
         f.addRow("Cellules radiales", B.int(("mesh", "n_radial"), 64, 4))
         f.addRow("Rayon du champ lointain", B.sci(("mesh", "farfield_radius"), 20.0))
         f.addRow("Épaisseur 1re maille", B.sci(("mesh", "first_height"), 1e-3))
+        self.wake_row = B.int(("mesh", "n_wake"), 32, 1)
+        f.addRow("Cellules le long du sillage (en C)", self.wake_row)
         lay.addWidget(self.box_ogrid)
         # non structuré / hybride
         self.box_unst, f = _form("Tailles (triangles)")
@@ -1157,6 +1160,8 @@ class MainWindow(QMainWindow):
                 "box": {"x0", "x1", "y0", "y1", "z0", "z1", "nx", "ny", "nz", "grading", "names",
                         "periodic", "patch_types"},
                 "ogrid": {"n_around", "n_radial", "farfield_radius", "first_height", "center"},
+                "cgrid": {"n_around", "n_radial", "farfield_radius", "first_height", "n_wake",
+                          "wake_length"},
                 "unstructured": {"h_max", "h_surface", "growth", "refinements", "max_iter"},
                 "hybrid": {"h_max", "h_surface", "growth", "refinements", "max_iter", "layers"},
                 "file": {"path", "patch_types"},
@@ -1165,7 +1170,7 @@ class MainWindow(QMainWindow):
             return
         managed = {"x0", "x1", "y0", "y1", "nx", "ny", "grading", "names", "n_around",
                    "n_radial", "farfield_radius", "first_height", "h_max", "h_surface", "growth",
-                   "layers", "path", "z0", "z1", "nz"}
+                   "layers", "path", "z0", "z1", "nz", "n_wake", "wake_length"}
         for k in list(m):
             if k in managed and k not in keep:
                 m.pop(k)
@@ -1307,19 +1312,27 @@ class MainWindow(QMainWindow):
         if box3d:
             kind = "rectangle"                       # mêmes champs x, y que le rectangle
         self.box_rect.setVisible(kind == "rectangle")
-        self.box_ogrid.setVisible(kind == "ogrid")
+        oc = kind in ("ogrid", "cgrid")
+        self.box_ogrid.setVisible(oc)
+        self.box_ogrid.setTitle("Maillage en C (un seul profil)" if kind == "cgrid"
+                                else "Maillage en O (un seul corps)")
+        self.wake_row.setEnabled(kind == "cgrid")
         self.box_unst.setVisible(kind in ("unstructured", "hybrid"))
         self.box_layers.setVisible(kind == "hybrid")
         self.box_domain.setVisible(kind in ("unstructured", "hybrid"))
         self.box_file.setVisible(kind == "file")
-        self.box_bodies.setVisible(kind in ("ogrid", "unstructured", "hybrid"))
-        for box, on in [(self.box_rect, kind == "rectangle"), (self.box_ogrid, kind == "ogrid"),
+        self.box_bodies.setVisible(kind in ("ogrid", "cgrid", "unstructured", "hybrid"))
+        for box, on in [(self.box_rect, kind == "rectangle"), (self.box_ogrid, oc),
                         (self.box_unst, kind in ("unstructured", "hybrid")),
                         (self.box_layers, kind == "hybrid"),
                         (self.box_domain, kind in ("unstructured", "hybrid")),
                         (self.box_file, kind == "file")]:
             box.setEnabled(on)
-        if kind in ("ogrid", "unstructured", "hybrid") and not self.cfg.get("bodies"):
+        if kind == "cgrid" and not self.cfg.get("bodies"):
+            self.cfg["bodies"] = [{"type": "naca", "code": "0012", "chord": 1.0,
+                                   "name": "airfoil"}]
+            self._load_bodies()
+        elif kind in ("ogrid", "unstructured", "hybrid") and not self.cfg.get("bodies"):
             self.cfg["bodies"] = [{"type": "circle", "center": [0.0, 0.0], "radius": 0.5,
                                    "name": "cylinder"}]
             self._load_bodies()
@@ -1485,13 +1498,14 @@ class MainWindow(QMainWindow):
                         ln[k] = fit(ln[k])
 
     def _body_buttons_state(self):
-        """Maillage en O : un seul corps (avant : « Ajouter » en créait un second, refusé
-        seulement au maillage)."""
+        """Maillage en O ou en C : un seul corps (avant : « Ajouter » en créait un second,
+        refusé seulement au maillage)."""
         add = self.body_buttons[0]
-        one = self.mesh_type.currentData() == "ogrid" and len(self.cfg.get("bodies", [])) >= 1
+        one = (self.mesh_type.currentData() in ("ogrid", "cgrid")
+               and len(self.cfg.get("bodies", [])) >= 1)
         add.setEnabled(not one)
-        add.setToolTip("Le maillage en O entoure un seul corps : choisir « Non structuré » ou "
-                       "« Hybride » pour en placer plusieurs." if one else
+        add.setToolTip("Le maillage en O ou en C entoure un seul corps : choisir « Non "
+                       "structuré » ou « Hybride » pour en placer plusieurs." if one else
                        "Nouveau cercle placé à droite des corps existants, sans recouvrement.")
 
     def _browse_mesh(self):

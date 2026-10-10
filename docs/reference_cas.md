@@ -11,7 +11,7 @@ Exemples complets : `microrans examples` ; tutoriel : `docs/tutoriel.md`.
 
 | Clé | Signification | S'applique à |
 |---|---|---|
-| `type` | rectangle \| blocks \| ogrid \| unstructured \| hybrid \| file \| box (défaut unstructured ; box : pavé 3D) |  |
+| `type` | rectangle \| blocks \| ogrid \| cgrid \| unstructured \| hybrid \| file \| box (défaut unstructured ; box : pavé 3D) |  |
 | `preset` | maillage prédéfini (cavity, channel, cylinder-ogrid…) : remplace type |  |
 | `cut_axis` | garde la moitié y > 0 (axisymétrique autour d'un corps) |  |
 | `x0` | x min | maillage rectangle, box |
@@ -27,10 +27,12 @@ Exemples complets : `microrans examples` ; tutoriel : `docs/tutoriel.md`.
 | `patch_types` | types des frontières {nom = "wall" \| "patch" \| …} | maillage rectangle, file, box |
 | `periodic` | paires de frontières périodiques [["a", "b"], …] | maillage rectangle, blocks, box |
 | `vertices` | sommets [[x, y], …] | maillage blocks |
-| `n_around` | mailles autour du corps (défaut 128) | maillage ogrid |
-| `n_radial` | mailles dans la direction radiale (défaut 64) | maillage ogrid |
-| `farfield_radius` | rayon du champ lointain (défaut 20) | maillage ogrid |
-| `first_height` | hauteur de la 1re maille à la paroi (défaut 1e-3) | maillage ogrid |
+| `n_around` | mailles autour du corps (défaut 128) | maillage ogrid, cgrid |
+| `n_radial` | mailles dans la direction radiale (défaut 64) | maillage ogrid, cgrid |
+| `farfield_radius` | rayon du champ lointain (défaut 20 ; en C : demi-cercle centré au bord de fuite) | maillage ogrid, cgrid |
+| `first_height` | hauteur de la 1re maille à la paroi (défaut 1e-3) | maillage ogrid, cgrid |
+| `n_wake` | mailles le long du sillage, de chaque côté de la coupure (défaut 32) | maillage cgrid |
+| `wake_length` | longueur du sillage maillé, depuis le bord de fuite (défaut : farfield_radius) | maillage cgrid |
 | `center` | centre du maillage en O (défaut : centre du corps) | maillage ogrid |
 | `h_max` | taille maximale des triangles (défaut 1) | maillage unstructured, hybrid |
 | `h_surface` | taille des mailles sur les corps (défaut 0.05) | maillage unstructured, hybrid |
@@ -184,7 +186,7 @@ Exemples complets : `microrans examples` ; tutoriel : `docs/tutoriel.md`.
 | `bottom` | nom du côté y = y0 |  |
 | `top` | nom du côté y = y1 |  |
 
-## `[[bodies]]` — corps (obstacles) (maillage ogrid, unstructured, hybrid)
+## `[[bodies]]` — corps (obstacles) (maillage ogrid, cgrid, unstructured, hybrid)
 
 | Clé | Signification | S'applique à |
 |---|---|---|

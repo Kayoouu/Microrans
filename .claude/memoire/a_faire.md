@@ -7,7 +7,7 @@ inutile (mesure à l'appui), l'écrire dans le journal et passer à la suivante.
 
 ## En cours
 
-Rien (lot GCI terminé le 2026-10-09).
+Rien (maillage en C, partie 1, terminé le 2026-10-10).
 
 ## À faire
 
@@ -26,9 +26,18 @@ silencieux, l'étude GCI (faite le 2026-10-09, README § 6) et le point 1 sont f
 utilisateur (je ne peux pas le faire) : publier une release, faire essayer l'exécutable
 Windows par un humain sur un vrai PC (jamais fait : la CI vérifie seulement qu'il démarre).
 
-1. **Maillage en C pour les profils + comparaison NASA TMR** (plaque plane, NACA 0012, SA /
-   SST). Vérifier d'abord que les données TMR sont accessibles depuis l'environnement ;
-   sinon l'écrire (validation partielle) et passer.
+1. **Maillage en C, partie 2 + NASA TMR** (partie 1 faite le 2026-10-10 : `type = "cgrid"`,
+   expérimental, README § 8 point 6). (a) Convergence : le résidu de ν̃ plafonne (sillage
+   proche, x = 1.03 à 1.5, mailles de 2e-5 le long de la coupure). Déjà essayé : 1re maille
+   croissante dans le sillage (rangées décalées, 87–90°, pire), pseudo_cfl (efforts stables,
+   résidus non), couplé (ν̃ 6.5e-5 à 3 000 it), 10 000 it SIMPLE (ν̃ 2e-5). Pistes : schéma
+   de ν̃ / limiteur sur mailles très allongées, lissage elliptique, 1re maille de la coupure
+   ≠ paroi avec rangées alignées. (b) C_l O / C : 1.7 à 1.8 % d'écart à toutes les finesses
+   → taille / forme du champ lointain (R = 30, 100, 300 pour les deux). (c) Étude O / C sur
+   3 maillages + GCI avec erreur d'itération contrôlée (pas monitor_tol seul ; script
+   `tools/validation/naca_o_c.py`). (d) NASA TMR : turbmodels.larc.nasa.gov refusé par la
+   politique réseau (403, 2026-10-10) ; demandé à l'utilisateur ; sinon validation partielle
+   écrite. Fait quand : (a) à (c) mesurés et écrits, (d) fait ou son impossibilité écrite.
 2. **Audit 3** (même méthode que l'audit 2 approfondi : campagnes `tools/audit/` + nouvelles),
    puis lots de correction. S'il trouve encore un résultat faux silencieux : corriger puis
    refaire un audit ; le jalon n'est pas atteint avant.
@@ -91,6 +100,10 @@ turbulence, viscoélasticité.
   (coût, R = 160 ?) avant de décider. Cylindre Re = 100 : même question (limite 7).
 - Cavité Re = 100 : u min converge vers −0.21395 ± 1e-4, à 1.4 % de Ghia (−0.21090) ;
   pas de référence plus fine vérifiée depuis l'environnement (recherche du 2026-10-09).
+- `pseudo_cfl` (NACA 0012 O-grid, exemple + pseudo_cfl = 20) : arrêt « Convergé » sur
+  `monitor_tol` à 1 542 it alors que les résidus ne descendent plus (p 1.3e-5 après
+  8 000 it) ; C_d 0.01264 contre 0.01255 sans pseudo_cfl (0.7 %). À examiner à l'audit 3 :
+  « Convergé » sur les seuls efforts, résidus hauts, sans message.
 
 
 ## Décisions qui appartiennent à l'utilisateur (ne pas trancher seul)

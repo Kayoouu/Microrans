@@ -43,6 +43,9 @@ les figures produites, pas seulement les chiffres. 2026-10-09 (lot GCI) : valida
 README trompeuse (pas un résultat du code) : « C_d 2.037 contre 2.045, écart 0.6 % » tenait
 au rayon du domaine (R = 20 : 2.080 ; R = 80 : 2.019) → l'audit 3 doit aussi vérifier que
 chaque accord de validation publié résiste au maillage et à la taille du domaine.
+2026-10-10 (maillage en C) : avec `pseudo_cfl = 20`, « Convergé » (arrêt sur `monitor_tol`)
+alors que les résidus ne descendent plus ; C_d à 0.7 % du calcul convergé sans pseudo_cfl
+(NACA 0012, O-grid). Candidat « convergence annoncée trompeuse » pour l'audit 3.
 
 ## Campagnes de non-régression (tools/audit) : dernier relevé
 
@@ -81,4 +84,10 @@ expliquer avant le lot. Sorties en dehors du dépôt (scratchpad), seulement le 
 - 2026-10-09 (rétro GCI) : étude complète lancée 3 fois (≈ 5 min chacune) : tol 1e-11
   jamais atteinte en 3D, puis ordre de la conduite faux (r calculé en 3D alors que seuls
   y, z étaient raffinés) vu seulement à la fin → skill `lot` § 2.4 : une étude longue
-  passe d'abord par le cas à solution exacte sur petits maillages.
+  passe d'abord par le cas à solution exacte sur petits maillages. Effet constaté au lot
+  maillage en C (2026-10-10) : étude essayée d'abord sur le niveau 0 (1 min), chaîne bonne.
+- 2026-10-10 (rétro maillage en C) : étude O / C lancée avant d'avoir mesuré l'erreur
+  d'itération ; découverte ensuite (pseudo_cfl : 0.7 %, plus que la bande GCI) → chiffres de
+  GCI non publiables, 25 min de calcul pour des tendances seulement → skill § 2.4 : erreur
+  d'itération mesurée avant une étude de maillage. Suite lancée puis un test ajouté (règle
+  § 3.1 déjà écrite, pas suivie) : suite relancée, 4 min perdues.

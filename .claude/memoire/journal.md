@@ -3,6 +3,35 @@
 Détail des chiffres : README (§ 6 validation, § 7 performances, § 8 limites) et messages de
 commit. Ce journal sert à retrouver ce qui a été fait, pourquoi, et ce qui a été constaté.
 
+## 2026-10-10 — Maillage en C, partie 1 (jalon A, point 1)
+
+- Relance quotidienne (03:53 UTC). Samedi ; campagne la plus ancienne (c8) du 2026-10-03,
+  7 jours pile : pas de campagne (lundi). CI verte au départ (be6a249).
+- NASA TMR : `turbmodels.larc.nasa.gov` refusé par la politique réseau de l'environnement
+  (403 au CONNECT) ; pas de contournement ; à faire autoriser par l'utilisateur.
+- `microrans/mesh2d/cgrid.py` (`[mesh] type = "cgrid"`, mêmes clés que l'O-grid + `n_wake`,
+  `wake_length`) : ligne j = 0 sillage → profil → sillage, coupure fusionnée (faces
+  internes), demi-cercle de rayon R centré au bord de fuite. Trois défauts trouvés en le
+  construisant : coin rentrant au bord de fuite (normales qui convergent → cellules
+  retournées ; corrigé par rotation monotone des normales), lignes resserrées au bord de
+  fuite jusqu'au bord extérieur (non-orthogonalité 86° ; points extérieurs du sillage
+  répartis), épaisseur commune en fraction de L (asymétrie 297 sur la coupure ; progression
+  propre à chaque ligne → 8.6). Validation des clés, FMG, interface (« expérimental »),
+  préréglage naca0012-cgrid, aide, glossaire, dépannage, référence des clés. 6 tests
+  (6 « échoue avant : OK »).
+- NACA 0012 α = 4°, Re = 1e6, SA, 128 mailles sur le profil : O (8 192 cellules) C_d 0.01255
+  (pression 0.00369), C_l 0.4332, convergé 834 it / 34 s ; C (12 288) non convergé à 3 000 it
+  (180 s), 10 000 it : C_d 0.01217 (0.00333), C_l 0.4252, résidu ν̃ 2e-5. Oscillation
+  localisée (différence de champs sur 50 it) dans le sillage proche, x = 1.03 à 1.5, mailles
+  de 2e-5 le long de la coupure. Essais : 1re maille croissante dans le sillage (pire,
+  rejeté et retiré), index_blend 0.8 (rien), pseudo_cfl 5 / 20 (efforts stables, résidus
+  non), first_height 2e-4 (stable mais C_d 0.01382), n_wake 64 (rien), couplé (ν̃ 6.5e-5).
+- 3 maillages chacun (pseudo_cfl 20, monitor_tol 1e-5) : traînée de pression C 6 à 10 % sous
+  O, frottement à 0.5 % près, C_l 1.7–1.8 % sous O même au plus fin (0.4251 / 0.4324).
+  GCI non publié : sur le même maillage en O, pseudo_cfl change C_d de 0.7 % (0.01264 contre
+  0.01255 ; arrêt monitor_tol à 1 542 it, résidus qui ne descendent plus), plus que la bande
+  GCI (0.62 %). Noté pour l'audit 3.
+
 ## 2026-10-09 — Lot GCI : convergence en maillage (jalon A, point 1)
 
 - Relance quotidienne (03:53 UTC). Vendredi, campagnes de moins de 7 jours : pas de

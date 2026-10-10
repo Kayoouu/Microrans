@@ -220,7 +220,7 @@ aires égale à l'aire exacte de la section (tests). Isosurfaces, plans obliques
 Liste complète des clés, avec leur signification et leurs valeurs par défaut : [`docs/reference_cas.md`](docs/reference_cas.md) (générée à partir des clés que le logiciel vérifie).
 
 ```toml
-[mesh]                     # rectangle | blocks | ogrid | unstructured | hybrid | file
+[mesh]                     # rectangle | blocks | ogrid | cgrid | unstructured | hybrid | file
 type = "hybrid"
 h_max = 1.0
 h_surface = 0.04
@@ -310,7 +310,7 @@ API Python : `from microrans.fv2d import Solver2D, Settings`, `from microrans.me
 | Domaine | Méthode | Inspiration |
 |---|---|---|
 | Géométrie | objets CSG (union, différence, intersection), NACA 4 chiffres, splines, import `.dat` (Selig/Lednicer), `.csv`, `.svg`, `.dxf` | Gmsh, SolidWorks→DXF |
-| Maillage | multi-blocs avec progression et arêtes courbes ; O-grid ; triangles (DistMesh) ; hybride couches limites + triangles ; qualité `checkMesh` | blockMesh, Gmsh, « inflation » Fluent |
+| Maillage | multi-blocs avec progression et arêtes courbes ; O-grid ; maillage en C (profils) ; triangles (DistMesh) ; hybride couches limites + triangles ; qualité `checkMesh` | blockMesh, Gmsh, « inflation » Fluent |
 | Formats | Gmsh `.msh` (v2.2/v4.1), SU2, VTK, OpenFOAM `polyMesh` | — |
 | Discrétisation | volumes finis colocalisés, polygones quelconques, Green-Gauss, correction non orthogonale limitée, convection `upwind` / `linearUpwind` | OpenFOAM |
 | Couplage p-U | SIMPLE / SIMPLEC ou **couplé** (u, v, p dans un seul système, flux de Rhie-Chow à diagonale non relaxée — Majumdar 1988) en stationnaire, PIMPLE (instationnaire), Rhie-Chow forme HbyA, `ddtCorr` cohérent (Tuković et al. 2018) | OpenFOAM ; « Coupled » de Fluent, pUCoupledFoam (foam-extend) |
@@ -586,6 +586,7 @@ bord de fuite du NACA (elle change C_l de près de 4 % en transsonique).
 | idem, **lois de paroi**, y⁺ ≈ 90 (2 688 cellules), SA / SST / k-ω | C_f(x = 0.97) | 0.00278 / 0.00273 / 0.00288 | idem |
 | Canal Re_τ = 2000, **lois de paroi**, 1re cellule à y⁺ ≈ 50 (24 cellules), SA / SST / k-ω | U_b / U_b résolu (1D, y⁺ = 0.2) | −2.3 % / +3.5 % / −0.5 % | même modèle résolu ; y⁺ ≈ 25 : −3.6 / +4.8 / −0.3 % |
 | NACA 0012, α = 4°, Re = 1e6, SA | C_l ; C_d | 0.433 ; 0.0125 | 2πα = 0.439 (démonstration, voir limites) |
+| idem, maillage en C (expérimental, 12 288 cellules) contre O-grid (8 192), 128 mailles sur le profil | C_d (dont pression) ; C_l | C : 0.01217 (0.00333) ; 0.4252 — O : 0.01255 (0.00369) ; 0.4332 | pas de référence embarquée ; écart non expliqué (§ 8, point 6) |
 | NACA 0012, polaire −4° à 14°, Re = 1e6, SA (8 192 cellules, 4 min) | pente dC_l/dα ; C_m quart de corde ; symétrie | 0.1083 /° ; \|C_m\| < 0.008 ; C_l(−α) = −C_l(α) à 5 chiffres | 2π = 0.1097 /° (profil mince) ; 0 (profil symétrique) ; exacte |
 | Cylindre Re = 20, écoulement incliné de 30° | C_d (axes écoulement) | écart 0.01 % avec 0° | invariance exacte |
 | Canal, débit imposé (plan / axisymétrique 360°) | débit en sortie | exact à 1e-9 | conservation |
@@ -890,8 +891,19 @@ redonne l'ancien fichier texte, identique octet pour octet.
 5. **k-ω / SST** : sensibles à la hauteur de la 1re maille (condition pariétale de Menter) ;
    plaque plane SST 5 % sous les corrélations.
 6. **Maillages** : triangles purs → traînée 3.6 % plus forte que l'hybride à tailles égales ;
-   pas de maillage en C (sillage des profils mal résolu par l'O-grid, traînée de pression du
-   NACA probablement surestimée) ; DistMesh lent au-delà de ~15 000 cellules. Frontières
+   DistMesh lent au-delà de ~15 000 cellules. **Maillage en C** (`type = "cgrid"`,
+   expérimental) : profils à bord de fuite fermé ou pointu seulement. Sur le NACA 0012
+   (α = 4°, Re = 1e6, SA, 128 mailles sur le profil ; mesures du 2026-10-10), le résidu de ν̃
+   plafonne (oscillation dans le sillage proche, le long de la coupure, mailles de 2e-5) :
+   « NON CONVERGÉ » après les 3 000 itérations de l'exemple, résidu de ν̃ encore à 2e-5 après
+   10 000 (551 s). Par rapport à l'O-grid, sur 3 maillages (64 à 256 mailles sur le profil) :
+   traînée de pression 6 à 10 % plus basse, frottement égal à 0.5 % près, C_l 1.7 à 1.8 %
+   plus bas même sur les plus fins (cause non établie ; taille et forme du champ lointain à
+   étudier). Faute de référence (données NASA TMR inaccessibles depuis l'environnement de
+   développement), on ne sait pas encore lequel est le plus juste. Avec `pseudo_cfl = 20`, le
+   même cas en O s'arrête sur `monitor_tol` (1 542 itérations) alors que ses résidus ne
+   descendent plus (p : 1.3e-5 après 8 000 itérations) : C_d 0.01264 au lieu de 0.01255 sans
+   `pseudo_cfl` (0.7 %). Frontières
    périodiques (`[mesh] periodic`) : maillages rectangle, multi-blocs et pavé seulement (et
    faces z d'une extrusion) ; pour un maillage importé (Gmsh, SU2), en O, en triangles ou
    hybride, la clé est ignorée avec un avertissement.
@@ -997,7 +1009,8 @@ microrans/
   studies.py             études précision / coût des schémas en temps
   grid.py numerics.py flow.py solver.py cases.py   solveur 1D (canal) et ses schémas en temps
   models/                modèles de turbulence (communs 1D/2D), transition γ
-  mesh2d/                géométrie CSG, blocs, O-grid, triangles, hybride, E/S, qualité, tracés
+  mesh2d/                géométrie CSG, blocs, O-grid, maillage en C, triangles, hybride, E/S,
+                         qualité, tracés
   mesh3d/                maillage 3D (hexaèdres, prismes…), pavé, extrusion, coupes planes
   fv2d/
     fvm.py               opérateurs volumes finis, assemblage CSR

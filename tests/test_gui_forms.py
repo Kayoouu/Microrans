@@ -691,3 +691,28 @@ def test_3d_case_meshed_run_and_plotted(win, monkeypatch, tmp_path):
     win.slice_axis.setCurrentIndex(0)
     win.slice_value.set_value(None)
     assert not win.errors
+
+
+def test_cgrid_mesh_type_form(win):
+    """Maillage en C : proposé dans la liste, profil NACA 0012 par défaut (un cercle n'a
+    pas de bord de fuite), mailles de sillage lues et écrites, un seul corps."""
+    from microrans.gui.widgets import set_combo
+    from microrans.mesh2d.builder import build_mesh
+    win.new_case()
+    win.cfg.pop("bodies", None)
+    assert set_combo(win.mesh_type, "cgrid")
+    win._mesh_type_changed()
+    assert win.cfg["bodies"][0]["type"] == "naca"
+    assert win.box_ogrid.title().startswith("Maillage en C") and win.wake_row.isEnabled()
+    assert not win.body_buttons[0].isEnabled()
+    win.wake_row.setValue(10)
+    win._store_forms()
+    m = win.cfg["mesh"]
+    assert m["type"] == "cgrid" and m["n_wake"] == 10
+    m.update(n_around=48, n_radial=16, first_height=1e-3)
+    mesh = build_mesh(win.cfg)
+    assert mesh.n_cells == (48 + 2 * 10) * 16
+    set_combo(win.mesh_type, "ogrid")                        # retour en O : n_wake retiré
+    win._mesh_type_changed()
+    win._store_forms()
+    assert "n_wake" not in win.cfg["mesh"] and not win.wake_row.isEnabled()

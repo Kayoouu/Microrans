@@ -34,6 +34,8 @@ calculé tant qu'il en reste une.
 | `… se recouvrent ou se touchent : ils formeront un seul obstacle` (ATTENTION) | même chose en `unstructured` | voulu (obstacle composé) ou corps à écarter |
 | `écart … < 2 × épaisseur des couches de paroi` | couches de paroi qui se croisent (`hybrid`) | écarter les corps, ou réduire `[mesh.layers]` |
 | `le maillage en O entoure exactement un corps` | plusieurs corps en `ogrid` | maillage `unstructured` ou `hybrid` |
+| `le maillage en C entoure exactement un profil` | plusieurs corps en `cgrid` | maillage `unstructured` ou `hybrid` |
+| `Maillage en C : pas de bord de fuite pointu` | bord de fuite épais (NACA `trailing_edge = "open"`, fichier de points) ou corps arrondi | `trailing_edge = "closed"` ou `"sharp"` ; sinon `ogrid` ou `hybrid` |
 | `lois de paroi incompatibles avec le modèle ke` (ou `sst_gamma`) | ces modèles exigent y⁺ ≈ 1 | `wall_treatment = "resolved"`, ou SA, k-ω, SST |
 | `non newtonien en laminaire uniquement` | loi de viscosité + modèle de turbulence | `model = "laminar"` |
 | `[mesh] 1 000 000 cellules : prévoir ~1.2 Go de mémoire et ~15 s par itération` (ATTENTION) | maillage structuré de plus de 500 000 cellules | régler d'abord le cas sur un maillage plus grossier |

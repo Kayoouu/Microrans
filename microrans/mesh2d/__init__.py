@@ -6,11 +6,12 @@ from .geometry import (NACA4, Circle, Ellipse, Polygon, Rectangle, Shape, Spline
                        shape_from_dict)
 from .io import read_curve, read_mesh, write_mesh
 from .mesh import Mesh2D, Patch
+from .cgrid import c_grid
 from .ogrid import o_grid
 from .unstructured import hybrid_mesh, size_function, triangle_quality, triangulate
 
 __all__ = ["Mesh2D", "Patch", "Shape", "Circle", "Rectangle", "Polygon", "Ellipse", "NACA4",
            "Spline", "shape_from_dict", "block_mesh", "rectangle_mesh", "channel_mesh",
            "cavity_mesh", "backward_facing_step_mesh", "flat_plate_mesh", "grading_distribution",
-           "o_grid", "triangulate", "hybrid_mesh", "size_function", "triangle_quality",
+           "o_grid", "c_grid", "triangulate", "hybrid_mesh", "size_function", "triangle_quality",
            "read_mesh", "write_mesh", "read_curve"]

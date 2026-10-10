@@ -4,6 +4,7 @@ préréglage. Le type de maillage se choisit avec `mesh.type` :
   blocks        multi-blocs structuré (syntaxe proche de blockMeshDict)
   rectangle     rectangle structuré (avec grading)
   ogrid         structuré en O autour d'un corps
+  cgrid         structuré en C autour d'un profil (bord de fuite fermé ou pointu)
   unstructured  triangles (DistMesh), raffinement autour des corps
   hybrid        couches de quadrilatères aux parois + triangles
   file          lecture d'un fichier .msh (Gmsh) ou .su2
@@ -24,10 +25,11 @@ from .blocks import (backward_facing_step_mesh, block_mesh, cavity_mesh, channel
 from .geometry import Circle, NACA4, Rectangle, shape_from_dict
 from .io import read_mesh
 from .mesh import Mesh2D
+from .cgrid import c_grid
 from .ogrid import o_grid
 from .unstructured import hybrid_mesh, triangulate
 
-MESH_TYPES = ("blocks", "rectangle", "ogrid", "unstructured", "hybrid", "file", "box")
+MESH_TYPES = ("blocks", "rectangle", "ogrid", "cgrid", "unstructured", "hybrid", "file", "box")
 
 
 def load_config(path) -> dict:
@@ -125,6 +127,12 @@ def _build_mesh(cfg: dict, base_dir=".", verbose: bool = False) -> Mesh2D:
         return o_grid(bodies[0], m.get("n_around", 128), m.get("n_radial", 64),
                       m.get("farfield_radius", 20.0), m.get("first_height", 1e-3),
                       m.get("center"))
+    if kind == "cgrid":
+        if len(bodies) != 1:
+            raise ValueError("Le maillage en C demande exactement un corps (un profil).")
+        return c_grid(bodies[0], m.get("n_around", 128), m.get("n_radial", 64),
+                      m.get("n_wake", 32), m.get("farfield_radius", 20.0),
+                      m.get("wake_length"), m.get("first_height", 1e-3))
     outer = _outer(cfg)
     refs = []
     for b in bodies:
@@ -166,6 +174,7 @@ PRESETS = {
     "cylinder-hybrid": lambda: hybrid_mesh(
         _cyl_domain(), [Circle((0, 0), 0.5, "cylinder").as_wall()], 1.0, 0.04, 12, 2e-3, 1.2, 0.12),
     "naca0012-ogrid": lambda: o_grid(NACA4("0012", name="airfoil"), 192, 96, 30.0, 1e-5),
+    "naca0012-cgrid": lambda: c_grid(NACA4("0012", name="airfoil"), 192, 96, 48, 30.0, None, 1e-5),
     "naca0012-hybrid": lambda: hybrid_mesh(
         Rectangle(-5, -5, 10, 5, names={"left": "inlet", "right": "outlet", "bottom": "bottom",
                                         "top": "top"}),

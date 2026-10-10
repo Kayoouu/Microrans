@@ -46,6 +46,11 @@ def coarsen_config(cfg: dict, level: int) -> dict | None:
             m["n_around"] = na + (na % 2)            # pair : la coupe à l'axe reste possible
             m["n_radial"] = _half(m.get("n_radial", 64), 4)
             m["first_height"] = 2.0 * m.get("first_height", 1e-3)
+        elif kind == "cgrid":
+            m["n_around"] = _half(m.get("n_around", 128), 8)
+            m["n_radial"] = _half(m.get("n_radial", 64), 4)
+            m["n_wake"] = _half(m.get("n_wake", 32), 4)
+            m["first_height"] = 2.0 * m.get("first_height", 1e-3)
         elif kind in ("unstructured", "hybrid"):
             m["h_max"] = 2.0 * m.get("h_max", 1.0)
             m["h_surface"] = 2.0 * m.get("h_surface", 0.05)
