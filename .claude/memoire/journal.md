@@ -31,6 +31,9 @@ commit. Ce journal sert à retrouver ce qui a été fait, pourquoi, et ce qui a 
   GCI non publié : sur le même maillage en O, pseudo_cfl change C_d de 0.7 % (0.01264 contre
   0.01255 ; arrêt monitor_tol à 1 542 it, résidus qui ne descendent plus), plus que la bande
   GCI (0.62 %). Noté pour l'audit 3.
+- Commit 38d02bb (04:45) ; suite 511 réussis / 2 ignorés (8.9 min) ; CI verte : tests
+  https://github.com/Kayoouu/Microrans/actions/runs/38025180188, exécutables
+  https://github.com/Kayoouu/Microrans/actions/runs/38025181460.
 
 ## 2026-10-09 — Lot GCI : convergence en maillage (jalon A, point 1)
 

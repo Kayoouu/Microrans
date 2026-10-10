@@ -22,6 +22,7 @@ et trouvés plus tard (à remplir rétroactivement).
 | 2026-10-07 | F3 (7 points) | 1 à 2 lots | 55 min (03:53 → commit 04:48 ; 3 suites dont 2 en trop, 10 min chacune) | 8 (+1 outil) | — | suite lancée trop tôt et en-tête CSV figé dans un ancien test → skill § 3.1 (suite sur le code fini, grep de l'ancien format). Outils : echoue_avant a signalé 2 preuves faibles, corrigées ; ab.py amélioré (colonnes ajoutées) |
 | 2026-10-08 | F4 (6 points) | 1 lot | 03:53 → commit 04:48 (dont 30 min de mesure du cylindre RK3 en arrière-plan et 10 min d'A/B raccourci ; 1 suite) | 5 | — | chiffre du README faux de ×1.7 le même code selon le jour → durées en fourchette datée (CLAUDE.md) ; écart inattendu → A/B raccourci d'abord |
 | 2026-10-09 | GCI (3 cas + taille de domaine) | 1 lot | 03:53 → commit 04:46, CI verte 04:56 (étude de 12 calculs lancée 3 fois, ≈ 5 min chacune ; 1 suite) | 3 | — | étude complète relancée pour des erreurs visibles sur le cas exact (tol 3D, r de la conduite) → skill § 2.4 : cas exact et petits maillages d'abord |
+| 2026-10-10 | Maillage en C, partie 1 | 1 à 2 lots (estimé à 1 au départ) | 03:53 → commit 04:45, CI verte 04:53 (≈ 25 min de calculs de diagnostic, étude O / C 7 min, 2 suites dont 1 arrêtée) | 6 | — | erreur d'itération mesurée après l'étude, pas avant → skill § 2.4 ; suite lancée avant le dernier test (§ 3.1 non suivi) |
 
 ## Indicateur du jalon A : résultats faux silencieux trouvés par audit
 

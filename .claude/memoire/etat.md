@@ -1,10 +1,14 @@
-# État du projet (mis à jour le 2026-10-09)
+# État du projet (mis à jour le 2026-10-10)
 
 ## Où on en est
 
 - microrans : outil RANS / URANS 1D, 2D, 3D (périmètre réduit) avec mailleur, interface
   PySide6 et exécutables PyInstaller Windows / Linux (CI GitHub Actions).
-- Dernier lot terminé : **GCI — incertitude de maillage** (2026-10-09, relance
+- Dernier lot terminé : **maillage en C, partie 1** (2026-10-10, relance quotidienne ;
+  jalon A) : `[mesh] type = "cgrid"` (expérimental) ; NACA 0012 SA : résidu de ν̃ qui
+  plafonne (sillage proche, mailles de 2e-5 le long de la coupure), C_d 0.01217 contre
+  0.01255 en O, C_l 1.8 % plus bas (cause non établie) ; NASA TMR refusé par le réseau
+  (403). Partie 2 en tête de liste. Avant : **GCI — incertitude de maillage** (2026-10-09, relance
   quotidienne ; jalon A, point 1) : `microrans/gci.py` (Celik et al. 2008, testé sur
   l'exemple publié), `tools/validation/gci_maillage.py`, README § 6 « Incertitude de
   maillage » : cylindre Re = 20 p 2.08, GCI 0.09 % ; cavité p 2.47, GCI 0.05 % (u min
@@ -28,10 +32,10 @@
   par point (chacun échoue sur l'ancien code). Puis **C15** (l'utilisateur m'a laissé
   choisir « la meilleure solution ») : une seule vitesse de référence. Avant : audit 2
   approfondi (576a0bc, e5deb38).
-- Exécutables de d5fa2d6 (GCI) : run https://github.com/Kayoouu/Microrans/actions/runs/37885435897
-  (Windows : artefact 11595494995, Linux : 11596302463 ; expirent le 2027-01-07). CI verte
-  (tests https://github.com/Kayoouu/Microrans/actions/runs/37885434071).
-- Suite de tests : 507 (505 réussis, 2 ignorés), 5 à 10 min en série sur la machine de session.
+- Exécutables de 38d02bb (maillage en C) : run https://github.com/Kayoouu/Microrans/actions/runs/38025181460
+  (Windows : artefact 11660058761, Linux : 11659318057 ; expirent le 2027-01-08). CI verte
+  (tests https://github.com/Kayoouu/Microrans/actions/runs/38025180188).
+- Suite de tests : 513 (511 réussis, 2 ignorés), 5 à 10 min en série sur la machine de session.
 - Objectif accepté le 2026-10-05 : jalon A (2D académique crédible), puis B (3D
   académique, petite géométrie) ; C (pré-industriel) non visé. Détail : `a_faire.md`.
 - Méthode outillée (2026-10-05) : skill `lot`, `tools/dev/`, hooks avant poussée et fin de
