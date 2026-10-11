@@ -1,4 +1,6 @@
 # Polaire du profil NACA 0012, Re = 1e6, Spalart-Allmaras, maillage en O.
+# Champ lointain à 30 cordes : même profil à 4° (naca0012_sa), Cl 1.3 % plus bas qu'à 300
+# cordes (README § 8, 6b).
 # L'incidence est celle de l'écoulement amont ([physics] angle_of_attack) : un seul maillage
 # pour toute la polaire ; chaque point démarre de la solution du précédent (continuation).
 # microrans polar naca0012_polaire --alpha -4 14 2      (ou : microrans sweep naca0012_polaire)

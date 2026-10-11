@@ -585,7 +585,7 @@ bord de fuite du NACA (elle change C_l de près de 4 % en transsonique).
 | Plaque plane Re_L = 5e6, SA / SST, y⁺ ≈ 0.5 (7 168 cellules) | C_f(x = 0.97) | 0.00273 / 0.00260 | 0.00273 (Schultz-Grunow), 0.00287 (White) |
 | idem, **lois de paroi**, y⁺ ≈ 90 (2 688 cellules), SA / SST / k-ω | C_f(x = 0.97) | 0.00278 / 0.00273 / 0.00288 | idem |
 | Canal Re_τ = 2000, **lois de paroi**, 1re cellule à y⁺ ≈ 50 (24 cellules), SA / SST / k-ω | U_b / U_b résolu (1D, y⁺ = 0.2) | −2.3 % / +3.5 % / −0.5 % | même modèle résolu ; y⁺ ≈ 25 : −3.6 / +4.8 / −0.3 % |
-| NACA 0012, α = 4°, Re = 1e6, SA | C_l ; C_d | 0.433 ; 0.0125 | 2πα = 0.439 (démonstration, voir limites) |
+| NACA 0012, α = 4°, Re = 1e6, SA, champ lointain à R = 30 cordes | C_l ; C_d | 0.433 ; 0.0125 (R = 300 : 0.439 ; 0.0122) | 2πα = 0.439 (démonstration, voir limites) ; effet du domaine : § 8, point 6b |
 | idem, maillage en C (expérimental, 12 288 cellules) contre O-grid (8 192), 128 mailles sur le profil | C_d (dont pression) ; C_l | C : 0.01217 (0.00333) ; 0.4252 — O : 0.01255 (0.00369) ; 0.4332 | pas de référence embarquée ; écart non expliqué (§ 8, point 6) |
 | NACA 0012, polaire −4° à 14°, Re = 1e6, SA (8 192 cellules, 4 min) | pente dC_l/dα ; C_m quart de corde ; symétrie | 0.1083 /° ; \|C_m\| < 0.008 ; C_l(−α) = −C_l(α) à 5 chiffres | 2π = 0.1097 /° (profil mince) ; 0 (profil symétrique) ; exacte |
 | Cylindre Re = 20, écoulement incliné de 30° | C_d (axes écoulement) | écart 0.01 % avec 0° | invariance exacte |
@@ -893,20 +893,29 @@ redonne l'ancien fichier texte, identique octet pour octet.
 6. **Maillages** : triangles purs → traînée 3.6 % plus forte que l'hybride à tailles égales ;
    DistMesh lent au-delà de ~15 000 cellules. **Maillage en C** (`type = "cgrid"`,
    expérimental) : profils à bord de fuite fermé ou pointu seulement. Sur le NACA 0012
-   (α = 4°, Re = 1e6, SA, 128 mailles sur le profil ; mesures du 2026-10-10), le résidu de ν̃
-   plafonne (oscillation dans le sillage proche, le long de la coupure, mailles de 2e-5) :
-   « NON CONVERGÉ » après les 3 000 itérations de l'exemple, résidu de ν̃ encore à 2e-5 après
-   10 000 (551 s). Par rapport à l'O-grid, sur 3 maillages (64 à 256 mailles sur le profil) :
-   traînée de pression 6 à 10 % plus basse, frottement égal à 0.5 % près, C_l 1.7 à 1.8 %
-   plus bas même sur les plus fins (cause non établie ; taille et forme du champ lointain à
-   étudier). Faute de référence (données NASA TMR inaccessibles depuis l'environnement de
-   développement), on ne sait pas encore lequel est le plus juste. Avec `pseudo_cfl = 20`, le
+   (α = 4°, Re = 1e6, SA, 128 mailles sur le profil ; mesures des 10 et 11 octobre 2026), les
+   résidus descendent lentement, mais régulièrement (ν̃ divisé par 2 environ toutes les
+   2 500 itérations ; cause non établie) : « NON CONVERGÉ » avec les 3 000 itérations et
+   `tol = 1e-5` de l'exemple. `relax_turb = 0.5` aide un peu (ν̃ 4.8e-5 au lieu de 8.8e-5 à
+   3 000 itérations). Les efforts, eux, varient de moins de 0.05 % entre 3 000 et 6 000
+   itérations. Écart avec l'O-grid, qui ne vient ni du maillage (3 finesses, 64 à 256
+   mailles sur le profil) ni de la taille du domaine (R = 30, 100, 300) : C_l 1.6 à 1.8 %
+   plus bas, C_d 2.8 à 3.8 % plus bas (traînée de pression 6 à 13 % plus basse, frottement égal
+   à 0.5 % près). Faute de référence (données NASA TMR inaccessibles depuis l'environnement
+   de développement), on ne sait pas lequel est le plus juste. Avec `pseudo_cfl = 20`, le
    même cas en O s'arrête sur `monitor_tol` (1 542 itérations) alors que ses résidus ne
    descendent plus (p : 1.3e-5 après 8 000 itérations) : C_d 0.01264 au lieu de 0.01255 sans
    `pseudo_cfl` (0.7 %). Frontières
    périodiques (`[mesh] periodic`) : maillages rectangle, multi-blocs et pavé seulement (et
    faces z d'une extrusion) ; pour un maillage importé (Gmsh, SU2), en O, en triangles ou
    hybride, la clé est ignorée avec un avertissement.
+6b. **Taille du domaine autour d'un profil** (pas de correction tourbillonnaire au champ
+   lointain) : NACA 0012, α = 4°, Re = 1e6, SA, maillage de l'exemple, R = 30 / 100 / 300
+   cordes : C_l 0.4332 / 0.4377 / 0.4390, C_d 0.01255 / 0.01226 / 0.01217 (O-grid ; erreur
+   d'itération < 0.05 %, mesure du 2026-10-11, `tools/validation/naca_domaine.py`).
+   Extrapolé à R infini (ordre apparent ≈ 1, comme attendu) : C_l ≈ 0.4396, C_d ≈ 0.01212.
+   Les exemples NACA (R = 30) ont donc C_l environ 1.5 % trop bas et C_d environ 3.5 % trop
+   haut à cause du domaine ; la pente de la polaire (0.1083 /°) est mesurée à R = 30.
 7. **Cylindre Re = 100** : St 0.160–0.163 contre 0.164–0.167 publié ; pas d'étude complète de
    convergence en maillage et en taille de domaine. À Re = 20, C_d varie de 2 % quand le
    rayon du domaine double (R = 20 → 40), bien plus que l'incertitude de maillage (§ 6).

@@ -3,6 +3,30 @@
 Détail des chiffres : README (§ 6 validation, § 7 performances, § 8 limites) et messages de
 commit. Ce journal sert à retrouver ce qui a été fait, pourquoi, et ce qui a été constaté.
 
+## 2026-10-11 — Maillage en C, partie 2 ; taille du domaine des profils
+
+- Relance quotidienne (03:53 UTC). Dimanche ; c8 datait de 8 jours : campagnes c1, c6, c7,
+  c8 d'abord. c1 25 / 25 ; c7 18 / 18 au bit près (Sod ignoré) ; c6 : identiques hors
+  chemins de fichiers (lancée en même temps que c8, elle a ramassé un `_audit_*.toml`
+  temporaire de c8 : pas une régression) ; c8 à 20 itérations : écarts relatifs sur des
+  grandeurs nulles (C_l de plaque, vitesse moyenne d'une cavité ~1e-15) ; relancée
+  convergée (4 000 it) sur ces 4 cas : C_d ≤ 4e-6, C_m ≤ 9e-6, comme le relevé (≤ 2e-6 sur
+  les cas déjà mesurés : plaques SA 3e-7, lois de paroi 8e-7). CI verte (e035fd4).
+  TMR toujours refusé.
+- Convergence du maillage en C : ce n'est pas une oscillation (ma conclusion d'hier était
+  fausse) : décroissance régulière, ν̃ ÷2 environ toutes les 2 500 it (10 000 it). Sans effet
+  : convection_U limité ou upwind (ν̃ 8.3e-5 à 3 000 it) ; SST lent aussi (k 4e-6). Aide :
+  relax_turb 0.5 (ν̃ 4.8e-5 à 3 000, 2.8e-5 à 6 000), 0.3 (3.5e-5 à 3 000). Efforts stables à
+  0.05 % entre 3 000 et 6 000 it. Cause non établie (mailles 10 fois plus épaisses le long
+  de la coupure ne réglaient pas non plus).
+- Taille du domaine (`tools/validation/naca_domaine.py`, relax_turb 0.5, 3 000 + 3 000 it,
+  erreur d'itération < 0.05 %) : O R = 30 / 100 / 300 : C_l 0.43318 / 0.43769 / 0.43897,
+  C_d 0.012548 / 0.012257 / 0.012170 → R infini 0.4396 / 0.01212 (ordre ≈ 1) ; C : C_l
+  0.42521 / 0.43008 / 0.43174, C_d 0.012170 / 0.011834 / 0.011709 → 0.4328 / 0.01162.
+  L'écart O / C reste (C_l 1.84 / 1.74 / 1.65 %) : pas un effet de domaine. Les exemples
+  NACA (R = 30) ont C_l ≈ −1.5 %, C_d ≈ +3.5 % d'erreur de domaine : écrit (README § 6,
+  § 8 6 et 6b, en-têtes des deux exemples NACA).
+
 ## 2026-10-10 — Maillage en C, partie 1 (jalon A, point 1)
 
 - Relance quotidienne (03:53 UTC). Samedi ; campagne la plus ancienne (c8) du 2026-10-03,

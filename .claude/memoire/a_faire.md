@@ -7,7 +7,7 @@ inutile (mesure à l'appui), l'écrire dans le journal et passer à la suivante.
 
 ## En cours
 
-Rien (maillage en C, partie 1, terminé le 2026-10-10).
+Rien (maillage en C, partie 2, terminé le 2026-10-11).
 
 ## À faire
 
@@ -26,18 +26,14 @@ silencieux, l'étude GCI (faite le 2026-10-09, README § 6) et le point 1 sont f
 utilisateur (je ne peux pas le faire) : publier une release, faire essayer l'exécutable
 Windows par un humain sur un vrai PC (jamais fait : la CI vérifie seulement qu'il démarre).
 
-1. **Maillage en C, partie 2 + NASA TMR** (partie 1 faite le 2026-10-10 : `type = "cgrid"`,
-   expérimental, README § 8 point 6). (a) Convergence : le résidu de ν̃ plafonne (sillage
-   proche, x = 1.03 à 1.5, mailles de 2e-5 le long de la coupure). Déjà essayé : 1re maille
-   croissante dans le sillage (rangées décalées, 87–90°, pire), pseudo_cfl (efforts stables,
-   résidus non), couplé (ν̃ 6.5e-5 à 3 000 it), 10 000 it SIMPLE (ν̃ 2e-5). Pistes : schéma
-   de ν̃ / limiteur sur mailles très allongées, lissage elliptique, 1re maille de la coupure
-   ≠ paroi avec rangées alignées. (b) C_l O / C : 1.7 à 1.8 % d'écart à toutes les finesses
-   → taille / forme du champ lointain (R = 30, 100, 300 pour les deux). (c) Étude O / C sur
-   3 maillages + GCI avec erreur d'itération contrôlée (pas monitor_tol seul ; script
-   `tools/validation/naca_o_c.py`). (d) NASA TMR : turbmodels.larc.nasa.gov refusé par la
-   politique réseau (403, 2026-10-10) ; demandé à l'utilisateur ; sinon validation partielle
-   écrite. Fait quand : (a) à (c) mesurés et écrits, (d) fait ou son impossibilité écrite.
+1. **Maillage en C, partie 3 + NASA TMR** (parties 1 et 2 faites les 10 et 11 octobre ;
+   README § 8 points 6 et 6b). Reste : (a) écart O / C non expliqué (C_l 1.6 à 1.8 %, C_d 2.8
+   à 3.8 %, persistant à 3 finesses et à R = 30 / 100 / 300) : comparer les champs près du
+   bord de fuite (Cp, frottement, ν̃) des deux maillages, et l'O-grid à bord de fuite
+   « sharp » ; (b) convergence lente du C (ν̃ ÷2 / 2 500 it ; relax_turb 0.5 aide un peu) ;
+   (c) NASA TMR : turbmodels.larc.nasa.gov refusé (403, 10 et 11 octobre), demandé à
+   l'utilisateur ; sans réponse, écrire la validation partielle et passer à l'audit 3.
+   Fait quand : (a) cause trouvée ou écrite, (c) fait ou impossibilité écrite.
 2. **Audit 3** (même méthode que l'audit 2 approfondi : campagnes `tools/audit/` + nouvelles),
    puis lots de correction. S'il trouve encore un résultat faux silencieux : corriger puis
    refaire un audit ; le jalon n'est pas atteint avant.
@@ -104,6 +100,12 @@ turbulence, viscoélasticité.
   `monitor_tol` à 1 542 it alors que les résidus ne descendent plus (p 1.3e-5 après
   8 000 it) ; C_d 0.01264 contre 0.01255 sans pseudo_cfl (0.7 %). À examiner à l'audit 3 :
   « Convergé » sur les seuls efforts, résidus hauts, sans message.
+- Exemples NACA (R = 30) : erreur de domaine C_l −1.5 %, C_d +3.5 % (R → ∞ extrapolé,
+  2026-10-11). Options : R = 100 ou 300 (+9 % / +19 % de cellules à même 1re maille et
+  même progression) ou correction tourbillonnaire du champ lointain ; change les chiffres
+  documentés et la polaire : à mesurer (coût) avant de décider.
+- Campagnes : c8 écrit des `_audit_*.toml` temporaires dans microrans/examples ; ne pas
+  lancer c1 / c6 en même temps que c8 (c6 les a ramassés le 2026-10-11).
 
 
 ## Décisions qui appartiennent à l'utilisateur (ne pas trancher seul)

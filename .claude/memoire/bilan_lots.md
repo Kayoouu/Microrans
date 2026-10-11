@@ -23,6 +23,7 @@ et trouvés plus tard (à remplir rétroactivement).
 | 2026-10-08 | F4 (6 points) | 1 lot | 03:53 → commit 04:48 (dont 30 min de mesure du cylindre RK3 en arrière-plan et 10 min d'A/B raccourci ; 1 suite) | 5 | — | chiffre du README faux de ×1.7 le même code selon le jour → durées en fourchette datée (CLAUDE.md) ; écart inattendu → A/B raccourci d'abord |
 | 2026-10-09 | GCI (3 cas + taille de domaine) | 1 lot | 03:53 → commit 04:46, CI verte 04:56 (étude de 12 calculs lancée 3 fois, ≈ 5 min chacune ; 1 suite) | 3 | — | étude complète relancée pour des erreurs visibles sur le cas exact (tol 3D, r de la conduite) → skill § 2.4 : cas exact et petits maillages d'abord |
 | 2026-10-10 | Maillage en C, partie 1 | 1 à 2 lots (estimé à 1 au départ) | 03:53 → commit 04:45, CI verte 04:53 (≈ 25 min de calculs de diagnostic, étude O / C 7 min, 2 suites dont 1 arrêtée) | 6 | — | erreur d'itération mesurée après l'étude, pas avant → skill § 2.4 ; suite lancée avant le dernier test (§ 3.1 non suivi) |
+| 2026-10-11 | Maillage en C, partie 2 (+ campagnes c1, c6, c7, c8) | 1 lot | 03:53 → commit à noter (campagnes 35 min en parallèle du lot, étude de domaine 25 min) | 0 (script de validation) | conclusion « oscillation » du 2026-10-10 fausse (décroissance lente) | c6 et c8 lancées ensemble : faux écart (fichier temporaire de c8) → noté ; relire un historique complet avant de conclure « oscillation » |
 
 ## Indicateur du jalon A : résultats faux silencieux trouvés par audit
 
@@ -55,10 +56,10 @@ expliquer avant le lot. Sorties en dehors du dépôt (scratchpad), seulement le 
 
 | Campagne | Date | Résultat |
 |---|---|---|
-| c1 exemples en ligne de commande | 2026-10-04 (F1) | 25 / 25 |
-| c6 interface = ligne de commande | 2026-10-04 (C15) | 22 exemples identiques au bit près (hors chemins), Sod ignoré |
-| c7 reprise exacte | 2026-10-05 (F1b) | 18 / 18 au bit près, Sod non découpable |
-| c8 2D = 3D une couche | 2026-10-03 (audit 2 approfondi) | convergé : écart ≤ 2·10⁻⁶ ; perturbation 3D corrigée depuis (C16) |
+| c1 exemples en ligne de commande | 2026-10-11 (maillage en C 2) | 25 / 25 |
+| c6 interface = ligne de commande | 2026-10-11 (maillage en C 2) | 22 exemples identiques au bit près hors chemins de fichiers, Sod ignoré (ne pas lancer avec c8 : fichiers `_audit_*` temporaires) |
+| c7 reprise exacte | 2026-10-11 (maillage en C 2) | 18 / 18 au bit près, Sod non découpable |
+| c8 2D = 3D une couche | 2026-10-11 (maillage en C 2) | convergé (4 000 it, 4 cas) : C_d ≤ 4e-6, C_m ≤ 9e-6 ; à 20 it, écarts relatifs trompeurs sur des grandeurs nulles (C_l de plaque, vitesse moyenne de cavité) |
 | c3b / c3c clés numériques (texte, −1) | 2026-10-06 (F2) | 92 / 92 et 24 / 24 refusés clairement avant le calcul |
 | c15 arrêts et durée de l'interface | 2026-10-07 (F3) | arrêt maillage 0.5 s après la demande (audit 2 : 21.8 s) ; cavité interface 9.8 s / ligne de commande 9.4 s (audit 2 : 10.2 / 4.9) ; arrêt calcul 4.4 s (2.4 s ; machine ≈ 2 fois plus lente ce jour : ligne de commande 9.4 s contre 4.9) ; balayage 1.2 s ; mémoire stable (347 → 340 Mo) |
 
@@ -92,3 +93,9 @@ expliquer avant le lot. Sorties en dehors du dépôt (scratchpad), seulement le 
   GCI non publiables, 25 min de calcul pour des tendances seulement → skill § 2.4 : erreur
   d'itération mesurée avant une étude de maillage. Suite lancée puis un test ajouté (règle
   § 3.1 déjà écrite, pas suivie) : suite relancée, 4 min perdues.
+- 2026-10-11 (rétro maillage en C 2) : la veille, « le résidu plafonne, oscillation » écrit
+  au README sur la foi d'une différence de champs sur 50 itérations ; l'historique complet
+  (10 000 it) montrait une décroissance régulière → corrigé. Règle : un diagnostic de
+  convergence se fait sur l'historique entier, pas sur un instantané. Erreur d'itération
+  mesurée avant l'étude de domaine (règle du 2026-10-10 appliquée : chiffres publiables du
+  premier coup).
