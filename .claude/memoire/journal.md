@@ -26,6 +26,9 @@ commit. Ce journal sert à retrouver ce qui a été fait, pourquoi, et ce qui a 
   L'écart O / C reste (C_l 1.84 / 1.74 / 1.65 %) : pas un effet de domaine. Les exemples
   NACA (R = 30) ont C_l ≈ −1.5 %, C_d ≈ +3.5 % d'erreur de domaine : écrit (README § 6,
   § 8 6 et 6b, en-têtes des deux exemples NACA).
+- Commit 1a21eb7 (04:36) ; suite 511 / 2 ignorés (6.9 min) ; CI verte : tests
+  https://github.com/Kayoouu/Microrans/actions/runs/38112114733, exécutables
+  https://github.com/Kayoouu/Microrans/actions/runs/38112114618.
 
 ## 2026-10-10 — Maillage en C, partie 1 (jalon A, point 1)
 

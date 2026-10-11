@@ -1,10 +1,14 @@
-# État du projet (mis à jour le 2026-10-10)
+# État du projet (mis à jour le 2026-10-11)
 
 ## Où on en est
 
 - microrans : outil RANS / URANS 1D, 2D, 3D (périmètre réduit) avec mailleur, interface
   PySide6 et exécutables PyInstaller Windows / Linux (CI GitHub Actions).
-- Dernier lot terminé : **maillage en C, partie 1** (2026-10-10, relance quotidienne ;
+- Dernier lot terminé : **maillage en C, partie 2** (2026-10-11) : taille du domaine des
+  profils mesurée (exemples NACA à R = 30 : C_l −1.5 %, C_d +3.5 % par rapport à R infini ;
+  README § 8 6b) ; convergence du C lente mais régulière (pas une oscillation : corrigé) ;
+  écart O / C non expliqué ; campagnes c1, c6, c7, c8 sans régression. Avant :
+  **maillage en C, partie 1** (2026-10-10, relance quotidienne ;
   jalon A) : `[mesh] type = "cgrid"` (expérimental) ; NACA 0012 SA : résidu de ν̃ qui
   plafonne (sillage proche, mailles de 2e-5 le long de la coupure), C_d 0.01217 contre
   0.01255 en O, C_l 1.8 % plus bas (cause non établie) ; NASA TMR refusé par le réseau
@@ -32,9 +36,9 @@
   par point (chacun échoue sur l'ancien code). Puis **C15** (l'utilisateur m'a laissé
   choisir « la meilleure solution ») : une seule vitesse de référence. Avant : audit 2
   approfondi (576a0bc, e5deb38).
-- Exécutables de 38d02bb (maillage en C) : run https://github.com/Kayoouu/Microrans/actions/runs/38025181460
-  (Windows : artefact 11660058761, Linux : 11659318057 ; expirent le 2027-01-08). CI verte
-  (tests https://github.com/Kayoouu/Microrans/actions/runs/38025180188).
+- Exécutables de 1a21eb7 (maillage en C 2) : run https://github.com/Kayoouu/Microrans/actions/runs/38112114618
+  (Windows : artefact 11691728129, Linux : 11691822597 ; expirent le 2027-01-09). CI verte
+  (tests https://github.com/Kayoouu/Microrans/actions/runs/38112114733).
 - Suite de tests : 513 (511 réussis, 2 ignorés), 5 à 10 min en série sur la machine de session.
 - Objectif accepté le 2026-10-05 : jalon A (2D académique crédible), puis B (3D
   académique, petite géométrie) ; C (pré-industriel) non visé. Détail : `a_faire.md`.
