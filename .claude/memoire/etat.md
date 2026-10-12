@@ -1,10 +1,13 @@
-# État du projet (mis à jour le 2026-10-11)
+# État du projet (mis à jour le 2026-10-12)
 
 ## Où on en est
 
 - microrans : outil RANS / URANS 1D, 2D, 3D (périmètre réduit) avec mailleur, interface
   PySide6 et exécutables PyInstaller Windows / Linux (CI GitHub Actions).
-- Dernier lot terminé : **maillage en C, partie 2** (2026-10-11) : taille du domaine des
+- Dernier lot terminé : **maillage en C, partie 3** (2026-10-12) : écart O / C très
+  probablement dû au sillage proche, non résolu par l'O-grid (U min à 0.1 corde : O 0.85,
+  C 0.57) ; TMR impossible (réseau), validation partielle écrite ; jalon A : reste l'audit 3.
+  Campagnes du lundi sans régression. Avant : **maillage en C, partie 2** (2026-10-11) : taille du domaine des
   profils mesurée (exemples NACA à R = 30 : C_l −1.5 %, C_d +3.5 % par rapport à R infini ;
   README § 8 6b) ; convergence du C lente mais régulière (pas une oscillation : corrigé) ;
   écart O / C non expliqué ; campagnes c1, c6, c7, c8 sans régression. Avant :

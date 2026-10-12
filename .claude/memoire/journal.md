@@ -19,6 +19,10 @@ commit. Ce journal sert à retrouver ce qui a été fait, pourquoi, et ce qui a 
   probable de l'écart ; non démontrée (pas de référence). Écrit au README § 8 point 6, § 6,
   § 9 (TMR : validation partielle, site inaccessible).
 - Jalon A : maillage en C fait (TMR impossible, écrit) ; prochaine tâche : audit 3.
+- Campagnes : c1 25 / 25 ; c6 22 identiques hors chemins (pas de faux écart, c8 lancée
+  après) ; c7 18 / 18 ; c8 identique au 2026-10-11 (convergé : C_d ≤ 4e-6, C_m ≤ 9e-6).
+  Commit f02f6a0 (03:58), CI verte : https://github.com/Kayoouu/Microrans/actions/runs/38201862925
+  (docs seulement : pas d'exécutables reconstruits).
 
 ## 2026-10-11 — Maillage en C, partie 2 ; taille du domaine des profils
 
