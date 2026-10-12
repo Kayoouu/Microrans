@@ -7,7 +7,7 @@ inutile (mesure à l'appui), l'écrire dans le journal et passer à la suivante.
 
 ## En cours
 
-Rien (maillage en C, partie 2, terminé le 2026-10-11).
+Rien (maillage en C, partie 3, terminé le 2026-10-12).
 
 ## À faire
 
@@ -21,22 +21,20 @@ des points d'audit : `docs/audit_utilisateur.md` ; campagnes à relancer après 
 
 Usages : TP, projets d'étudiants, études paramétriques 2D laminaire / RANS sur cas
 classiques. **Atteint quand** : un audit complet ne trouve plus aucun résultat faux
-silencieux, l'étude GCI (faite le 2026-10-09, README § 6) et le point 1 sont faits
-(ou leur impossibilité écrite). Côté
+silencieux, l'étude GCI (faite le 2026-10-09) et le maillage en C (fait du 10 au 12
+octobre ; comparaison NASA TMR impossible depuis l'environnement, écrite au README) sont
+faits. Côté
 utilisateur (je ne peux pas le faire) : publier une release, faire essayer l'exécutable
 Windows par un humain sur un vrai PC (jamais fait : la CI vérifie seulement qu'il démarre).
 
-1. **Maillage en C, partie 3 + NASA TMR** (parties 1 et 2 faites les 10 et 11 octobre ;
-   README § 8 points 6 et 6b). Reste : (a) écart O / C non expliqué (C_l 1.6 à 1.8 %, C_d 2.8
-   à 3.8 %, persistant à 3 finesses et à R = 30 / 100 / 300) : comparer les champs près du
-   bord de fuite (Cp, frottement, ν̃) des deux maillages, et l'O-grid à bord de fuite
-   « sharp » ; (b) convergence lente du C (ν̃ ÷2 / 2 500 it ; relax_turb 0.5 aide un peu) ;
-   (c) NASA TMR : turbmodels.larc.nasa.gov refusé (403, 10 et 11 octobre), demandé à
-   l'utilisateur ; sans réponse, écrire la validation partielle et passer à l'audit 3.
-   Fait quand : (a) cause trouvée ou écrite, (c) fait ou impossibilité écrite.
-2. **Audit 3** (même méthode que l'audit 2 approfondi : campagnes `tools/audit/` + nouvelles),
+1. **Audit 3** (même méthode que l'audit 2 approfondi : campagnes `tools/audit/` + nouvelles),
    puis lots de correction. S'il trouve encore un résultat faux silencieux : corriger puis
    refaire un audit ; le jalon n'est pas atteint avant.
+   À examiner en priorité (trouvé hors audit) : « Convergé » sur `monitor_tol` seul alors que
+   les résidus ne descendent plus (pseudo_cfl, NACA : C_d 0.7 % faux) ; chaque accord de
+   validation du README face au maillage et à la taille du domaine (cylindre, NACA déjà
+   trouvés) ; figures produites (pas seulement les chiffres) ; convergence apparente
+   trompeuse (C_l de l'O-grid, ordre apparent 6.7).
 
 ### Jalon B — 3D académique, petite géométrie (≈ 1.5 à 3 mois de plus ; janvier–février 2027)
 
@@ -106,6 +104,13 @@ turbulence, viscoélasticité.
   documentés et la polaire : à mesurer (coût) avant de décider.
 - Campagnes : c8 écrit des `_audit_*.toml` temporaires dans microrans/examples ; ne pas
   lancer c1 / c6 en même temps que c8 (c6 les a ramassés le 2026-10-11).
+- NASA TMR (profils, plaque plane) : à faire si l'utilisateur autorise
+  turbmodels.larc.nasa.gov (refusé du 10 au 12 octobre 2026).
+- Exemples NACA : maillage en C (probablement plus juste : sillage proche résolu ; C_l
+  −1.7 %, C_d −3 % par rapport à l'O) et domaine plus grand (R = 30 : C_l −1.5 %, C_d
+  +3.5 %) ; les deux effets se compensent en partie sur C_l. Coût mesuré : C 12 288
+  cellules, 3 000 it ≈ 180 s et « NON CONVERGÉ » à tol 1e-5, contre O 834 it / 34 s.
+  Change les chiffres documentés : décider après mesure complète (C, R = 100).
 
 
 ## Décisions qui appartiennent à l'utilisateur (ne pas trancher seul)

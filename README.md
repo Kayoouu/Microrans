@@ -586,7 +586,7 @@ bord de fuite du NACA (elle change C_l de près de 4 % en transsonique).
 | idem, **lois de paroi**, y⁺ ≈ 90 (2 688 cellules), SA / SST / k-ω | C_f(x = 0.97) | 0.00278 / 0.00273 / 0.00288 | idem |
 | Canal Re_τ = 2000, **lois de paroi**, 1re cellule à y⁺ ≈ 50 (24 cellules), SA / SST / k-ω | U_b / U_b résolu (1D, y⁺ = 0.2) | −2.3 % / +3.5 % / −0.5 % | même modèle résolu ; y⁺ ≈ 25 : −3.6 / +4.8 / −0.3 % |
 | NACA 0012, α = 4°, Re = 1e6, SA, champ lointain à R = 30 cordes | C_l ; C_d | 0.433 ; 0.0125 (R = 300 : 0.439 ; 0.0122) | 2πα = 0.439 (démonstration, voir limites) ; effet du domaine : § 8, point 6b |
-| idem, maillage en C (expérimental, 12 288 cellules) contre O-grid (8 192), 128 mailles sur le profil | C_d (dont pression) ; C_l | C : 0.01217 (0.00333) ; 0.4252 — O : 0.01255 (0.00369) ; 0.4332 | pas de référence embarquée ; écart non expliqué (§ 8, point 6) |
+| idem, maillage en C (expérimental, 12 288 cellules) contre O-grid (8 192), 128 mailles sur le profil | C_d (dont pression) ; C_l | C : 0.01217 (0.00333) ; 0.4252 — O : 0.01255 (0.00369) ; 0.4332 | pas de référence embarquée ; sillage proche mal résolu en O (§ 8, point 6) |
 | NACA 0012, polaire −4° à 14°, Re = 1e6, SA (8 192 cellules, 4 min) | pente dC_l/dα ; C_m quart de corde ; symétrie | 0.1083 /° ; \|C_m\| < 0.008 ; C_l(−α) = −C_l(α) à 5 chiffres | 2π = 0.1097 /° (profil mince) ; 0 (profil symétrique) ; exacte |
 | Cylindre Re = 20, écoulement incliné de 30° | C_d (axes écoulement) | écart 0.01 % avec 0° | invariance exacte |
 | Canal, débit imposé (plan / axisymétrique 360°) | débit en sortie | exact à 1e-9 | conservation |
@@ -898,11 +898,17 @@ redonne l'ancien fichier texte, identique octet pour octet.
    2 500 itérations ; cause non établie) : « NON CONVERGÉ » avec les 3 000 itérations et
    `tol = 1e-5` de l'exemple. `relax_turb = 0.5` aide un peu (ν̃ 4.8e-5 au lieu de 8.8e-5 à
    3 000 itérations). Les efforts, eux, varient de moins de 0.05 % entre 3 000 et 6 000
-   itérations. Écart avec l'O-grid, qui ne vient ni du maillage (3 finesses, 64 à 256
-   mailles sur le profil) ni de la taille du domaine (R = 30, 100, 300) : C_l 1.6 à 1.8 %
-   plus bas, C_d 2.8 à 3.8 % plus bas (traînée de pression 6 à 13 % plus basse, frottement égal
-   à 0.5 % près). Faute de référence (données NASA TMR inaccessibles depuis l'environnement
-   de développement), on ne sait pas lequel est le plus juste. Avec `pseudo_cfl = 20`, le
+   itérations. Écart avec l'O-grid, qui reste à 3 finesses (64 à 256 mailles sur le
+   profil) et à R = 30, 100, 300 : C_l 1.6 à 1.8 % plus bas, C_d 2.8 à 3.8 % plus bas
+   (traînée de pression 6 à 13 % plus basse, frottement égal à 0.5 % près). Cause la plus
+   probable : le sillage proche, que l'O-grid ne résout pas. À 0.1 corde derrière le bord
+   de fuite, vitesse minimale 0.93 / 0.87 / 0.85 sur les 3 maillages en O (2 à 15 cellules
+   dans ±0.15 autour du sillage) contre 0.59 / 0.57 en C (74 et 298 cellules) ; en O, C_l ne
+   bouge plus (0.4323 → 0.4324, ordre apparent 6.7) alors que le sillage change encore :
+   convergence apparente trompeuse. Le maillage en C est donc probablement le plus juste
+   pour C_l et C_d ; ce n'est pas démontré, faute de référence (données NASA TMR
+   inaccessibles depuis l'environnement de développement, 10 au 12 octobre 2026 : pas de
+   comparaison TMR, validation partielle). Avec `pseudo_cfl = 20`, le
    même cas en O s'arrête sur `monitor_tol` (1 542 itérations) alors que ses résidus ne
    descendent plus (p : 1.3e-5 après 8 000 itérations) : C_d 0.01264 au lieu de 0.01255 sans
    `pseudo_cfl` (0.7 %). Frontières
@@ -993,7 +999,8 @@ redonne l'ancien fichier texte, identique octet pour octet.
 
 ## 9. Feuille de route
 
-Maillage en C et validation NASA TMR (profils) ;
+Validation NASA TMR (profils, plaque plane ; site inaccessible depuis l'environnement de
+développement) ; exemples NACA en maillage en C et domaine plus grand (§ 8, points 6 et 6b) ;
 parallélisme multi-cœur (Numba) ou CuPy validé sur carte ; transition avec gradient de
 pression et décollement laminaire (T3C, profils à bas Reynolds), rugosité, crossflow ;
 corrections de courbure et de rotation, loi de paroi thermique et k-ε haut-Reynolds ;

@@ -3,6 +3,23 @@
 Détail des chiffres : README (§ 6 validation, § 7 performances, § 8 limites) et messages de
 commit. Ce journal sert à retrouver ce qui a été fait, pourquoi, et ce qui a été constaté.
 
+## 2026-10-12 — Maillage en C, partie 3 : origine de l'écart O / C
+
+- Relance quotidienne (03:53 UTC). Lundi : campagnes c1, c6, c7, puis c8 (après c1 et c6,
+  pour éviter les fichiers temporaires de c8). CI verte au départ (cca362d). TMR toujours
+  refusé (3e jour).
+- Cp le long du profil (R = 30, mêmes faces de paroi dans les deux maillages) : l'écart O / C
+  est réparti sur toute la corde (ΔCp ≈ 0.003 à 0.005, plus au bord d'attaque et au bord de
+  fuite) : écart de circulation. Condition de Kutta respectée des deux côtés (Cp extrados ≈
+  intrados au bord de fuite : O 0.180 / 0.178, C 0.200 / 0.198) ; niveau différent.
+- Sillage proche à 0.1 corde du bord de fuite (fenêtre ±0.15) : O 2 / 7 / 15 cellules, U min
+  0.934 / 0.870 / 0.854 sur les 3 finesses ; C 74 / 298 cellules, U min 0.594 / 0.573. L'O ne
+  résout pas le sillage proche ; son C_l ne bouge plus (0.4323 → 0.4324, ordre apparent 6.7)
+  alors que son sillage change encore : convergence apparente trompeuse. Cause la plus
+  probable de l'écart ; non démontrée (pas de référence). Écrit au README § 8 point 6, § 6,
+  § 9 (TMR : validation partielle, site inaccessible).
+- Jalon A : maillage en C fait (TMR impossible, écrit) ; prochaine tâche : audit 3.
+
 ## 2026-10-11 — Maillage en C, partie 2 ; taille du domaine des profils
 
 - Relance quotidienne (03:53 UTC). Dimanche ; c8 datait de 8 jours : campagnes c1, c6, c7,
