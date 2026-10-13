@@ -14,7 +14,9 @@
   (2026-10-12) : écart O / C très probablement dû au sillage proche, non résolu par
   l'O-grid ; TMR impossible (réseau), validation partielle écrite. Avant : maillage en C
   parties 1 et 2 (10 et 11 octobre), GCI (9), F4, F3, F2, F1b, F1, audit 2 : détail dans
-  `journal.md`.
+  `journal.md`. CI de 41cb65a verte :
+  https://github.com/Kayoouu/Microrans/actions/runs/38348628151 (pas de nouvel exécutable :
+  microrans/ inchangé).
 - Exécutables de 1a21eb7 (maillage en C 2) : run https://github.com/Kayoouu/Microrans/actions/runs/38112114618
   (Windows : artefact 11691728129, Linux : 11691822597 ; expirent le 2027-01-09). CI verte
   (tests https://github.com/Kayoouu/Microrans/actions/runs/38112114733).
