@@ -3,6 +3,37 @@
 Détail des chiffres : README (§ 6 validation, § 7 performances, § 8 limites) et messages de
 commit. Ce journal sert à retrouver ce qui a été fait, pourquoi, et ce qui a été constaté.
 
+## 2026-10-13 — Audit 3, partie 1 : campagnes, convergence annoncée (c17), figures
+
+- Relance quotidienne (03:53 UTC, mardi). CI verte au départ (e45922e). Toutes les
+  campagnes relancées en arrière-plan (scratchpad audit3) : c2, c3, c3b, c3c (argument
+  « contexte », lancé d'abord par erreur avec « 3c » : relancé), c4, c9, c9b, c10, c12,
+  c13, c14, c16 ; c11 et c15 en dernier. Aucune régression par rapport à l'audit 2 et aux
+  corrections F1 à F4 ; faux constats des scripts notés (c2 max_steps et case_path, c4
+  set_combo, c14 limite 900 s). c9b : écart 2e-4 à 20 it (plaque, lois de paroi), nul à la
+  convergence (variante du script, tol 1e-9).
+- Nouvelle campagne `tools/audit/c17_convergence_annoncee.py` : chaque exemple
+  stationnaire avec ses réglages puis prolongé (même nombre d'itérations, 500 à 3 000) ;
+  variantes `exemple:clé=valeur`. 21 exemples : tous convergés (20 sur les résidus), efforts
+  stables à 4.6e-4 près au plus (sphère), 18 à ≤ 7e-5 (parois adiabatiques de la convection :
+  résultante 1e-5, bruit). Métrique de pression corrigée (canal périodique :
+  p presque uniforme → rapportée à max(étendue, ½ max|U|²)).
+- **C24 (résultat faux silencieux)** : NACA SA + `pseudo_cfl = 20` : « convergé (efforts) »
+  à 1 542 it, C_d +0.87 %, C_l −0.20 % ; +1 542 it : +0.79 %. Contre-épreuve (script
+  scratchpad pcfl_point_fixe.py) : de la solution convergée par défaut, pseudo_cfl = 20
+  déplace F_x de +0.75 % en 100 it puis F_x stable (0.7541 à 0.7549 % de 934 à 1 534 it) :
+  point fixe différent. Cause probable : Rhie-Chow (rAU = V / a_P avec terme de
+  pseudo-temps ou de relaxation). README § 8 point 6 (explication par monitor_tol) faux.
+  Lot G1.
+- Polaire, même point (14°) en série puis `-j 4` : C_d 0.03665 / 0.03660, C_m 0.6 %
+  d'écart : erreur d'itération à tol = monitor_tol = 1e-5.
+- Figures (136 de c1 du 2026-10-12 ; 55 regardées en planches) : L8 sondes sur la figure
+  des résidus (3 exemples ; aussi la ligne de progrès et l'interface), L9 bruit d'arrondi à
+  pleine échelle dans les profils (canal 3D U_y 1e-15, p 1e-14…), L10 tuyau
+  axisymétrique cadré sur la paroi, L11 champs 2D du tube de Sod. Lot G2.
+- Observation : itérations 4 à 10 fois plus chères une fois les résidus à l'arrondi
+  (machine partagée : à remesurer).
+
 ## 2026-10-12 — Maillage en C, partie 3 : origine de l'écart O / C
 
 - Relance quotidienne (03:53 UTC). Lundi : campagnes c1, c6, c7, puis c8 (après c1 et c6,

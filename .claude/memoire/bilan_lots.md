@@ -25,6 +25,7 @@ et trouvés plus tard (à remplir rétroactivement).
 | 2026-10-10 | Maillage en C, partie 1 | 1 à 2 lots (estimé à 1 au départ) | 03:53 → commit 04:45, CI verte 04:53 (≈ 25 min de calculs de diagnostic, étude O / C 7 min, 2 suites dont 1 arrêtée) | 6 | — | erreur d'itération mesurée après l'étude, pas avant → skill § 2.4 ; suite lancée avant le dernier test (§ 3.1 non suivi) |
 | 2026-10-11 | Maillage en C, partie 2 (+ campagnes c1, c6, c7, c8) | 1 lot | 03:53 → commit 04:36, CI verte 04:43 (campagnes 35 min en parallèle du lot, étude de domaine 25 min) | 0 (script de validation) | conclusion « oscillation » du 2026-10-10 fausse (décroissance lente) | c6 et c8 lancées ensemble : faux écart (fichier temporaire de c8) → noté ; relire un historique complet avant de conclure « oscillation » |
 | 2026-10-12 | Maillage en C, partie 3 (+ campagnes du lundi) | 1 lot | 03:53 → commit 03:58 (analyse sur les sorties de la veille), CI verte 04:05 ; campagnes jusqu'à 04:40 | 0 | — | sorties gardées dans le scratchpad la veille : analyse en 5 min sans recalcul ; campagnes ordonnées (c8 après c1 / c6) : pas de faux écart |
+| 2026-10-13 | Audit 3, partie 1 (campagnes c2 à c16, nouvelle c17, figures) | 1 lot (audit complet : 2 à 4) | 03:53 → commit vers 04:55 (campagnes en arrière-plan 03:55 → 04:47 ; c17 ≈ 35 min, ralentie par 3 calculs sur 4 cœurs ; contre-épreuve C24 5 min) | 0 (campagne c17) | — | c3c lancée avec un mauvais argument (relancée, 2 min) ; c17 longue (itérations après convergence 4 à 10 fois plus chères, calculs simultanés) ; contre-épreuve « repartir de la solution convergée » : a transformé une explication fausse du README en défaut précis (C24) en 5 min → skill § 2.4 |
 
 ## Indicateur du jalon A : résultats faux silencieux trouvés par audit
 
@@ -38,6 +39,7 @@ la tendance est indicative.
 | 1 (avant D4) | 8 | C1, C4, C5, C6, C7, C8, C9, C10 |
 | 2 | 3 | C13, U14, U17 |
 | 2 approfondi | 2 (+1 limite) | C15, C21 ; limite : C17 (reprise annoncée exacte, ne l'était pas) |
+| 3, partie 1 (2026-10-13) | 3 | C24 (solution convergée dépendant de `pseudo_cfl` : C_d +0.75 % ; `relax_U` : déjà écrit au README, mais pas l'effet de pseudo_cfl, expliqué à tort) ; figures : L8 (sondes tracées sous « résidu normalisé »), L9 (bruit 1e-15 tracé à pleine échelle dans les profils, comme U17). Partie 2 à faire |
 
 Trouvés hors audit, en travaillant : 2026-10-07 (F3, en mesurant P2) figure de convergence
 de la cavité illisible depuis toujours (résidu nul tracé à 1e-300 : axe sur 330 décades),
@@ -61,8 +63,12 @@ expliquer avant le lot. Sorties en dehors du dépôt (scratchpad), seulement le 
 | c6 interface = ligne de commande | 2026-10-12 (lundi) | 22 exemples identiques au bit près hors chemins de fichiers, Sod ignoré (c8 lancée après c1 et c6 : pas de faux écart) |
 | c7 reprise exacte | 2026-10-12 (lundi) | 18 / 18 au bit près, Sod non découpable |
 | c8 2D = 3D une couche | 2026-10-12 (lundi) | identique au 2026-10-11 : convergé (4 000 it, 4 cas) C_d ≤ 4e-6, C_m ≤ 9e-6 ; à 20 it, écarts relatifs trompeurs sur des grandeurs nulles |
-| c3b / c3c clés numériques (texte, −1) | 2026-10-06 (F2) | 92 / 92 et 24 / 24 refusés clairement avant le calcul |
-| c15 arrêts et durée de l'interface | 2026-10-07 (F3) | arrêt maillage 0.5 s après la demande (audit 2 : 21.8 s) ; cavité interface 9.8 s / ligne de commande 9.4 s (audit 2 : 10.2 / 4.9) ; arrêt calcul 4.4 s (2.4 s ; machine ≈ 2 fois plus lente ce jour : ligne de commande 9.4 s contre 4.9) ; balayage 1.2 s ; mémoire stable (347 → 340 Mo) |
+| c3b / c3c clés numériques (texte, −1) | 2026-10-13 (audit 3) | 92 / 92 et 24 / 24 refusés clairement avant le calcul (comme le 2026-10-06) |
+| c2, c3, c4, c9, c9b, c10, c12, c13, c14, c16 | 2026-10-13 (audit 3) | pas de régression ; détail : docs/audit_utilisateur.md, Audit 3 |
+| c17 convergence annoncée (nouvelle) | 2026-10-13 | 21 exemples convergés, efforts stables à ≤ 4.6e-4 après prolongation ; variante pseudo_cfl = 20 : C24 |
+| c11 Ctrl-C | 2026-10-13 (audit 3) | 3 / 3 : arrêt 0.2 à 1.7 s, fichiers écrits, reprise acceptée |
+| c15 arrêts et durée de l'interface | 2026-10-13 (audit 3, machine partagée avec c17) | arrêt maillage 0.3 s, calcul 2.8 s (reprise exacte), balayage 1.0 s ; cavité interface 8.4 s / ligne de commande 8.6 s ; mémoire 343 → 335 Mo ; proche du relevé précédent (ligne suivante) |
+| c15 (relevé du 2026-10-07) | 2026-10-07 (F3) | arrêt maillage 0.5 s après la demande (audit 2 : 21.8 s) ; cavité interface 9.8 s / ligne de commande 9.4 s (audit 2 : 10.2 / 4.9) ; arrêt calcul 4.4 s (2.4 s ; machine ≈ 2 fois plus lente ce jour : ligne de commande 9.4 s contre 4.9) ; balayage 1.2 s ; mémoire stable (347 → 340 Mo) |
 
 ## Changements de méthode (rétrospectives) et effet constaté
 

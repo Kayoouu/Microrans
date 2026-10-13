@@ -1,4 +1,4 @@
-# Liste de travail (ordre = priorité ; mise à jour le 2026-10-09 ; jalons A, B, C)
+# Liste de travail (ordre = priorité ; mise à jour le 2026-10-13 ; jalons A, B, C)
 
 Méthode pour chaque tâche : mesurer d'abord (profil, chiffres de départ), changer, mesurer
 côte à côte dans les mêmes conditions, tests, docs (README, chiffres), commit, CI verte,
@@ -7,7 +7,7 @@ inutile (mesure à l'appui), l'écrire dans le journal et passer à la suivante.
 
 ## En cours
 
-Rien (maillage en C, partie 3, terminé le 2026-10-12).
+Rien (audit 3, partie 1, terminé le 2026-10-13).
 
 ## À faire
 
@@ -27,14 +27,27 @@ faits. Côté
 utilisateur (je ne peux pas le faire) : publier une release, faire essayer l'exécutable
 Windows par un humain sur un vrai PC (jamais fait : la CI vérifie seulement qu'il démarre).
 
-1. **Audit 3** (même méthode que l'audit 2 approfondi : campagnes `tools/audit/` + nouvelles),
-   puis lots de correction. S'il trouve encore un résultat faux silencieux : corriger puis
-   refaire un audit ; le jalon n'est pas atteint avant.
-   À examiner en priorité (trouvé hors audit) : « Convergé » sur `monitor_tol` seul alors que
-   les résidus ne descendent plus (pseudo_cfl, NACA : C_d 0.7 % faux) ; chaque accord de
-   validation du README face au maillage et à la taille du domaine (cylindre, NACA déjà
-   trouvés) ; figures produites (pas seulement les chiffres) ; convergence apparente
-   trompeuse (C_l de l'O-grid, ordre apparent 6.7).
+1. **Lot G1 — C24 : solution stationnaire indépendante de `relax_U` / `pseudo_cfl`**
+   (audit 3 ; détail et reproduction : docs/audit_utilisateur.md, Audit 3, C24). Mesuré :
+   NACA SA, `pseudo_cfl = 20` déplace la solution convergée de +0.75 % sur C_d (point fixe
+   différent, pas un arrêt prématuré) ; README : `relax_U` 0.7 → 0.5, C_d −0.6 %. Étapes :
+   (a) mesurer l'effet de `relax_U` et `pseudo_cfl` sur 3 à 4 exemples (cylindre Re 20,
+   cavité, NACA SA, plaque SA) ; (b) corriger l'interpolation de Rhie-Chow (correction de
+   relaxation type Majumdar 1988 ; en pseudo-temps, terme comme `ddtCorr`) ; test : même
+   solution convergée à 1e-6 près pour deux `relax_U` et avec / sans `pseudo_cfl` ;
+   (c) cas à solution exacte et GCI inchangés en ordre ; (d) remesurer les chiffres
+   publiés qui bougent (README, tutoriel, en-têtes d'exemples, tests à bornes) ; corriger
+   README § 8 point 6 (explication fausse par `monitor_tol`). Estimé 2 lots. Fait quand :
+   test vert, chiffres publiés remesurés, CI verte.
+2. **Lot G2 — figures** (audit 3 : L8 sondes tracées comme résidus, L9 bruit d'arrondi à
+   pleine échelle dans les profils, L10 cadrage du tuyau axisymétrique, L11 figures de
+   champ du tube de Sod). Estimé 1 lot. Un test par point.
+3. **Audit 3, partie 2** : chaque accord de validation du README face au maillage et à la
+   taille du domaine (cylindre et NACA déjà trouvés ; après G1, les chiffres ayant bougé) ;
+   figures restantes (pression, vorticité, ν_t, maillages) ; interface (figures de la page
+   Résultats). Convergence apparente trompeuse (C_l de l'O-grid, ordre apparent 6.7) à
+   relire. Puis audit 4 : le jalon A est atteint quand un audit complet trouve 0 résultat
+   faux silencieux.
 
 ### Jalon B — 3D académique, petite géométrie (≈ 1.5 à 3 mois de plus ; janvier–février 2027)
 
@@ -94,16 +107,18 @@ turbulence, viscoélasticité.
   (coût, R = 160 ?) avant de décider. Cylindre Re = 100 : même question (limite 7).
 - Cavité Re = 100 : u min converge vers −0.21395 ± 1e-4, à 1.4 % de Ghia (−0.21090) ;
   pas de référence plus fine vérifiée depuis l'environnement (recherche du 2026-10-09).
-- `pseudo_cfl` (NACA 0012 O-grid, exemple + pseudo_cfl = 20) : arrêt « Convergé » sur
-  `monitor_tol` à 1 542 it alors que les résidus ne descendent plus (p 1.3e-5 après
-  8 000 it) ; C_d 0.01264 contre 0.01255 sans pseudo_cfl (0.7 %). À examiner à l'audit 3 :
-  « Convergé » sur les seuls efforts, résidus hauts, sans message.
 - Exemples NACA (R = 30) : erreur de domaine C_l −1.5 %, C_d +3.5 % (R → ∞ extrapolé,
   2026-10-11). Options : R = 100 ou 300 (+9 % / +19 % de cellules à même 1re maille et
   même progression) ou correction tourbillonnaire du champ lointain ; change les chiffres
   documentés et la polaire : à mesurer (coût) avant de décider.
 - Campagnes : c8 écrit des `_audit_*.toml` temporaires dans microrans/examples ; ne pas
-  lancer c1 / c6 en même temps que c8 (c6 les a ramassés le 2026-10-11).
+  lancer c1 / c6 en même temps que c8 (c6 les a ramassés le 2026-10-11). Scripts à
+  corriger (faux constats du 2026-10-13) : c2 ajoute `max_steps` (clé inconnue) et change
+  `case_path` sans copier le contour de mesh_naca_multi ; c4 `box_depuis_cylindre` passe
+  par `set_combo` (signaux bloqués) ; c14 limite à 900 s (RK3 du cylindre : 16 à 30 min).
+- Après convergence, itérations 4 à 10 fois plus chères (résidus à l'arrondi ; plaque
+  compressible, cavité cubique ; mesuré sur machine partagée) : remesurer seul, puis voir
+  les tolérances des solveurs linéaires.
 - NASA TMR (profils, plaque plane) : à faire si l'utilisateur autorise
   turbmodels.larc.nasa.gov (refusé du 10 au 12 octobre 2026).
 - Exemples NACA : maillage en C (probablement plus juste : sillage proche résolu ; C_l

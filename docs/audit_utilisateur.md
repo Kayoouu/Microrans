@@ -382,3 +382,90 @@ plages de balayage mal formées refusées clairement.
 - **F2 — messages** : M13 à M22, U16, L6 (fait, 2026-10-06).
 - **F3 — interface 3D, figures, sorties** : U15, U18, U19, U20, L5, L7, P2 (fait, 2026-10-07 ; trouvé en mesurant P2 : axe des résidus sur 330 décades, corrigé).
 - **F4 — textes et documentation** : T1, T2, D5 à D8 (fait, 2026-10-08).
+
+---
+
+# Audit 3 (2026-10-13) — partie 1 : campagnes relancées, convergence annoncée, figures
+
+Après les lots F1 à F4, GCI et maillage en C : toutes les campagnes de `tools/audit`
+relancées sur le code du 2026-10-12 (commit e45922e), une nouvelle campagne (17 : un calcul
+annoncé « convergé » l'est-il ?) et la relecture des figures produites par les 25
+exemples (campagne 1 du 2026-10-12 : 136 figures ; regardées : les 20 courbes de
+convergence, les 22 champs de vitesse ou de Mach, les 13 profils, C_p et efforts).
+Partie 2 (lot suivant) : les accords de validation publiés face au maillage et à la taille
+du domaine, les autres figures (pression, vorticité, ν_t, maillages), l'interface.
+
+```bash
+python tools/audit/c17_convergence_annoncee.py SORTIE [exemple[:clé=valeur,…] …]  # campagne 17
+```
+
+| Campagne | Résultat (2026-10-12 et 13) |
+|---|---|
+| 1, 6, 7, 8 | 25 / 25 ; interface = ligne de commande au bit près (22 exemples, hors chemins) ; reprise exacte 18 / 18 ; 2D = 3D une couche à 4·10⁻⁶ près (convergé) |
+| 2. Exemples, interface | aucun plantage ni exception ; messages attendus (exemples `mesh_*` : physique à renseigner) ; deux faux constats du script : clé `max_steps` ajoutée par la campagne (inconnue, signalée à juste titre) et contour de `mesh_naca_multi` introuvable (le script change `case_path` sans passer par « Enregistrer sous », qui copie le contour depuis U18) |
+| 3. Entrées invalides | 44 variantes : 34 refus clairs, 7 calculs avec l'avertissement attendu, 2 justes (maillage 3D : .vtk seul, expliqué), 1 arrêtée à 25 s (8·10⁶ cellules : avertissement « ~23.5 Go » puis le maillage commence : observation de l'audit 2, inchangée) ; 0 trace Python |
+| 3b / 3c | 92 / 92 et 24 / 24 refus clairs avant le calcul (comme au 2026-10-06) |
+| 4. Combinaisons 3D, interface | 38 scénarios : 29 sans message, 9 refus ou messages attendus ; U14, U15, U16 (audit 2) ne se reproduisent plus. `box_depuis_cylindre` : « x0 manquant… » vient du script (`set_combo` bloque les signaux) ; par un vrai changement de liste, le pavé reçoit ses valeurs par défaut (vérifié à part) |
+| 9. Maillages exportés | relecture .msh / .su2 exacte (aire à 1.9·10⁻¹⁶ près au plus), polyMesh OpenFOAM correct ; types de frontière et périodicité non transportés (formats) : inchangé |
+| 9b. Maillage réimporté | 20 itérations : écart de 2·10⁻⁴ sur C_d (plaque, lois de paroi) ; convergé (tol 1e-9) : identique à 10⁻⁹ près (3 cas) : ordre des faces et solveurs linéaires, pas un défaut |
+| 10. Fichiers « Windows » | 14 / 14 bons ou refus clairs (BOM accepté depuis M20, contour CSV français lu juste depuis C18) ; sortie en lecture seule non vérifiable ici (droits de l'administrateur) |
+| 12. Cas limites | 12 / 12 bons ou refus clairs ; C20, C21 ne se reproduisent plus |
+| 13. Efforts = CSV | pression identique ; frottement du cylindre 0.19 % plus bas dans le CSV (L7, documenté) ; conduite 3D 0.238142 (U_ref = 1 depuis C15, ×9 par rapport à l'audit 2) |
+| 14. Commandes de la documentation | 24 commandes : 20 justes, 3 exemples fictifs (`mon_cas_fin.toml`, `cas.toml`), cylindre RK3 > 900 s (limite de la campagne ; README : 16 à 30 min) |
+| 16. Messages de F2 | 22 / 22 comme corrigés |
+| 11. Ctrl-C | cavité, cylindre instationnaire, NACA compressible : arrêt 0.2 / 1.7 / 0.3 s après le signal, code 130, checkpoint, résumé, champs, historique et CSV de paroi écrits, `--continue` accepté (codes 0 / 0 / 1 : 1 = non convergé, attendu) |
+| 15. Interface : arrêts, durée, mémoire | arrêt du maillage 0.3 s après la demande, du calcul 2.8 s (reprise exacte, 87 + 20 itérations), du balayage 1.0 s ; cavité : interface 8.4 s, ligne de commande 8.6 s ; mémoire 343 → 335 Mo (pic 415 Mo). Machine partagée avec la fin de la campagne 17 |
+| 17. Convergence annoncée (nouvelle) | voir ci-dessous |
+
+## Campagne 17 : « convergé » veut-il dire fini ?
+
+Chaque exemple stationnaire est lancé avec ses propres réglages, puis prolongé sans arrêt
+(autant d'itérations, entre 500 et 3 000) ; on mesure ce que bougent encore les efforts.
+
+- **Les 21 exemples stationnaires** (incompressible 2D / 3D / axisymétrique, compressible,
+  turbulence, transition, thermique, poreux, disque, non newtonien) : tous annoncés
+  convergés (20 sur les résidus, NACA SA sur les efforts) ; pendant la prolongation, les
+  efforts bougent de 4.6·10⁻⁴ au plus (sphère axisymétrique), 3.6·10⁻⁴ (point de base de la
+  polaire), 7·10⁻⁵ ou moins pour les 18 autres (convection naturelle : parois chaude et
+  froide à 9·10⁻⁸ ; la résultante des parois adiabatiques, 10⁻⁵ contre 1 170 sur les
+  autres, n'est que du bruit). **Aucune convergence annoncée trompeuse
+  dans les exemples.**
+- **Polaire, deux exécutions du même point** (campagne 14 : série avec continuation, puis
+  `-j 4`) : à 14°, toutes deux « convergées » (321 et 301 itérations), C_l 1.3727 /
+  1.3732, C_d 0.03665 / 0.03660, C_m 0.0071122 / 0.0070716 (0.6 % sur une petite
+  grandeur) : ordre de grandeur de l'erreur d'itération à `tol = monitor_tol = 1e-5`.
+- **`pseudo_cfl = 20` sur l'exemple NACA SA** (cas noté au lot maillage en C) : « convergé
+  (efforts stabilisés) » à 1 542 itérations, C_d 0.87 % au-dessus et C_l 0.20 % en dessous
+  du calcul par défaut ; 1 542 itérations de plus : encore 0.79 %. Contre-épreuve : partant
+  de la solution convergée par défaut, `pseudo_cfl = 20` la déplace de +0.75 % sur F_x
+  (≈ C_d) en 100 itérations, puis F_x ne bouge plus (0.7541 à 0.7549 % de 934 à 1 534
+  itérations). **Ce n'est pas un arrêt prématuré : la solution convergée elle-même dépend
+  de `pseudo_cfl`** (C24).
+- **NACA SA en maillage en C** (`mesh.type = "cgrid"`, réglages de l'exemple) : « NON
+  convergé » à 3 000 itérations (résidu 8·10⁻⁵), efforts encore à 2.6·10⁻⁴ près après
+  3 000 de plus : annonce honnête.
+
+## C. Résultats faux
+
+| # | Constat | Reproduction | Statut |
+|---|---|---|---|
+| C24 | **La solution stationnaire convergée dépend des réglages d'accélération de la convergence** (`pseudo_cfl`, et `relax_U` comme le README le dit déjà : « C_d −0.6 % entre 0.7 et 0.5 »). NACA 0012 SA (exemple) : `pseudo_cfl = 20` → C_d +0.75 à +0.87 %, C_l −0.20 %, sans message. Cause probable : l'interpolation de Rhie-Chow (forme OpenFOAM, `rAU = V / a_P`) prend dans a_P le terme de pseudo-temps ou de sous-relaxation, donc le flux convergé en dépend (problème connu, Majumdar 1988 ; correction classique : terme de correction de relaxation, ou `ddtCorr` en pseudo-temps). Le README (§ 8, point 6) l'explique à tort par un arrêt sur `monitor_tol` avec des résidus qui ne descendent plus. | `python tools/audit/c17_convergence_annoncee.py SORTIE 'naca0012_sa:solver.pseudo_cfl=20'` ; contre-épreuve ci-dessus | à faire : mesurer l'effet de `relax_U` et `pseudo_cfl` sur les exemples, puis corriger l'interpolation (résultat indépendant des réglages, test) ; les chiffres publiés qui en dépendent seront remesurés |
+
+## L. Figures et sorties
+
+| # | Constat | Statut |
+|---|---|---|
+| L8 | **Valeurs des sondes tracées comme des résidus** : la figure « Convergence » (convergence.png et courbe de l'interface, axe « résidu normalisé ») trace aussi `probe1_Ux`, `probe1_p`… ; la ligne de progrès les mêle aux résidus (« … continuity=0.00e+00 probe1_Ux=3.09e+00 »). Trois exemples (conduite_carree_3d, filtre_poreux_conduite, sang_carreau_artere) : lignes plates vers 1 qui ressemblent à des résidus bloqués ; valeurs négatives absentes de l'échelle logarithmique. Le critère d'arrêt n'est pas touché (sondes exclues). | à faire : sondes hors de la figure des résidus (figure à part, comme history.csv) |
+| L9 | **Bruit d'arrondi tracé à pleine échelle dans les profils** (line_*.png de la ligne de commande, « Profil » de l'interface) : canal_turbulent_3d, U_y de l'ordre de 10⁻¹⁵, U_z 10⁻³⁰, p 10⁻¹⁴ dessinés comme des courbes qui varient fortement (seul « 1e−15 » en coin d'axe le dit) ; même chose pour U_z de la cavité cubique, U_y du filtre poreux et de l'éolienne. Même défaut que U17 (flèches), dans les profils. | à faire : composante négligeable devant \|U\| (et pression devant ½U²) → tracé à zéro ou mention « nul (bruit < 10⁻⁹ \|U\|) » |
+| L10 | tuyau_turbulent_sst (axisymétrique, rayon 0 à 1) : figures de champs cadrées sur la paroi (r de 0.7 à 1.3, x de −0.2 à 1.0) : le cœur du tuyau (r < 0.7) n'est pas montré et la moitié du cadre est vide ; le cadrage « sur les corps » prend la paroi du tuyau pour un corps. | à faire |
+| L11 | compressible_tube_sod : figures de champs 2D d'un tube 1D (bande de 2 mailles), illisibles ; la bonne figure est line_axe.png. Mineur. | à faire (ou documenter) |
+
+## Observations
+
+- Après convergence, une itération coûte 4 à 10 fois plus cher (résidus au niveau de
+  l'arrondi : solveurs linéaires au maximum d'itérations ?) : plaque compressible, 500
+  itérations de prolongation en ≈ 300 s contre 266 itérations en 16 s (campagne 1) ;
+  cavité cubique 3D, ≈ 0.76 s contre 0.19 s par itération (machine partagée par 2 à 3
+  calculs : à remesurer seul). Touche un utilisateur qui demande `tol = 1e-12`.
+- Polaire série puis parallèle dans le même dossier : la seconde écrase la première
+  (attendu ; noté parce que la campagne 14 ne garde que la dernière).

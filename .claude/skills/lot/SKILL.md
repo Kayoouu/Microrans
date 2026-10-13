@@ -40,6 +40,11 @@ dans `CLAUDE.md` ; cette page dit comment les appliquer avec les outils `tools/d
    (ordre, valeur exacte retrouvés ?), puis l'étude complète. Étude de convergence en
    maillage : mesurer d'abord l'erreur d'itération sur un maillage (deux longueurs de calcul
    ou deux réglages du solveur) ; un arrêt sur `monitor_tol` seul ne la garantit pas.
+   Deux réglages du solveur donnent deux résultats « convergés » différents : contre-épreuve
+   (audit 3, C24) — repartir de la solution convergée de l'un avec le réglage de l'autre ;
+   si elle s'en éloigne puis se stabilise, c'est un autre point fixe (défaut de
+   discrétisation), pas de l'erreur d'itération. Campagne : lire l'en-tête du script
+   (arguments) avant de la lancer (c3c lancée avec un mauvais argument).
 5. Relecture adverse du diff (`git diff`) avec la liste des défauts déjà trouvés par les
    audits : chemins 2D / 3D / axisymétrique, reprise (exacte ?), interface = ligne de
    commande, dossier courant ≠ dossier du cas, Windows (chemins, encodage, virgule

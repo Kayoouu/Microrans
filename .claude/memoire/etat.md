@@ -1,44 +1,20 @@
-# État du projet (mis à jour le 2026-10-12)
+# État du projet (mis à jour le 2026-10-13)
 
 ## Où on en est
 
 - microrans : outil RANS / URANS 1D, 2D, 3D (périmètre réduit) avec mailleur, interface
   PySide6 et exécutables PyInstaller Windows / Linux (CI GitHub Actions).
-- Dernier lot terminé : **maillage en C, partie 3** (2026-10-12) : écart O / C très
-  probablement dû au sillage proche, non résolu par l'O-grid (U min à 0.1 corde : O 0.85,
-  C 0.57) ; TMR impossible (réseau), validation partielle écrite ; jalon A : reste l'audit 3.
-  Campagnes du lundi sans régression. Avant : **maillage en C, partie 2** (2026-10-11) : taille du domaine des
-  profils mesurée (exemples NACA à R = 30 : C_l −1.5 %, C_d +3.5 % par rapport à R infini ;
-  README § 8 6b) ; convergence du C lente mais régulière (pas une oscillation : corrigé) ;
-  écart O / C non expliqué ; campagnes c1, c6, c7, c8 sans régression. Avant :
-  **maillage en C, partie 1** (2026-10-10, relance quotidienne ;
-  jalon A) : `[mesh] type = "cgrid"` (expérimental) ; NACA 0012 SA : résidu de ν̃ qui
-  plafonne (sillage proche, mailles de 2e-5 le long de la coupure), C_d 0.01217 contre
-  0.01255 en O, C_l 1.8 % plus bas (cause non établie) ; NASA TMR refusé par le réseau
-  (403). Partie 2 en tête de liste. Avant : **GCI — incertitude de maillage** (2026-10-09, relance
-  quotidienne ; jalon A, point 1) : `microrans/gci.py` (Celik et al. 2008, testé sur
-  l'exemple publié), `tools/validation/gci_maillage.py`, README § 6 « Incertitude de
-  maillage » : cylindre Re = 20 p 2.08, GCI 0.09 % ; cavité p 2.47, GCI 0.05 % (u min
-  à 1.4 % de Ghia, s'en éloigne en raffinant) ; conduite 3D p 1.99, extrapolé à 7e-6 de
-  l'exact. Trouvé : C_d du cylindre dépend du domaine (R = 20 / 40 / 80 → 2.080 /
-  2.037 / 2.019) : l'accord à 0.6 % avec Dennis & Chang tenait à R = 40 (corrigé dans
-  README, tutoriel, exemple). Avant : **F4 — textes et documentation** (2026-10-08, relance
-  quotidienne) : T1, T2 (la 3D dans --help, « À propos », paquet, message d'ouverture), D5
-  (extrait 3D du README complet et calculé), D6 (tutoriel § 7 « Un cas 3D »), D7 (glossaire
-  3D, dépannage), D8 (chiffres du README : un cœur mesuré ; cylindre RK3 1 780 s ce jour
-  contre 1 061 s à l'audit, même code côte à côte → « 16 à 30 min ») ; 5 tests. Fin des
-  lots F de l'audit 2. Avant : **F3 — interface 3D, figures, sorties** (2026-10-07) : P2 (cause mesurée : courbe de convergence retracée toutes les 0.25 s dans
-  le fil de l'interface ; cavité 34 à 46 s → 8.9 à 9.6 s), axe des résidus sur 330 décades
-  (trouvé en mesurant), L7 (aire, normale, vecteur frottement dans les CSV), L5
-  (`[output] slice_axis` / `slice_value`), U15, U18, U19, U20 (arrêt du maillage 0.07 à
-  1.5 s) ; 8 tests (tous « échoue avant : OK ») ; calculs identiques au bit près (ab.py,
-  6 exemples). Avant : **F2 — messages** (2026-10-06) : M13 à M22, U16, L6. Avant : **F1b — plantages et reprises** (2026-10-05) :
-  C16 (perturbation 3D), C17 (reprise compressible implicite exacte au bit près), C19
-  (Ctrl-C écrit tout, code 130), C22 (polaire 3D), C23 (multigrille sur extrusion fine) ;
-  campagne 7 : 18/18 exemples repris au bit près. Avant : **F1** (2026-10-04) : P1 (1 fil BLAS), C11, C13, C14, C18, C20, C21, U14, U17 corrigés, un test
-  par point (chacun échoue sur l'ancien code). Puis **C15** (l'utilisateur m'a laissé
-  choisir « la meilleure solution ») : une seule vitesse de référence. Avant : audit 2
-  approfondi (576a0bc, e5deb38).
+- Dernier lot terminé : **audit 3, partie 1** (2026-10-13) : toutes les campagnes
+  tools/audit relancées, sans régression ; nouvelle campagne c17 (convergence annoncée :
+  21 exemples honnêtes) ; **C24** : la solution stationnaire convergée dépend de
+  `pseudo_cfl` (NACA SA : C_d +0.75 %, point fixe différent prouvé par contre-épreuve) et
+  de `relax_U` (README) — Rhie-Chow probable ; figures : L8 (sondes tracées comme
+  résidus), L9 (bruit 1e-15 à pleine échelle dans les profils), L10, L11. Prochain : lot
+  G1 (C24), puis G2 (figures), puis audit 3 partie 2. Avant : **maillage en C, partie 3**
+  (2026-10-12) : écart O / C très probablement dû au sillage proche, non résolu par
+  l'O-grid ; TMR impossible (réseau), validation partielle écrite. Avant : maillage en C
+  parties 1 et 2 (10 et 11 octobre), GCI (9), F4, F3, F2, F1b, F1, audit 2 : détail dans
+  `journal.md`.
 - Exécutables de 1a21eb7 (maillage en C 2) : run https://github.com/Kayoouu/Microrans/actions/runs/38112114618
   (Windows : artefact 11691728129, Linux : 11691822597 ; expirent le 2027-01-09). CI verte
   (tests https://github.com/Kayoouu/Microrans/actions/runs/38112114733).
@@ -88,7 +64,8 @@ calcul stationnaire 10⁶ cellules = quelques centaines d'itérations ≈ 1 à 1
   137 s). La mesure « Numba multi-fil plus lent » datait d'avant : à refaire.
 - 3D : figures en coupe plane — interface : x, y ou z = cte (`mesh3d/slice.py` :
   `PlaneSlice` polygones d'intersection, tous types de cellules, 0.4 s à 10⁶ ; `ZSlice`
-  inchangé pour z, maillages en couches) ; ligne de commande : plan z médian ; champs
+  inchangé pour z, maillages en couches) ; ligne de commande : `[output] slice_axis` /
+  `slice_value` (F3, défaut plan z médian) ; champs
   complets dans `fields.vtk` (ParaView). Compressible, couplé, poreux, swirl, disques,
   animations, axisymétrique : refusés en 3D avec message.
 - VTK : binaire par défaut (`[output] vtk_format = "ascii"` = ancien texte, identique
@@ -102,17 +79,15 @@ calcul stationnaire 10⁶ cellules = quelques centaines d'itérations ≈ 1 à 1
 
 ## Limites ouvertes importantes (détail : README § 8)
 
-- **Défauts connus non encore corrigés (lot F1b)** : Ctrl-C perd tout (C19) ; reprise compressible
-  implicite non exacte (C17) ; plantages : perturbation 3D (C16), polaire 3D (C22),
-  multigrille sur extrusion fine (C23).
+- **Défauts connus non encore corrigés (audit 3)** : C24 (résultat stationnaire dépendant
+  de `pseudo_cfl` / `relax_U`, lot G1) ; figures L8 à L11 (lot G2).
 
 - Un calcul = un cœur (BLAS limité à 1 fil depuis F1) ; SIMPLE lent sur maillages fins étirés.
 - NACA 0012 transsonique : ancien « −4.5 % » expliqué (référence d'une autre géométrie +
   seuil du limiteur) ; restent C_d +2 % et une valeur citée de Vassberg & Jameson (≈ 0.347,
   bord de fuite pointu) 3.7 % au-dessus, non vérifiable ici (articles bloqués par le proxy).
 - Transition γ validée seulement sur plaques sans gradient de pression.
-- 3D : pas de mailleur général ni d'import 3D ; plan des figures non réglable en ligne de
-  commande (z médian).
+- 3D : pas de mailleur général ni d'import 3D.
 
 ## Fichiers clés
 
