@@ -12,10 +12,10 @@
   C24 » au README : partie 2 (remesures) en cours. Avant : **audit 3, partie 1**
   (2026-10-13) : campagnes sans régression, c17 (21 exemples honnêtes), C24, figures L8 à
   L11. Avant : maillage en C (10 au 12 octobre), GCI (9), F4 à F1, audit 2 : `journal.md`.
-- Exécutables de 1a21eb7 (maillage en C 2) : run https://github.com/Kayoouu/Microrans/actions/runs/38112114618
-  (Windows : artefact 11691728129, Linux : 11691822597 ; expirent le 2027-01-09). CI verte
-  (tests https://github.com/Kayoouu/Microrans/actions/runs/38112114733).
-- Suite de tests : 513 (511 réussis, 2 ignorés), 5 à 10 min en série sur la machine de session.
+- Exécutables de c9d3b09 (C24, Majumdar) : run https://github.com/Kayoouu/Microrans/actions/runs/38513220182
+  (Windows : artefact 11870603822, Linux : 11870797989 ; expirent le 2027-01-12). CI verte
+  (tests https://github.com/Kayoouu/Microrans/actions/runs/38513215556).
+- Suite de tests : 514 (512 réussis, 2 ignorés), 5 à 10 min en série sur la machine de session.
 - Objectif accepté le 2026-10-05 : jalon A (2D académique crédible), puis B (3D
   académique, petite géométrie) ; C (pré-industriel) non visé. Détail : `a_faire.md`.
 - Méthode outillée (2026-10-05) : skill `lot`, `tools/dev/`, hooks avant poussée et fin de

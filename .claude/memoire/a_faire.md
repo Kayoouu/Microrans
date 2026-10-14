@@ -38,6 +38,10 @@ Windows par un humain sur un vrai PC (jamais fait : la CI vérifie seulement qu'
    `tools/validation/gci_maillage.py` (tableau GCI et texte), tableau § 5.5 (itérations et
    temps SIMPLEC ; script ?), convection naturelle de Vahl Davis (§ 6 ; script ?), écarts
    de la cavité à Ghia (§ 6). Puis retirer les mentions « avant C24 ». Estimé 1 lot.
+   Relever d'abord la mesure NACA après C24 (relax_U 0.5, pseudo_cfl 20) lancée le
+   2026-10-14 à 04:47 : scratchpad g1/apres_maj_naca.log (sinon la relancer :
+   `VARIANTES="relax_U=0.5 pseudo_cfl=20" python tools/validation/rhie_chow_reglages.py
+   <dossier> naca0012_sa`, ≈ 30 min).
 2. **Limiteur de la correction non orthogonale** (`nonorth_limit`, défaut 0.5) : cause
    mesurée du plateau de résidus sur maillage non orthogonal (NACA de l'exemple : plateau
    p 1e-5 avant C24, 1e-4 depuis ; avec `nonorth_limit = 1`, 2e-8 en 600 it avant comme
