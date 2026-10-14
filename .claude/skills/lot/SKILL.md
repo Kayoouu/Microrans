@@ -33,6 +33,9 @@ dans `CLAUDE.md` ; cette page dit comment les appliquer avec les outils `tools/d
 3. **Résultats inchangés là où ils doivent l'être** : `python tools/dev/ab.py egalite --
    run2d <exemple> -o {out} --no-plot -q --set solver.max_iter=30` sur les exemples
    touchés ; une différence doit être voulue et expliquée.
+   Changement de la méthode numérique : comparer aussi les historiques de résidus (ancien /
+   nouveau, un cas orthogonal et un non orthogonal) ; un arrêt sur les efforts cache un
+   plateau (G1 : f9bc44e poussé avec des résidus du NACA 30 fois plus hauts).
 4. **Tout chiffre écrit est mesuré** : temps et mémoire par
    `python tools/dev/ab.py temps --repet 2 -- …` (ordre A B B A, machine libre : la charge
    est affichée) ; préciser les conditions dans le texte. Étude de plusieurs minutes

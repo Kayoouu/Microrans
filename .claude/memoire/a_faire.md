@@ -38,10 +38,16 @@ Windows par un humain sur un vrai PC (jamais fait : la CI vérifie seulement qu'
    `tools/validation/gci_maillage.py` (tableau GCI et texte), tableau § 5.5 (itérations et
    temps SIMPLEC ; script ?), convection naturelle de Vahl Davis (§ 6 ; script ?), écarts
    de la cavité à Ghia (§ 6). Puis retirer les mentions « avant C24 ». Estimé 1 lot.
-2. **Lot G2 — figures** (audit 3 : L8 sondes tracées comme résidus, L9 bruit d'arrondi à
+2. **Limiteur de la correction non orthogonale** (`nonorth_limit`, défaut 0.5) : cause
+   mesurée du plateau de résidus sur maillage non orthogonal (NACA de l'exemple : plateau
+   p 1e-5 avant C24, 1e-4 depuis ; avec `nonorth_limit = 1`, 2e-8 en 600 it avant comme
+   après). Mesurer la stabilité sans limiteur (triangles, hybride, mesh_naca_multi,
+   cylindre hybride) et une autre forme (limiteur gelé, lissé) avant de changer le défaut.
+   Estimé 1 lot.
+3. **Lot G2 — figures** (audit 3 : L8 sondes tracées comme résidus, L9 bruit d'arrondi à
    pleine échelle dans les profils, L10 cadrage du tuyau axisymétrique, L11 figures de
    champ du tube de Sod). Estimé 1 lot. Un test par point.
-3. **Audit 3, partie 2** : chaque accord de validation du README face au maillage et à la
+4. **Audit 3, partie 2** : chaque accord de validation du README face au maillage et à la
    taille du domaine (cylindre et NACA déjà trouvés ; après G1, les chiffres ayant bougé) ;
    figures restantes (pression, vorticité, ν_t, maillages) ; interface (figures de la page
    Résultats). Convergence apparente trompeuse (C_l de l'O-grid, ordre apparent 6.7) à

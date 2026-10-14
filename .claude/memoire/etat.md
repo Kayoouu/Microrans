@@ -7,7 +7,8 @@
 - Dernier lot : **G1 (C24), partie 1** (2026-10-14) : flux de Rhie-Chow du stationnaire
   sur la diagonale physique (sans relax_U ni pseudo-temps) → SIMPLE / SIMPLEC = couplé à
   1e-8, quels que soient relax_U / pseudo_cfl ; itérations inchangées (±2 %) ; NACA C_d
-  +0.89 %, C_l −0.24 %, cavités −0.2 %, autres ≤ 0.034 %. Chiffres d'avant marqués « avant
+  +0.89 %, C_l −0.24 %, cavités −0.2 %, autres ≤ 0.034 %. Plateau de résidus NACA 10 fois
+  plus haut (limiteur non orthogonal, cause mesurée). Chiffres d'avant marqués « avant
   C24 » au README : partie 2 (remesures) en cours. Avant : **audit 3, partie 1**
   (2026-10-13) : campagnes sans régression, c17 (21 exemples honnêtes), C24, figures L8 à
   L11. Avant : maillage en C (10 au 12 octobre), GCI (9), F4 à F1, audit 2 : `journal.md`.
@@ -71,7 +72,9 @@ calcul stationnaire 10⁶ cellules = quelques centaines d'itérations ≈ 1 à 1
   solveur, comme SU2 : deux solutions stationnaires et C_l −5 % sur 96 × 32) ; défaut non
   changé (rampe M = 2, Sod non remesurés). NACA : `trailing_edge = closed | open | sharp`.
 - Rhie-Chow en stationnaire (C24, 2026-10-14) : coefficient V / a_P physique (sans
-  relax_U ni pseudo-temps), terme explicite dans `_pressure_correction(steady_ref=…)` ;
+  relax_U ni pseudo-temps) : correction de Majumdar pour relax_U (exacte, sans gradient
+  explicite), terme explicite pour le pseudo-temps (`_pressure_correction(steady_ref=…)`) ;
+  plateau de résidus plus haut sur maillage non orthogonal (limiteur, voir a_faire) ;
   pas d'option pour revenir à l'ancien comportement (résultat dépendant des réglages) ;
   instationnaire inchangé (ddtCorr).
 - Extrusion multi-couches ≠ 2D exact (Rhie-Chow : diffusion z dans a_P) ; une couche entre

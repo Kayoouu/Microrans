@@ -25,6 +25,15 @@ commit. Ce journal sert à retrouver ce qui a été fait, pourquoi, et ce qui a 
   convergés ; NACA C_d 0.012548 → 0.012660 (+0.89 %, = couplé du README § 5.5), C_l
   −0.24 %, traînée de pression +3.6 % ; polaire α = 0 C_d +0.41 % ; cavités −0.14 à
   −0.21 % ; convection +0.034 % ; autres ≤ 0.014 % ; itérations −7 % à +4 %.
+- Après la poussée de f9bc44e (CI verte) : NACA, résidus bloqués à Uy 1.4e-4, p 3.5e-4
+  (ancien : 2.5e-6, 1.2e-5), efforts stables. Isolé : partie non orthogonale du terme
+  explicite (correction différée amplifiée par 1/α) ; avec `nonorth_limit = 1`, ancien et
+  nouveau descendent à 2e-8 en 600 it → le limiteur est la cause du plateau (déjà au README
+  « vers 1e-5 »). Remplacé, pour relax_U, par la correction de Majumdar (1 − α)·D(itération
+  précédente) : exacte (α uniforme), mêmes résultats, plateau NACA Uy 3e-5 / p 1e-4 (10 fois
+  l'ancien), sans limiteur identique à l'ancien ; pseudo-temps : terme explicite gardé
+  (pseudo_cfl 20 : résidus comme l'ancien code). 19 exemples refaits : mêmes chiffres,
+  itérations −1 % à +3.7 %.
 - README : mécanisme (§ 4, § 5.5, § 8 points 3 et 6 : l'explication « monitor_tol » était
   fausse), note C24 en tête du § 6, valeurs d'avant marquées ; en-tête naca0012_sa. Partie
   2 : remesures (naca_domaine, naca_o_c, polaire, GCI, § 5.5, convection).

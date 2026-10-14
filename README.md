@@ -884,7 +884,11 @@ redonne l'ancien fichier texte, identique octet pour octet.
    C_d −0.6 % entre 0.7 et 0.5, +0.75 % avec `pseudo_cfl = 20` ; cavité +1.0 % à 0.5) ;
    corrigé (C24) : même solution convergée que le couplé, quels que soient ces réglages
    (à 1e-8 près, `tests/test_coupled.py`). Sur maillages non orthogonaux, les résidus
-   plafonnent souvent vers 1e-5 — utiliser `monitor_tol`.
+   plafonnent (NACA de l'exemple : U_y vers 3e-5, p vers 1e-4 depuis C24, contre 2.5e-6 et
+   1.2e-5 avant ; efforts stables) — utiliser `monitor_tol`. Cause mesurée : le limiteur de
+   la correction non orthogonale (`nonorth_limit = 0.5`) ; avec `nonorth_limit = 1`, avant
+   comme après C24, les résidus du même cas descendent à 2e-8 en 600 itérations (stabilité
+   sans limiteur sur triangles et maillages hybrides non vérifiée : défaut inchangé).
 4. **Compressible sans turbulence** (Euler ou laminaire, 2D plan, CPU) ; NACA 0012
    transsonique : C_l à 0.1 % et C_d à +2 % d'une référence publiée (même géométrie), mais
    cette référence n'a été lue que dans un résumé, et une autre valeur citée (Vassberg &

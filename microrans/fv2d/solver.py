@@ -1476,8 +1476,9 @@ class Solver2D:
     # ------------------------------------------------------------------ pression
     def _pressure_correction(self, eqs, ddt_corr=None, relax_p=1.0, rtol=1e-6,
                              steady_ref=None):
-        """steady_ref = (relax_U, a0) en stationnaire : flux de Rhie-Chow indépendant de la
-        sous-relaxation et du pseudo-temps (voir C24 ci-dessous) ; None : inchangé."""
+        """steady_ref (stationnaire, voir C24 ci-dessous) : ("relax", relax_U, D_i, D_b) ou
+        ("pseudo", a0) : flux de Rhie-Chow indépendant de la sous-relaxation et du
+        pseudo-temps ; None : inchangé (instationnaire)."""
         xp = self.xp
         fvm, s = self.fvm, self.settings
         V = fvm.V
@@ -1505,14 +1506,26 @@ class Solver2D:
             # faces à gradient de p imposé (= f·n) : flux de force compensé → débit inchangé
             fb = xp.sum(self._boundary_force() * fvm.Sb, axis=1)
             phiHbyA_b = phiHbyA_b + xp.where(self.kindP == 1, rAU[fvm.Pb] * fb, 0.0)
-        if steady_ref is not None:
-            # C24 : à convergence, φ − interp(U)·S = terme de Rhie-Chow de coefficient rAU,
-            # qui contient 1/relax_U ou le pseudo-temps a0 : la solution convergée en
-            # dépendait (NACA SA, pseudo_cfl = 20 : C_d +0.75 %). Terme explicite qui y
-            # substitue rAU_ref = V/a_P sans relaxation ni pseudo-temps : point fixe
-            # indépendant de ces réglages (ils ne changent plus que le chemin).
-            rel, a0 = steady_ref
-            aP0 = aP * rel - (a0 * V if _active(a0) else 0.0)
+        if steady_ref is not None and steady_ref[0] == "relax":
+            # C24 : à convergence, D = φ − interp(U)·S est le terme de Rhie-Chow de
+            # coefficient rAU = relax_U·V/a_P(physique) : la solution convergée dépendait
+            # de relax_U (NACA C_d −0.6 % de 0.7 à 0.5). Correction de Majumdar (1988) :
+            # + (1 − α)·D de l'itération précédente ⇒ à convergence D = D(rAU)/α, le terme
+            # de V/a_P physique (le flux du solveur couplé), partie non orthogonale et
+            # forces comprises. Sans gradient de pression explicite : la correction non
+            # orthogonale différée n'est pas amplifiée (substitution explicite essayée :
+            # résidus du NACA bloqués 30 fois plus haut).
+            _, rel, D_i, D_b = steady_ref
+            if rel < 1.0:
+                phiHbyA_i = phiHbyA_i + (1.0 - rel) * D_i
+                phiHbyA_b = phiHbyA_b + xp.where(self.kindP == 0, (1.0 - rel) * D_b, 0.0)
+        elif steady_ref is not None:
+            # pseudo-temps a0 par cellule (pseudo_cfl) : le coefficient varie d'une cellule
+            # à l'autre, la forme de Majumdar ne serait pas exacte ; terme explicite qui
+            # substitue rAU_ref = V/a_P sans pseudo-temps (amplification de la correction
+            # non orthogonale différée : 1 + a0·V/a_P, faible aux pseudo_cfl usuels).
+            a0 = steady_ref[1]
+            aP0 = aP - (a0 * V if _active(a0) else 0.0)
             c = V / aP0 - rAU
             cf = fvm.interp(c)
             phiHbyA_i = phiHbyA_i + xp.sum(fvm.interp(c[:, None] * gradp) * fvm.Si, axis=1) \
@@ -1618,6 +1631,10 @@ class Solver2D:
                 eqs = self._momentum(a0=a0, hist=-a0v * self.U)
                 a0T = {k: -a0 * v for k, v in self.state.items()}
             else:
+                # C24 : écart flux − vitesse interpolée de l'itération précédente (correction
+                # de Majumdar dans _pressure_correction)
+                D_i = self.F_i - xp.sum(self.fvm.interp(self.U) * self.fvm.Si, axis=1)
+                D_b = self.F_b - xp.sum(self.boundary_U(self.U) * self.fvm.Sb, axis=1)
                 eqs = self._momentum(relax=s.relax_U)
             coupled = s.algorithm.upper() == "COUPLED"
             for c, (diag, up, lo, rhs) in enumerate(eqs):
@@ -1642,7 +1659,7 @@ class Solver2D:
                 pseudo = bool(s.pseudo_dt or s.pseudo_cfl)
                 self._pressure_correction(
                     eqs, relax_p=relax_p, rtol=0.01,
-                    steady_ref=(1.0, a0) if pseudo else (s.relax_U, 0.0))
+                    steady_ref=("pseudo", a0) if pseudo else ("relax", s.relax_U, D_i, D_b))
             if s.pseudo_dt or s.pseudo_cfl:
                 self._turbulence(a0=a0, hist=a0T, relax=s.relax_turb)
                 if self.energy is not None:
