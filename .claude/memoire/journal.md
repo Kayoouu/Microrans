@@ -3,6 +3,32 @@
 Détail des chiffres : README (§ 6 validation, § 7 performances, § 8 limites) et messages de
 commit. Ce journal sert à retrouver ce qui a été fait, pourquoi, et ce qui a été constaté.
 
+## 2026-10-14 — Lot G1 (C24), partie 1 : Rhie-Chow indépendant de relax_U / pseudo-temps
+
+- Relance quotidienne (03:53 UTC). CI verte au départ (1ab9c2e).
+- Mécanisme (lu dans solver.py) : à convergence, φ − interp(U)·S = terme de Rhie-Chow de
+  coefficient rAU = V / a_P, et a_P contient 1/relax_U (sous-relaxation implicite) ou a0·V
+  (pseudo-temps). Le couplé utilisait déjà la diagonale physique.
+- Correction : `_pressure_correction(..., steady_ref=(relax, a0))`, appelée par run_steady
+  seulement : terme explicite RC(V/a_P0 − rAU) (gradient cellule interpolé moins gradient
+  normal de l'équation de pression, partie non orthogonale et forces aux faces comprises ;
+  faces à pression imposée aussi). Instationnaire, compressible, couplé : identiques au bit
+  près (ab.py egalite, 3 cas).
+- Vérification : cavité 16² / 24², SIMPLEC 0.9 / 0.6, SIMPLE 0.7, pseudo_cfl 50, pseudo_dt
+  0.3 : solution du couplé à 1e-8 près (ancien code : 2e-4 à 2.3e-2) ; itérations ±2 %.
+  Tests : test_coupled.py (nouveau test du point fixe + assertion SIMPLEC = couplé
+  resserrée 1e-2 → 1e-6), échouent sur l'ancien code.
+- tools/validation/rhie_chow_reglages.py (avant → après, écart des efforts au défaut) :
+  cavité relax 0.5 1.0e-2 → 7e-9, pseudo_cfl 2.0e-3 → 2e-7 ; cylindre 1.1e-4 → 1.5e-9 ;
+  plaque 1.9e-3 → 2e-9 ; NACA avant : relax 0.5 C_d −0.60 %, pseudo_cfl +0.77 %.
+- 19 exemples stationnaires incompressibles, ancien / nouveau code, mêmes réglages : tous
+  convergés ; NACA C_d 0.012548 → 0.012660 (+0.89 %, = couplé du README § 5.5), C_l
+  −0.24 %, traînée de pression +3.6 % ; polaire α = 0 C_d +0.41 % ; cavités −0.14 à
+  −0.21 % ; convection +0.034 % ; autres ≤ 0.014 % ; itérations −7 % à +4 %.
+- README : mécanisme (§ 4, § 5.5, § 8 points 3 et 6 : l'explication « monitor_tol » était
+  fausse), note C24 en tête du § 6, valeurs d'avant marquées ; en-tête naca0012_sa. Partie
+  2 : remesures (naca_domaine, naca_o_c, polaire, GCI, § 5.5, convection).
+
 ## 2026-10-13 — Audit 3, partie 1 : campagnes, convergence annoncée (c17), figures
 
 - Relance quotidienne (03:53 UTC, mardi). CI verte au départ (e45922e). Toutes les

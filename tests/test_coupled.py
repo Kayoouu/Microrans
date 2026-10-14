@@ -41,9 +41,30 @@ def test_solution_independent_of_relaxation_and_close_to_simplec():
     # solution à la tolérance près
     assert np.max(np.abs(a.U - b.U)) < 1e-6
     assert np.max(np.abs(a.U - d.U)) < 1e-6
-    # SIMPLEC (diagonale relaxée dans Rhie-Chow) : écart de l'ordre de l'erreur de
-    # discrétisation seulement (0,5 % de la vitesse du couvercle sur 24 × 24, dans les coins)
-    assert np.max(np.abs(a.U - c.U)) < 1e-2
+    # SIMPLEC : même flux de Rhie-Chow depuis C24 (avant : diagonale relaxée, écart de
+    # 5e-3 de la vitesse du couvercle sur 24 × 24, dans les coins)
+    assert np.max(np.abs(a.U - c.U)) < 1e-6
+
+
+def test_simple_fixed_point_independent_of_relaxation_and_pseudo_time():
+    """C24 (audit 3) : la solution convergée de SIMPLE / SIMPLEC dépendait de relax_U et du
+    pseudo-temps (rAU = V/a_P relaxé dans Rhie-Chow ; NACA SA, pseudo_cfl = 20 : C_d
+    +0.75 %). Partant de la solution du couplé (Rhie-Chow sur la diagonale physique), chaque
+    réglage doit y rester : c'est aussi son point fixe. Ancien code : s'en éloigne (5e-4 à
+    1e-2 en 50 itérations)."""
+    ref = _cavity(16, algorithm="coupled", relax_U=1.0)
+    assert ref.run_steady(max_iter=200, tol=1e-11)
+    for kw in ({"algorithm": "SIMPLEC", "relax_U": 0.9}, {"algorithm": "SIMPLEC", "relax_U": 0.6},
+               {"algorithm": "SIMPLE", "relax_U": 0.7}, {"algorithm": "SIMPLEC", "pseudo_cfl": 20.0},
+               {"algorithm": "SIMPLEC", "pseudo_dt": 0.3}):
+        s = _cavity(16, **kw)
+        s.U, s.p, s.F_i, s.F_b = ref.U.copy(), ref.p.copy(), ref.F_i.copy(), ref.F_b.copy()
+        s.run_steady(max_iter=50, tol=1e-30)
+        assert np.max(np.abs(s.U - ref.U)) < 1e-7, kw
+    # même solution convergée en partant du repos (pseudo-temps global : rapide)
+    s = _cavity(16, algorithm="SIMPLEC", pseudo_dt=0.3)
+    assert s.run_steady(max_iter=2000, tol=1e-10)
+    assert np.max(np.abs(s.U - ref.U)) < 1e-7
 
 
 def test_channel_mass_conservation_and_parabolic_profile():

@@ -7,7 +7,8 @@ inutile (mesure à l'appui), l'écrire dans le journal et passer à la suivante.
 
 ## En cours
 
-Rien (audit 3, partie 1, terminé le 2026-10-13).
+**Lot G1 (C24), partie 2** : remesurer les chiffres publiés d'avant la correction (marqués
+« avant C24 » au README). Voir point 1 ci-dessous. Partie 1 faite le 2026-10-14.
 
 ## À faire
 
@@ -27,18 +28,16 @@ faits. Côté
 utilisateur (je ne peux pas le faire) : publier une release, faire essayer l'exécutable
 Windows par un humain sur un vrai PC (jamais fait : la CI vérifie seulement qu'il démarre).
 
-1. **Lot G1 — C24 : solution stationnaire indépendante de `relax_U` / `pseudo_cfl`**
-   (audit 3 ; détail et reproduction : docs/audit_utilisateur.md, Audit 3, C24). Mesuré :
-   NACA SA, `pseudo_cfl = 20` déplace la solution convergée de +0.75 % sur C_d (point fixe
-   différent, pas un arrêt prématuré) ; README : `relax_U` 0.7 → 0.5, C_d −0.6 %. Étapes :
-   (a) mesurer l'effet de `relax_U` et `pseudo_cfl` sur 3 à 4 exemples (cylindre Re 20,
-   cavité, NACA SA, plaque SA) ; (b) corriger l'interpolation de Rhie-Chow (correction de
-   relaxation type Majumdar 1988 ; en pseudo-temps, terme comme `ddtCorr`) ; test : même
-   solution convergée à 1e-6 près pour deux `relax_U` et avec / sans `pseudo_cfl` ;
-   (c) cas à solution exacte et GCI inchangés en ordre ; (d) remesurer les chiffres
-   publiés qui bougent (README, tutoriel, en-têtes d'exemples, tests à bornes) ; corriger
-   README § 8 point 6 (explication fausse par `monitor_tol`). Estimé 2 lots. Fait quand :
-   test vert, chiffres publiés remesurés, CI verte.
+1. **Lot G1, partie 2 — remesurer après C24** (code corrigé le 2026-10-14 : Rhie-Chow sur
+   la diagonale physique en stationnaire ; SIMPLEC = couplé à 1e-8). À refaire, scripts
+   existants : `tools/validation/naca_domaine.py` (R = 30 / 100 / 300 : README § 6 et
+   § 8 6b, en-têtes naca0012_sa ligne 3 et naca0012_polaire lignes 2-3),
+   `tools/validation/naca_o_c.py` (O contre C : § 6, § 8 point 6 — la traînée de pression
+   en O a pris +3.6 %, l'écart O / C change), polaire (`microrans polar naca0012_polaire
+   --alpha -4 14 2` : pente, C_m, figure docs/polaire_naca0012_sa.png),
+   `tools/validation/gci_maillage.py` (tableau GCI et texte), tableau § 5.5 (itérations et
+   temps SIMPLEC ; script ?), convection naturelle de Vahl Davis (§ 6 ; script ?), écarts
+   de la cavité à Ghia (§ 6). Puis retirer les mentions « avant C24 ». Estimé 1 lot.
 2. **Lot G2 — figures** (audit 3 : L8 sondes tracées comme résidus, L9 bruit d'arrondi à
    pleine échelle dans les profils, L10 cadrage du tuyau axisymétrique, L11 figures de
    champ du tube de Sod). Estimé 1 lot. Un test par point.

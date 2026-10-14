@@ -313,7 +313,7 @@ API Python : `from microrans.fv2d import Solver2D, Settings`, `from microrans.me
 | Maillage | multi-blocs avec progression et arêtes courbes ; O-grid ; maillage en C (profils) ; triangles (DistMesh) ; hybride couches limites + triangles ; qualité `checkMesh` | blockMesh, Gmsh, « inflation » Fluent |
 | Formats | Gmsh `.msh` (v2.2/v4.1), SU2, VTK, OpenFOAM `polyMesh` | — |
 | Discrétisation | volumes finis colocalisés, polygones quelconques, Green-Gauss, correction non orthogonale limitée, convection `upwind` / `linearUpwind` | OpenFOAM |
-| Couplage p-U | SIMPLE / SIMPLEC ou **couplé** (u, v, p dans un seul système, flux de Rhie-Chow à diagonale non relaxée — Majumdar 1988) en stationnaire, PIMPLE (instationnaire), Rhie-Chow forme HbyA, `ddtCorr` cohérent (Tuković et al. 2018) | OpenFOAM ; « Coupled » de Fluent, pUCoupledFoam (foam-extend) |
+| Couplage p-U | SIMPLE / SIMPLEC ou **couplé** (u, v, p dans un seul système) en stationnaire, flux de Rhie-Chow sur la diagonale non relaxée et sans pseudo-temps (Majumdar 1988 ; solution indépendante de `relax_U` / `pseudo_cfl`), PIMPLE (instationnaire), Rhie-Chow forme HbyA, `ddtCorr` cohérent (Tuković et al. 2018) | OpenFOAM ; « Coupled » de Fluent, pUCoupledFoam (foam-extend) |
 | Temps | Euler, BDF2 à pas variable, Crank-Nicolson, RK1–RK4 et AB2 à projection, pas adaptatif sur le Courant, choix automatique | OpenFOAM, SU2, codes DNS |
 | Solveurs linéaires | multigrille algébrique par agrégation (hiérarchie réutilisée), CG flexible, BiCGStab, LU creuse | GAMG d'OpenFOAM, PETSc |
 | Turbulence | SA, k-ε LS, k-ω 2006, SST 2003 (formes NASA TMR), sources linéarisées par Newton | NASA TMR |
@@ -514,10 +514,12 @@ maillage, celui de SIMPLEC augmente.
 | Cavité Re = 100 | 160 000 | — | 13 it., 38.7 s | — | 1.65 Go |
 
 Résultats identiques à l'erreur de discrétisation près : efforts, Nusselt et flux à
-0.05 % ou mieux, sauf le NACA (C_d +0.9 %, C_l −0.24 %). Cet écart vient de SIMPLEC, dont
-la dissipation de Rhie-Chow dépend de `relax_U` : NACA SIMPLEC C_d = 0.012548 à
+0.05 % ou mieux, sauf le NACA (C_d +0.9 %, C_l −0.24 %). Cet écart venait de SIMPLEC, dont
+la dissipation de Rhie-Chow dépendait de `relax_U` : NACA SIMPLEC C_d = 0.012548 à
 `relax_U = 0.7` (défaut de ce maillage), 0.012475 à 0.5 ; couplé 0.012660 à `relax_U = 1`
-comme à 0.8.
+comme à 0.8. Corrigé le 14 octobre 2026 (C24) : SIMPLEC donne maintenant 0.012660 (même
+dissipation, diagonale physique). Itérations et temps du tableau mesurés avant cette
+correction (itérations SIMPLEC depuis : −7 % à +4 % selon l'exemple).
 
 **Ce qu'il faut en retenir :**
 - **Laminaire** : 2 à 27 fois plus rapide, et le gain **augmente avec le maillage**.
@@ -571,6 +573,15 @@ bord de fuite du NACA (elle change C_l de près de 4 % en transsonique).
 
 ## 6. Vérification et validation (résultats obtenus avec ce code)
 
+**Correction C24 (14 octobre 2026).** Les solutions stationnaires de SIMPLE / SIMPLEC
+dépendaient de `relax_U` et du pseudo-temps (voir § 8, point 3) ; depuis la correction,
+elles ne dépendent plus que du maillage et des schémas. Effet mesuré sur les 19 exemples
+stationnaires incompressibles, mêmes réglages : NACA 0012 C_d +0.89 %, C_l −0.24 % ; point
+α = 0 de la polaire C_d +0.41 % ; cavités 2D et 3D, efforts −0.14 à −0.21 % ; convection
+naturelle +0.034 % ; C_d des 14 autres : 0.014 % au plus (effort normal des plaques,
+quasi nul : ~0.1 %). Les valeurs de cette section marquées
+« avant C24 » (et le tableau GCI) sont à remesurer.
+
 ### 2D, écoulements
 
 | Cas | Grandeur | microrans | Référence |
@@ -585,9 +596,9 @@ bord de fuite du NACA (elle change C_l de près de 4 % en transsonique).
 | Plaque plane Re_L = 5e6, SA / SST, y⁺ ≈ 0.5 (7 168 cellules) | C_f(x = 0.97) | 0.00273 / 0.00260 | 0.00273 (Schultz-Grunow), 0.00287 (White) |
 | idem, **lois de paroi**, y⁺ ≈ 90 (2 688 cellules), SA / SST / k-ω | C_f(x = 0.97) | 0.00278 / 0.00273 / 0.00288 | idem |
 | Canal Re_τ = 2000, **lois de paroi**, 1re cellule à y⁺ ≈ 50 (24 cellules), SA / SST / k-ω | U_b / U_b résolu (1D, y⁺ = 0.2) | −2.3 % / +3.5 % / −0.5 % | même modèle résolu ; y⁺ ≈ 25 : −3.6 / +4.8 / −0.3 % |
-| NACA 0012, α = 4°, Re = 1e6, SA, champ lointain à R = 30 cordes | C_l ; C_d | 0.433 ; 0.0125 (R = 300 : 0.439 ; 0.0122) | 2πα = 0.439 (démonstration, voir limites) ; effet du domaine : § 8, point 6b |
-| idem, maillage en C (expérimental, 12 288 cellules) contre O-grid (8 192), 128 mailles sur le profil | C_d (dont pression) ; C_l | C : 0.01217 (0.00333) ; 0.4252 — O : 0.01255 (0.00369) ; 0.4332 | pas de référence embarquée ; sillage proche mal résolu en O (§ 8, point 6) |
-| NACA 0012, polaire −4° à 14°, Re = 1e6, SA (8 192 cellules, 4 min) | pente dC_l/dα ; C_m quart de corde ; symétrie | 0.1083 /° ; \|C_m\| < 0.008 ; C_l(−α) = −C_l(α) à 5 chiffres | 2π = 0.1097 /° (profil mince) ; 0 (profil symétrique) ; exacte |
+| NACA 0012, α = 4°, Re = 1e6, SA, champ lointain à R = 30 cordes | C_l ; C_d | 0.432 ; 0.0127 depuis la correction C24 du 14 octobre 2026 (avant : 0.433 ; 0.0125 ; R = 300, avant C24 : 0.439 ; 0.0122, à remesurer) | 2πα = 0.439 (démonstration, voir limites) ; effet du domaine : § 8, point 6b |
+| idem, maillage en C (expérimental, 12 288 cellules) contre O-grid (8 192), 128 mailles sur le profil | C_d (dont pression) ; C_l | mesures d'avant C24 : C : 0.01217 (0.00333) ; 0.4252 — O : 0.01255 (0.00369) ; 0.4332. O depuis C24 : 0.01266 (0.00382) ; 0.4321 ; C à remesurer | pas de référence embarquée ; sillage proche mal résolu en O (§ 8, point 6) |
+| NACA 0012, polaire −4° à 14°, Re = 1e6, SA (8 192 cellules, 4 min ; mesure d'avant C24, à remesurer : C_d à 0° +0.4 % depuis) | pente dC_l/dα ; C_m quart de corde ; symétrie | 0.1083 /° ; \|C_m\| < 0.008 ; C_l(−α) = −C_l(α) à 5 chiffres | 2π = 0.1097 /° (profil mince) ; 0 (profil symétrique) ; exacte |
 | Cylindre Re = 20, écoulement incliné de 30° | C_d (axes écoulement) | écart 0.01 % avec 0° | invariance exacte |
 | Canal, débit imposé (plan / axisymétrique 360°) | débit en sortie | exact à 1e-9 | conservation |
 | Canal entraîné par une pression totale Δp | p + ½U² en entrée ; débit | = p0 à 1e-12 ; −0.8 % | Poiseuille Δp h³/(12 ν L) |
@@ -689,6 +700,7 @@ due au maillage, facteur de sécurité 1.25). Résidus à 1e-10 (1e-9 en 3D, où
 plafonne : la vitesse débitante y est à 2e-7 près de celle de 40 000 itérations).
 Étude reproductible : `python tools/validation/gci_maillage.py <dossier>` (12 calculs ;
 le plus long, la cavité 128², 99 s sur la machine virtuelle 4 cœurs, le 2026-10-09).
+Mesures d'avant C24 (cavité : efforts −0.2 % depuis ; cylindre : −0.002 %) : à refaire.
 
 | Cas | Grandeur | Maillages (cellules) | Grossier / moyen / fin | Ordre p | Extrapolé | GCI fin | Référence |
 |-----|----------|----------------------|------------------------|--------:|----------:|--------:|-----------|
@@ -867,9 +879,12 @@ redonne l'ancien fichier texte, identique octet pour octet.
    pas en général (§ 5.4). Le **solveur couplé** (§ 5.5) règle le laminaire, mais pas la
    convection naturelle ni la transition (température, turbulence et γ restent résolues à
    part) ; CPU seulement, mémoire ~1 Go pour 100 000 cellules, ILU au-delà de 200 000
-   cellules non testée. SIMPLEC : les efforts convergés dépendent un peu de `relax_U`
-   (NACA : C_d −0.6 % entre 0.7 et 0.5), pas le couplé. Sur maillages non orthogonaux,
-   les résidus plafonnent souvent vers 1e-5 — utiliser `monitor_tol`.
+   cellules non testée. Jusqu'au 13 octobre 2026, les efforts convergés de SIMPLE / SIMPLEC
+   dépendaient de `relax_U` et du pseudo-temps (Rhie-Chow sur la diagonale relaxée : NACA
+   C_d −0.6 % entre 0.7 et 0.5, +0.75 % avec `pseudo_cfl = 20` ; cavité +1.0 % à 0.5) ;
+   corrigé (C24) : même solution convergée que le couplé, quels que soient ces réglages
+   (à 1e-8 près, `tests/test_coupled.py`). Sur maillages non orthogonaux, les résidus
+   plafonnent souvent vers 1e-5 — utiliser `monitor_tol`.
 4. **Compressible sans turbulence** (Euler ou laminaire, 2D plan, CPU) ; NACA 0012
    transsonique : C_l à 0.1 % et C_d à +2 % d'une référence publiée (même géométrie), mais
    cette référence n'a été lue que dans un résumé, et une autre valeur citée (Vassberg &
@@ -908,10 +923,11 @@ redonne l'ancien fichier texte, identique octet pour octet.
    convergence apparente trompeuse. Le maillage en C est donc probablement le plus juste
    pour C_l et C_d ; ce n'est pas démontré, faute de référence (données NASA TMR
    inaccessibles depuis l'environnement de développement, 10 au 12 octobre 2026 : pas de
-   comparaison TMR, validation partielle). Avec `pseudo_cfl = 20`, le
-   même cas en O s'arrête sur `monitor_tol` (1 542 itérations) alors que ses résidus ne
-   descendent plus (p : 1.3e-5 après 8 000 itérations) : C_d 0.01264 au lieu de 0.01255 sans
-   `pseudo_cfl` (0.7 %). Frontières
+   comparaison TMR, validation partielle). Chiffres de ce paragraphe mesurés avant la
+   correction C24 (voir point 3 ; NACA en O, maillage de l'exemple : C_d +0.89 %, C_l
+   −0.24 % depuis), à remesurer. L'écart de C_d avec `pseudo_cfl = 20` noté ici auparavant
+   (0.7 %, attribué à un arrêt sur `monitor_tol`) venait en fait de C24 : la solution
+   convergée dépendait du pseudo-temps. Frontières
    périodiques (`[mesh] periodic`) : maillages rectangle, multi-blocs et pavé seulement (et
    faces z d'une extrusion) ; pour un maillage importé (Gmsh, SU2), en O, en triangles ou
    hybride, la clé est ignorée avec un avertissement.

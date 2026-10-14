@@ -1474,7 +1474,10 @@ class Solver2D:
         return sum(e[0] - d for e, d in zip(eqs, sd)) / len(eqs)
 
     # ------------------------------------------------------------------ pression
-    def _pressure_correction(self, eqs, ddt_corr=None, relax_p=1.0, rtol=1e-6):
+    def _pressure_correction(self, eqs, ddt_corr=None, relax_p=1.0, rtol=1e-6,
+                             steady_ref=None):
+        """steady_ref = (relax_U, a0) en stationnaire : flux de Rhie-Chow indépendant de la
+        sous-relaxation et du pseudo-temps (voir C24 ci-dessous) ; None : inchangé."""
         xp = self.xp
         fvm, s = self.fvm, self.settings
         V = fvm.V
@@ -1502,6 +1505,28 @@ class Solver2D:
             # faces à gradient de p imposé (= f·n) : flux de force compensé → débit inchangé
             fb = xp.sum(self._boundary_force() * fvm.Sb, axis=1)
             phiHbyA_b = phiHbyA_b + xp.where(self.kindP == 1, rAU[fvm.Pb] * fb, 0.0)
+        if steady_ref is not None:
+            # C24 : à convergence, φ − interp(U)·S = terme de Rhie-Chow de coefficient rAU,
+            # qui contient 1/relax_U ou le pseudo-temps a0 : la solution convergée en
+            # dépendait (NACA SA, pseudo_cfl = 20 : C_d +0.75 %). Terme explicite qui y
+            # substitue rAU_ref = V/a_P sans relaxation ni pseudo-temps : point fixe
+            # indépendant de ces réglages (ils ne changent plus que le chemin).
+            rel, a0 = steady_ref
+            aP0 = aP * rel - (a0 * V if _active(a0) else 0.0)
+            c = V / aP0 - rAU
+            cf = fvm.interp(c)
+            phiHbyA_i = phiHbyA_i + xp.sum(fvm.interp(c[:, None] * gradp) * fvm.Si, axis=1) \
+                - cf * fvm.g * (self.p[fvm.N] - self.p[fvm.P])
+            if not fvm.orthogonal:
+                phiHbyA_i = phiHbyA_i - fvm.nonorth_flux(cf, gradp, self.p, s.nonorth_limit)
+            if self._has_force():
+                phiHbyA_i = phiHbyA_i + xp.sum(
+                    (cf[:, None] * ff - fvm.interp(c[:, None] * fc)) * fvm.Si, axis=1)
+            # faces à pression imposée (vitesse à gradient nul) : même substitution
+            _, _, pg0, pd0 = self.pressure_bc()
+            cb = c[fvm.Pb] * (xp.sum(gradp[fvm.Pb] * fvm.Sb, axis=1)
+                              - fvm.magSb * (pg0 * self.p[fvm.Pb] + pd0))
+            phiHbyA_b = phiHbyA_b + xp.where(self.kindP == 0, cb, 0.0)
         rAtU = rAU
         if s.algorithm.upper() == "SIMPLEC" and self.steady:
             acc = 0.0
@@ -1614,7 +1639,10 @@ class Solver2D:
                 else:
                     coupled_step(self, eqs, relax=s.relax_U)
             else:
-                self._pressure_correction(eqs, relax_p=relax_p, rtol=0.01)
+                pseudo = bool(s.pseudo_dt or s.pseudo_cfl)
+                self._pressure_correction(
+                    eqs, relax_p=relax_p, rtol=0.01,
+                    steady_ref=(1.0, a0) if pseudo else (s.relax_U, 0.0))
             if s.pseudo_dt or s.pseudo_cfl:
                 self._turbulence(a0=a0, hist=a0T, relax=s.relax_turb)
                 if self.energy is not None:

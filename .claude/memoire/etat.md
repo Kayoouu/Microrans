@@ -4,19 +4,13 @@
 
 - microrans : outil RANS / URANS 1D, 2D, 3D (périmètre réduit) avec mailleur, interface
   PySide6 et exécutables PyInstaller Windows / Linux (CI GitHub Actions).
-- Dernier lot terminé : **audit 3, partie 1** (2026-10-13) : toutes les campagnes
-  tools/audit relancées, sans régression ; nouvelle campagne c17 (convergence annoncée :
-  21 exemples honnêtes) ; **C24** : la solution stationnaire convergée dépend de
-  `pseudo_cfl` (NACA SA : C_d +0.75 %, point fixe différent prouvé par contre-épreuve) et
-  de `relax_U` (README) — Rhie-Chow probable ; figures : L8 (sondes tracées comme
-  résidus), L9 (bruit 1e-15 à pleine échelle dans les profils), L10, L11. Prochain : lot
-  G1 (C24), puis G2 (figures), puis audit 3 partie 2. Avant : **maillage en C, partie 3**
-  (2026-10-12) : écart O / C très probablement dû au sillage proche, non résolu par
-  l'O-grid ; TMR impossible (réseau), validation partielle écrite. Avant : maillage en C
-  parties 1 et 2 (10 et 11 octobre), GCI (9), F4, F3, F2, F1b, F1, audit 2 : détail dans
-  `journal.md`. CI de 41cb65a verte :
-  https://github.com/Kayoouu/Microrans/actions/runs/38348628151 (pas de nouvel exécutable :
-  microrans/ inchangé).
+- Dernier lot : **G1 (C24), partie 1** (2026-10-14) : flux de Rhie-Chow du stationnaire
+  sur la diagonale physique (sans relax_U ni pseudo-temps) → SIMPLE / SIMPLEC = couplé à
+  1e-8, quels que soient relax_U / pseudo_cfl ; itérations inchangées (±2 %) ; NACA C_d
+  +0.89 %, C_l −0.24 %, cavités −0.2 %, autres ≤ 0.034 %. Chiffres d'avant marqués « avant
+  C24 » au README : partie 2 (remesures) en cours. Avant : **audit 3, partie 1**
+  (2026-10-13) : campagnes sans régression, c17 (21 exemples honnêtes), C24, figures L8 à
+  L11. Avant : maillage en C (10 au 12 octobre), GCI (9), F4 à F1, audit 2 : `journal.md`.
 - Exécutables de 1a21eb7 (maillage en C 2) : run https://github.com/Kayoouu/Microrans/actions/runs/38112114618
   (Windows : artefact 11691728129, Linux : 11691822597 ; expirent le 2027-01-09). CI verte
   (tests https://github.com/Kayoouu/Microrans/actions/runs/38112114733).
@@ -76,13 +70,17 @@ calcul stationnaire 10⁶ cellules = quelques centaines d'itérations ≈ 1 à 1
 - Compressible : seuil du limiteur `venkat_k` = 0.3 dans l'exemple NACA (0.05 = défaut du
   solveur, comme SU2 : deux solutions stationnaires et C_l −5 % sur 96 × 32) ; défaut non
   changé (rampe M = 2, Sod non remesurés). NACA : `trailing_edge = closed | open | sharp`.
+- Rhie-Chow en stationnaire (C24, 2026-10-14) : coefficient V / a_P physique (sans
+  relax_U ni pseudo-temps), terme explicite dans `_pressure_correction(steady_ref=…)` ;
+  pas d'option pour revenir à l'ancien comportement (résultat dépendant des réglages) ;
+  instationnaire inchangé (ddtCorr).
 - Extrusion multi-couches ≠ 2D exact (Rhie-Chow : diffusion z dans a_P) ; une couche entre
   deux plans de symétrie = 2D exact. Documenté (README § 8, limite 17).
 
 ## Limites ouvertes importantes (détail : README § 8)
 
-- **Défauts connus non encore corrigés (audit 3)** : C24 (résultat stationnaire dépendant
-  de `pseudo_cfl` / `relax_U`, lot G1) ; figures L8 à L11 (lot G2).
+- **Défauts connus non encore corrigés (audit 3)** : figures L8 à L11 (lot G2). C24 corrigé
+  le 2026-10-14 (chiffres publiés à remesurer, G1 partie 2).
 
 - Un calcul = un cœur (BLAS limité à 1 fil depuis F1) ; SIMPLE lent sur maillages fins étirés.
 - NACA 0012 transsonique : ancien « −4.5 % » expliqué (référence d'une autre géométrie +
