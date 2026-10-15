@@ -12,9 +12,9 @@
   quels que soient relax_U / pseudo_cfl ; NACA C_d +0.89 %, C_l −0.24 %. Avant : **audit 3, partie 1**
   (2026-10-13) : campagnes sans régression, c17 (21 exemples honnêtes), C24, figures L8 à
   L11. Avant : maillage en C (10 au 12 octobre), GCI (9), F4 à F1, audit 2 : `journal.md`.
-- Exécutables de c9d3b09 (C24, Majumdar) : run https://github.com/Kayoouu/Microrans/actions/runs/38513220182
-  (Windows : artefact 11870603822, Linux : 11870797989 ; expirent le 2027-01-12). CI verte
-  (tests https://github.com/Kayoouu/Microrans/actions/runs/38513215556).
+- Exécutables de 5b0d45d (G1 partie 2) : run https://github.com/Kayoouu/Microrans/actions/runs/38683284836
+  (Windows : artefact 11949073059, Linux : 11949285978 ; expirent le 2027-01-13). CI verte
+  (tests https://github.com/Kayoouu/Microrans/actions/runs/38683278975).
 - Suite de tests : 514 (512 réussis, 2 ignorés), 5 à 10 min en série sur la machine de session.
 - Objectif accepté le 2026-10-05 : jalon A (2D académique crédible), puis B (3D
   académique, petite géométrie) ; C (pré-industriel) non visé. Détail : `a_faire.md`.
