@@ -3,6 +3,41 @@
 Détail des chiffres : README (§ 6 validation, § 7 performances, § 8 limites) et messages de
 commit. Ce journal sert à retrouver ce qui a été fait, pourquoi, et ce qui a été constaté.
 
+## 2026-10-15 — Lot G1 (C24), partie 2 : remesures après la correction
+
+- Relance quotidienne (03:53 UTC). Jeudi ; campagnes du lundi faites le 12 : pas de
+  campagne. CI verte au départ (c9d3b09).
+- Remesuré (nouveau code ; ancien code = worktree 1ab9c2e quand comparé côte à côte) :
+  - domaine NACA (naca_domaine, 3 000 + 3 000 it) : O R = 30 / 100 / 300 C_l 0.43214 /
+    0.43652 / 0.43778, C_d 0.012660 / 0.012378 / 0.012293 → R∞ 0.4384 / 0.01225 (p ≈ 1 ;
+    erreur d'itération 5e-6) ; C : 0.42463 / 0.42951 / 0.43118, C_d 0.012257 / 0.011922 /
+    0.011797 → 0.4323 / 0.01170 (erreur d'itération ≤ 6.8e-4). Écart C / O : C_l −1.74 /
+    −1.61 / −1.51 %, C_d −3.2 / −3.7 / −4.0 %.
+  - O / C (naca_o_c, pseudo_cfl 20, arrêt 1e-5) : O niveaux 2 / 1 / 0 C_l 0.43238 /
+    0.43213 / 0.41879, C_d 0.012250 / 0.012666 / 0.015937 ; C 0.42513 / 0.42462 / 0.41129,
+    C_d 0.011904 / 0.012270 / 0.015428. pseudo_cfl 20 (niveau 1) contre calcul par défaut
+    6 000 it : C_d +0.05 %, C_l 0.001 % (avant C24 : +0.77 %) : C24 confirmé sur le NACA.
+  - sillage proche : méthode du 12 octobre non écrite et non retrouvée (aucune fenêtre ne
+    redonne les nombres de cellules et vitesses publiés) ; nouvelle méthode écrite dans
+    naca_o_c.py (cellules traversées par x = 1.1, |y| ≤ 0.15) : O 8 / 11 / 16 cellules,
+    U min 0.839 / 0.873 / 0.869 ; C 14 / 75 / 146, 0.751 / 0.594 / 0.594. Conclusion
+    inchangée.
+  - polaire, ancien / nouveau côte à côte : C_d +0.41 % (0°) à +3.57 % (14°), C_l −0.21 à
+    −0.82 % ; pente 0.1081 /° (moindres carrés −4..4) ; |C_m| ≤ 0.0074. Itérations 6 465 →
+    8 047 (+24 % ; 10° 316 → 945, 12° 406 → 975, 14° 321 → 678) : le résidu p plafonne à
+    1.3e-4 à 1.9e-4 (limiteur non orthogonal), arrêt sur les efforts au lieu de tol = 1e-5.
+    Figure docs/ refaite : l'ancienne (2026-09-29) avait C_m de signe opposé (convention
+    changée le 30 septembre, 7816ad7, figure jamais refaite).
+  - GCI : cylindre identique à 4 chiffres ; cavité 32² −0.21152 (−0.21151), p 2.48 ;
+    conduite 3D identique ; domaine du cylindre 2.0800 / 2.0374 / 2.0194, R∞ 2.006.
+  - Ghia (cavité 64²) : écart max u 0.0041, v 0.0087, ancien = nouveau.
+  - de Vahl Davis (nouveau script tools/validation/vahl_davis.py) : ancien = nouveau à
+    1e-6 ; la ligne Ra = 1e6 publiée (8.8447) non reproduite : 8.8546 (réglages d'origine
+    inconnus) ; maillages tous resserrés (g = 3), le README disait « 48² ».
+- README § 5.5 (fourchette d'itérations −1 % à +3.7 %), § 6 (note C24, NACA, O / C,
+  polaire, de Vahl Davis, GCI), § 8 points 3 (coût de la polaire), 6, 6b, 10 ; en-tête
+  naca0012_sa. Mentions « avant C24 » retirées.
+
 ## 2026-10-14 — Lot G1 (C24), partie 1 : Rhie-Chow indépendant de relax_U / pseudo-temps
 
 - Relance quotidienne (03:53 UTC). CI verte au départ (1ab9c2e).

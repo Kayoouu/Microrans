@@ -519,7 +519,9 @@ la dissipation de Rhie-Chow dépendait de `relax_U` : NACA SIMPLEC C_d = 0.01254
 `relax_U = 0.7` (défaut de ce maillage), 0.012475 à 0.5 ; couplé 0.012660 à `relax_U = 1`
 comme à 0.8. Corrigé le 14 octobre 2026 (C24) : SIMPLEC donne maintenant 0.012660 (même
 dissipation, diagonale physique). Itérations et temps du tableau mesurés avant cette
-correction (itérations SIMPLEC depuis : −7 % à +4 % selon l'exemple).
+correction ; itérations SIMPLEC depuis, sur les 19 exemples stationnaires : −1 % à +3.7 %,
+bien moins que la variation des durées d'un jour à l'autre (jusqu'à 1.7 fois) : les
+rapports du tableau restent valables.
 
 **Ce qu'il faut en retenir :**
 - **Laminaire** : 2 à 27 fois plus rapide, et le gain **augmente avec le maillage**.
@@ -579,8 +581,8 @@ elles ne dépendent plus que du maillage et des schémas. Effet mesuré sur les 
 stationnaires incompressibles, mêmes réglages : NACA 0012 C_d +0.89 %, C_l −0.24 % ; point
 α = 0 de la polaire C_d +0.41 % ; cavités 2D et 3D, efforts −0.14 à −0.21 % ; convection
 naturelle +0.034 % ; C_d des 14 autres : 0.014 % au plus (effort normal des plaques,
-quasi nul : ~0.1 %). Les valeurs de cette section marquées
-« avant C24 » (et le tableau GCI) sont à remesurer.
+quasi nul : ~0.1 %). Valeurs de cette section remesurées après la correction le 15 octobre
+2026 (domaine et maillages O / C du NACA, polaire, GCI, convection naturelle, cavité).
 
 ### 2D, écoulements
 
@@ -596,9 +598,9 @@ quasi nul : ~0.1 %). Les valeurs de cette section marquées
 | Plaque plane Re_L = 5e6, SA / SST, y⁺ ≈ 0.5 (7 168 cellules) | C_f(x = 0.97) | 0.00273 / 0.00260 | 0.00273 (Schultz-Grunow), 0.00287 (White) |
 | idem, **lois de paroi**, y⁺ ≈ 90 (2 688 cellules), SA / SST / k-ω | C_f(x = 0.97) | 0.00278 / 0.00273 / 0.00288 | idem |
 | Canal Re_τ = 2000, **lois de paroi**, 1re cellule à y⁺ ≈ 50 (24 cellules), SA / SST / k-ω | U_b / U_b résolu (1D, y⁺ = 0.2) | −2.3 % / +3.5 % / −0.5 % | même modèle résolu ; y⁺ ≈ 25 : −3.6 / +4.8 / −0.3 % |
-| NACA 0012, α = 4°, Re = 1e6, SA, champ lointain à R = 30 cordes | C_l ; C_d | 0.432 ; 0.0127 depuis la correction C24 du 14 octobre 2026 (avant : 0.433 ; 0.0125 ; R = 300, avant C24 : 0.439 ; 0.0122, à remesurer) | 2πα = 0.439 (démonstration, voir limites) ; effet du domaine : § 8, point 6b |
-| idem, maillage en C (expérimental, 12 288 cellules) contre O-grid (8 192), 128 mailles sur le profil | C_d (dont pression) ; C_l | mesures d'avant C24 : C : 0.01217 (0.00333) ; 0.4252 — O : 0.01255 (0.00369) ; 0.4332. O depuis C24 : 0.01266 (0.00382) ; 0.4321 ; C à remesurer | pas de référence embarquée ; sillage proche mal résolu en O (§ 8, point 6) |
-| NACA 0012, polaire −4° à 14°, Re = 1e6, SA (8 192 cellules, 4 min ; mesure d'avant C24, à remesurer : C_d à 0° +0.4 % depuis) | pente dC_l/dα ; C_m quart de corde ; symétrie | 0.1083 /° ; \|C_m\| < 0.008 ; C_l(−α) = −C_l(α) à 5 chiffres | 2π = 0.1097 /° (profil mince) ; 0 (profil symétrique) ; exacte |
+| NACA 0012, α = 4°, Re = 1e6, SA, champ lointain à R = 30 cordes | C_l ; C_d | 0.432 ; 0.0127 (R = 300 : 0.438 ; 0.0123 ; avant la correction C24 du 14 octobre 2026 : 0.433 ; 0.0125 à R = 30) | 2πα = 0.439 (démonstration, voir limites) ; effet du domaine : § 8, point 6b |
+| idem, maillage en C (expérimental, 12 288 cellules) contre O-grid (8 192), 128 mailles sur le profil | C_d (dont pression) ; C_l | C : 0.01227 (0.00349) ; 0.4246 — O : 0.01267 (0.00384) ; 0.4321 (15 octobre 2026) | pas de référence embarquée ; sillage proche mal résolu en O (§ 8, point 6) |
+| NACA 0012, polaire −4° à 14°, Re = 1e6, SA (8 192 cellules ; remesurée le 15 octobre 2026 : par rapport à avant C24, C_d +0.4 % à 0° à +3.6 % à 14°, C_l −0.2 à −0.8 %) | pente dC_l/dα (moindres carrés, −4° à 4°) ; C_m quart de corde (cabré positif) ; symétrie | 0.1081 /° ; \|C_m\| < 0.008 (0.0074 à 14°) ; C_l(−α) = −C_l(α) à 5 chiffres | 2π = 0.1097 /° (profil mince) ; 0 (profil symétrique) ; exacte |
 | Cylindre Re = 20, écoulement incliné de 30° | C_d (axes écoulement) | écart 0.01 % avec 0° | invariance exacte |
 | Canal, débit imposé (plan / axisymétrique 360°) | débit en sortie | exact à 1e-9 | conservation |
 | Canal entraîné par une pression totale Δp | p + ½U² en entrée ; débit | = p0 à 1e-12 ; −0.8 % | Poiseuille Δp h³/(12 ν L) |
@@ -669,10 +671,17 @@ Vérifié indépendamment sur l'exemple T3A : minimum de C_f à Re_x = 1.47e5, m
 
 | Ra | Maillage | Nu moyen | écart | u_max | écart | v_max | écart |
 |---:|---|---:|---:|---:|---:|---:|---:|
-| 10³ | 48² resserré | 1.1175 | −0.04 % | 3.642 | −0.19 % | 3.687 | −0.26 % |
-| 10⁴ | 48² | 2.2453 | +0.10 % | 16.167 | −0.07 % | 19.604 | −0.07 % |
-| 10⁵ | 48² | 4.5360 | +0.38 % | 34.840 | +0.32 % | 68.405 | −0.27 % |
-| 10⁶ | 96² | 8.8447 | +0.51 % | 64.957 | +0.51 % | 220.24 | +0.40 % |
+| 10³ | 48² resserré | 1.1176 | −0.04 % | 3.642 | −0.19 % | 3.687 | −0.27 % |
+| 10⁴ | 48² resserré | 2.2453 | +0.10 % | 16.168 | −0.06 % | 19.607 | −0.05 % |
+| 10⁵ | 48² resserré | 4.5361 | +0.38 % | 34.845 | +0.33 % | 68.409 | −0.26 % |
+| 10⁶ | 96² resserré | 8.8546 | +0.62 % | 65.008 | +0.58 % | 220.40 | +0.47 % |
+
+Maillages resserrés aux parois comme l'exemple `convection_naturelle_ra1e5` (mailles 3 fois
+plus fines à la paroi qu'au centre), résidus à 1e-9 ; u_max (v_max) : aux centres des
+mailles, moyenne des deux files encadrant le plan médian. Reproductible :
+`python tools/validation/vahl_davis.py <dossier>` (remesuré le 15 octobre 2026 ; mêmes
+valeurs à 1e-6 près avant la correction C24 ; la ligne 10⁶ publiée auparavant, 8.8447 /
+64.957 / 220.24, ne s'est pas reproduite : réglages d'origine inconnus).
 
 Plus : conduction pure (profil linéaire exact à 1e-8), flux imposé (T paroi = qL/α exact),
 équilibre hydrostatique d'une stratification stable.
@@ -700,27 +709,28 @@ due au maillage, facteur de sécurité 1.25). Résidus à 1e-10 (1e-9 en 3D, où
 plafonne : la vitesse débitante y est à 2e-7 près de celle de 40 000 itérations).
 Étude reproductible : `python tools/validation/gci_maillage.py <dossier>` (12 calculs ;
 le plus long, la cavité 128², 99 s sur la machine virtuelle 4 cœurs, le 2026-10-09).
-Mesures d'avant C24 (cavité : efforts −0.2 % depuis ; cylindre : −0.002 %) : à refaire.
+Remesuré le 15 octobre 2026 après la correction C24 : mêmes valeurs à 1e-5 près (cavité 32² :
+u min −0.21152 contre −0.21151).
 
 | Cas | Grandeur | Maillages (cellules) | Grossier / moyen / fin | Ordre p | Extrapolé | GCI fin | Référence |
 |-----|----------|----------------------|------------------------|--------:|----------:|--------:|-----------|
 | Cylindre Re = 20, O-grid, R = 40 | C_d | 1 536 / 6 144 / 24 576 | 2.0573 / 2.0374 / 2.0327 | 2.08 | 2.0312 | 0.09 % | 2.045 (Dennis & Chang 1970) : hors de la bande |
-| Cavité Re = 100 | u minimal sur x = 0.5 | 32² / 64² / 128² | −0.21151 / −0.21351 / −0.21387 | 2.47 | −0.21395 | 0.05 % | −0.21090 (Ghia et al. 1982, y = 0.4531) : hors de la bande |
+| Cavité Re = 100 | u minimal sur x = 0.5 | 32² / 64² / 128² | −0.21152 / −0.21352 / −0.21387 | 2.48 | −0.21395 | 0.05 % | −0.21090 (Ghia et al. 1982, y = 0.4531) : hors de la bande |
 | Conduite carrée laminaire 3D (raffinée en y, z) | vitesse débitante | 512 / 2 048 / 8 192 | 3.5670 / 3.5276 / 3.5177 | 1.99 | 3.51440 | 0.12 % | 3.51443 (série exacte) : dans la bande |
 
 - **Conduite** (seul cas à solution exacte) : ordre 2 et valeur extrapolée à 7e-6 près
   (relatif) de la valeur exacte ; la procédure et le code se recoupent.
 - **Cylindre** : l'incertitude de *maillage* est petite (0.09 %), mais C_d dépend du rayon
   R du champ lointain (96 mailles autour, première maille 0.01, même progression radiale :
-  57, 64, 72 mailles radiales) : 2.0801 (R = 20), 2.0374 (R = 40), 2.0195 (R = 80), soit
+  57, 64, 72 mailles radiales) : 2.0800 (R = 20), 2.0374 (R = 40), 2.0194 (R = 80), soit
   −2.1 % puis −0.9 % à chaque doublement de R. La même extrapolation en 1/R donne
-  C_d ≈ 2.007 pour R → ∞ (ordre apparent 1.25, incertitude 0.8 %) : une estimation, pas une
+  C_d ≈ 2.006 pour R → ∞ (ordre apparent 1.25, incertitude 0.8 %) : une estimation, pas une
   mesure. À R = 40, l'erreur de domaine (≈ 1.5 %) dépasse donc de loin l'incertitude de
   maillage. L'accord à 0.6 % avec Dennis & Chang tient au choix R = 40 de l'exemple ; tant
   que l'effet du domaine n'est pas réduit, la comparaison ne vaut pas mieux que ~2 %.
-- **Cavité** : la solution converge (ordre 2.47, incertitude 1e-4 en valeur absolue) vers
+- **Cavité** : la solution converge (ordre 2.48, incertitude 1e-4 en valeur absolue) vers
   −0.21395, à 1.4 % de la valeur de Ghia. L'écart au point tabulé y = 0.4531 croît en
-  raffinant : −0.21095 (32²), −0.21335 (64²), −0.21383 (128²) contre −0.21090. Ghia et al.
+  raffinant : −0.21096 (32²), −0.21335 (64²), −0.21383 (128²) contre −0.21090. Ghia et al.
   n'ont qu'un maillage 129 × 129 dont l'incertitude n'est pas évaluée ici : ce tableau ne
   permet pas de dire laquelle des deux valeurs est la plus proche de la solution exacte.
 
@@ -885,7 +895,10 @@ redonne l'ancien fichier texte, identique octet pour octet.
    corrigé (C24) : même solution convergée que le couplé, quels que soient ces réglages
    (à 1e-8 près, `tests/test_coupled.py`). Sur maillages non orthogonaux, les résidus
    plafonnent (NACA de l'exemple : U_y vers 3e-5, p vers 1e-4 depuis C24, contre 2.5e-6 et
-   1.2e-5 avant ; efforts stables) — utiliser `monitor_tol`. Cause mesurée : le limiteur de
+   1.2e-5 avant ; efforts stables) — utiliser `monitor_tol`. Coût mesuré : la polaire NACA,
+   qui s'arrêtait sur les résidus (`tol = 1e-5`) et s'arrête maintenant sur les efforts,
+   demande 8 047 itérations au lieu de 6 465 (+24 % ; 2 à 3 fois plus de 10° à 14°, le
+   15 octobre 2026, même machine). Cause mesurée : le limiteur de
    la correction non orthogonale (`nonorth_limit = 0.5`) ; avec `nonorth_limit = 1`, avant
    comme après C24, les résidus du même cas descendent à 2e-8 en 600 itérations (stabilité
    sans limiteur sur triangles et maillages hybrides non vérifiée : défaut inchangé).
@@ -916,32 +929,33 @@ redonne l'ancien fichier texte, identique octet pour octet.
    résidus descendent lentement, mais régulièrement (ν̃ divisé par 2 environ toutes les
    2 500 itérations ; cause non établie) : « NON CONVERGÉ » avec les 3 000 itérations et
    `tol = 1e-5` de l'exemple. `relax_turb = 0.5` aide un peu (ν̃ 4.8e-5 au lieu de 8.8e-5 à
-   3 000 itérations). Les efforts, eux, varient de moins de 0.05 % entre 3 000 et 6 000
+   3 000 itérations). Les efforts, eux, varient de moins de 0.07 % entre 3 000 et 6 000
    itérations. Écart avec l'O-grid, qui reste à 3 finesses (64 à 256 mailles sur le
-   profil) et à R = 30, 100, 300 : C_l 1.6 à 1.8 % plus bas, C_d 2.8 à 3.8 % plus bas
-   (traînée de pression 6 à 13 % plus basse, frottement égal à 0.5 % près). Cause la plus
-   probable : le sillage proche, que l'O-grid ne résout pas. À 0.1 corde derrière le bord
-   de fuite, vitesse minimale 0.93 / 0.87 / 0.85 sur les 3 maillages en O (2 à 15 cellules
-   dans ±0.15 autour du sillage) contre 0.59 / 0.57 en C (74 et 298 cellules) ; en O, C_l ne
-   bouge plus (0.4323 → 0.4324, ordre apparent 6.7) alors que le sillage change encore :
-   convergence apparente trompeuse. Le maillage en C est donc probablement le plus juste
-   pour C_l et C_d ; ce n'est pas démontré, faute de référence (données NASA TMR
-   inaccessibles depuis l'environnement de développement, 10 au 12 octobre 2026 : pas de
-   comparaison TMR, validation partielle). Chiffres de ce paragraphe mesurés avant la
-   correction C24 (voir point 3 ; NACA en O, maillage de l'exemple : C_d +0.89 %, C_l
-   −0.24 % depuis), à remesurer. L'écart de C_d avec `pseudo_cfl = 20` noté ici auparavant
-   (0.7 %, attribué à un arrêt sur `monitor_tol`) venait en fait de C24 : la solution
-   convergée dépendait du pseudo-temps. Frontières
+   profil) et à R = 30, 100, 300 : C_l 1.5 à 1.8 % plus bas, C_d 2.8 à 4.0 % plus bas
+   (traînée de pression 7 à 14 % plus basse, frottement égal à 0.6 % près ;
+   `tools/validation/naca_o_c.py` et `naca_domaine.py`, 15 octobre 2026). Cause la plus
+   probable : le sillage proche, que l'O-grid ne résout pas. Sur le segment x = 1.1
+   (0.1 corde derrière le bord de fuite), |y| ≤ 0.15 : vitesse minimale 0.84 / 0.87 / 0.87
+   sur les 3 maillages en O (8, 11, 16 cellules traversées) contre 0.75 / 0.59 / 0.59 en C
+   (14, 75, 146 cellules) ; en O, C_l ne bouge plus (0.4321 → 0.4324, ordre apparent 5.8)
+   alors que le sillage n'est pas résolu : convergence apparente trompeuse. Le maillage en
+   C est donc probablement le plus juste pour C_l et C_d ; ce n'est pas démontré, faute de
+   référence (données NASA TMR inaccessibles depuis l'environnement de développement, 10 au
+   12 octobre 2026 : pas de comparaison TMR, validation partielle). L'écart de C_d avec
+   `pseudo_cfl = 20` noté ici auparavant (0.7 %, attribué à un arrêt sur `monitor_tol`)
+   venait en fait de C24 : la solution convergée dépendait du pseudo-temps. Frontières
    périodiques (`[mesh] periodic`) : maillages rectangle, multi-blocs et pavé seulement (et
    faces z d'une extrusion) ; pour un maillage importé (Gmsh, SU2), en O, en triangles ou
    hybride, la clé est ignorée avec un avertissement.
 6b. **Taille du domaine autour d'un profil** (pas de correction tourbillonnaire au champ
    lointain) : NACA 0012, α = 4°, Re = 1e6, SA, maillage de l'exemple, R = 30 / 100 / 300
-   cordes : C_l 0.4332 / 0.4377 / 0.4390, C_d 0.01255 / 0.01226 / 0.01217 (O-grid ; erreur
-   d'itération < 0.05 %, mesure du 2026-10-11, `tools/validation/naca_domaine.py`).
-   Extrapolé à R infini (ordre apparent ≈ 1, comme attendu) : C_l ≈ 0.4396, C_d ≈ 0.01212.
-   Les exemples NACA (R = 30) ont donc C_l environ 1.5 % trop bas et C_d environ 3.5 % trop
-   haut à cause du domaine ; la pente de la polaire (0.1083 /°) est mesurée à R = 30.
+   cordes : C_l 0.4321 / 0.4365 / 0.4378, C_d 0.01266 / 0.01238 / 0.01229 (O-grid ; erreur
+   d'itération < 0.001 %, mesure du 2026-10-15, `tools/validation/naca_domaine.py`).
+   Extrapolé à R infini (ordre apparent ≈ 1, comme attendu) : C_l ≈ 0.4384, C_d ≈ 0.01225.
+   Les exemples NACA (R = 30) ont donc C_l environ 1.4 % trop bas et C_d environ 3.4 % trop
+   haut à cause du domaine ; la pente de la polaire (0.1081 /°) est mesurée à R = 30. En C :
+   C_l 0.4246 / 0.4295 / 0.4312, C_d 0.01226 / 0.01192 / 0.01180 (erreur d'itération
+   < 0.07 %), extrapolés 0.4323 / 0.01170.
 7. **Cylindre Re = 100** : St 0.160–0.163 contre 0.164–0.167 publié ; pas d'étude complète de
    convergence en maillage et en taille de domaine. À Re = 20, C_d varie de 2 % quand le
    rayon du domaine double (R = 20 → 40), bien plus que l'incertitude de maillage (§ 6).
@@ -950,7 +964,7 @@ redonne l'ancien fichier texte, identique octet pour octet.
    (utiliser un schéma implicite pour la convection naturelle).
 9. Validation limitée aux cas ci-dessus ; pas de comparaison point à point avec les données
    NASA TMR (non embarquées).
-10. **Polaires** : pas de décrochage prédit jusqu'à 14° pour le NACA 0012 (C_l = 1.37) ; le
+10. **Polaires** : pas de décrochage prédit jusqu'à 14° pour le NACA 0012 (C_l = 1.36) ; le
    décrochage réel à Re = 1e6 n'est ni validé ni fiable en RANS stationnaire (SA surestime
    généralement C_l max). Écoulement supposé entièrement turbulent (pas de transition) :
    traînée à faible incidence surestimée par rapport à un profil réel à ce Reynolds. La

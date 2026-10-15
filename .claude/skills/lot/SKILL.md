@@ -35,7 +35,9 @@ dans `CLAUDE.md` ; cette page dit comment les appliquer avec les outils `tools/d
    touchés ; une différence doit être voulue et expliquée.
    Changement de la méthode numérique : comparer aussi les historiques de résidus (ancien /
    nouveau, un cas orthogonal et un non orthogonal) ; un arrêt sur les efforts cache un
-   plateau (G1 : f9bc44e poussé avec des résidus du NACA 30 fois plus hauts).
+   plateau (G1 : f9bc44e poussé avec des résidus du NACA 30 fois plus hauts). Y ajouter
+   un balayage (polaire, continuation) : c9d3b09 a coûté +24 % d'itérations sur la polaire,
+   invisible sur les exemples isolés.
 4. **Tout chiffre écrit est mesuré** : temps et mémoire par
    `python tools/dev/ab.py temps --repet 2 -- …` (ordre A B B A, machine libre : la charge
    est affichée) ; préciser les conditions dans le texte. Étude de plusieurs minutes

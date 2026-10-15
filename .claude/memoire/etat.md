@@ -1,15 +1,15 @@
-# État du projet (mis à jour le 2026-10-13)
+# État du projet (mis à jour le 2026-10-15)
 
 ## Où on en est
 
 - microrans : outil RANS / URANS 1D, 2D, 3D (périmètre réduit) avec mailleur, interface
   PySide6 et exécutables PyInstaller Windows / Linux (CI GitHub Actions).
-- Dernier lot : **G1 (C24), partie 1** (2026-10-14) : flux de Rhie-Chow du stationnaire
-  sur la diagonale physique (sans relax_U ni pseudo-temps) → SIMPLE / SIMPLEC = couplé à
-  1e-8, quels que soient relax_U / pseudo_cfl ; itérations inchangées (±2 %) ; NACA C_d
-  +0.89 %, C_l −0.24 %, cavités −0.2 %, autres ≤ 0.034 %. Plateau de résidus NACA 10 fois
-  plus haut (limiteur non orthogonal, cause mesurée). Chiffres d'avant marqués « avant
-  C24 » au README : partie 2 (remesures) en cours. Avant : **audit 3, partie 1**
+- Dernier lot : **G1 (C24), partie 2** (2026-10-15) : chiffres du README remesurés après
+  la correction (domaine et O / C du NACA, polaire, GCI, de Vahl Davis, Ghia) ; polaire :
+  C_d +0.4 % à +3.6 %, mais +24 % d'itérations (×2 à ×3 de 10° à 14°) : plateau de
+  résidus dû au limiteur non orthogonal → tâche suivante. Partie 1 (2026-10-14) : flux de
+  Rhie-Chow du stationnaire sur la diagonale physique → SIMPLE / SIMPLEC = couplé à 1e-8,
+  quels que soient relax_U / pseudo_cfl ; NACA C_d +0.89 %, C_l −0.24 %. Avant : **audit 3, partie 1**
   (2026-10-13) : campagnes sans régression, c17 (21 exemples honnêtes), C24, figures L8 à
   L11. Avant : maillage en C (10 au 12 octobre), GCI (9), F4 à F1, audit 2 : `journal.md`.
 - Exécutables de c9d3b09 (C24, Majumdar) : run https://github.com/Kayoouu/Microrans/actions/runs/38513220182

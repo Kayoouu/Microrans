@@ -27,6 +27,7 @@ et trouvés plus tard (à remplir rétroactivement).
 | 2026-10-12 | Maillage en C, partie 3 (+ campagnes du lundi) | 1 lot | 03:53 → commit 03:58 (analyse sur les sorties de la veille), CI verte 04:05 ; campagnes jusqu'à 04:40 | 0 | — | sorties gardées dans le scratchpad la veille : analyse en 5 min sans recalcul ; campagnes ordonnées (c8 après c1 / c6) : pas de faux écart |
 | 2026-10-13 | Audit 3, partie 1 (campagnes c2 à c16, nouvelle c17, figures) | 1 lot (audit complet : 2 à 4) | 03:53 → commit 04:53, CI verte 05:00 (campagnes en arrière-plan 03:55 → 04:47 ; c17 ≈ 35 min, ralentie par 3 calculs sur 4 cœurs ; contre-épreuve C24 5 min) | 0 (campagne c17) | — | c3c lancée avec un mauvais argument (relancée, 2 min) ; c17 longue (itérations après convergence 4 à 10 fois plus chères, calculs simultanés) ; contre-épreuve « repartir de la solution convergée » : a transformé une explication fausse du README en défaut précis (C24) en 5 min → skill § 2.4 |
 | 2026-10-14 | G1 (C24), partie 1 : correction de Rhie-Chow | 1 lot (G1 : 2) | 03:53 → 1er commit 04:26 (f9bc44e, CI verte), 2e version 04:47 (c9d3b09), CI verte 04:53 (3 suites dont 1 arrêtée) | 2 (+1 resserré) | f9bc44e : résidus du NACA bloqués 30 fois plus haut (vu après la poussée, en finissant une mesure) | f9bc44e poussé en ne regardant que les résultats convergés et les itérations des exemples arrêtés sur les efforts → skill § 2.3 : changement numérique = historiques des résidus comparés (ancien / nouveau) sur un cas non orthogonal avant de pousser. Suite lancée avant la dernière modification de microrans/ (en-tête d'exemple) : relancée, ≈ 8 min perdues → skill § 3.1. Ce qui a servi : comparaison au solveur couplé (autre implémentation du même flux) : vérification décisive en 1 min ; copie de l'ancien code (git worktree) pour les comparaisons côte à côte |
+| 2026-10-15 | G1 (C24), partie 2 : remesures | 1 lot | 03:53 → commit ≈ 04:50 (5 études en parallèle 03:55 → 04:33, polaire de l'ancien code 04:13 → 04:24 ; 1 suite) | 0 (scripts : vahl_davis.py, sillage dans naca_o_c.py) | c9d3b09 (partie 1) : polaire +24 % d'itérations (×2 à ×3 à forte incidence) par le plateau de résidus — prévu comme coût, pas mesuré avant la poussée | la polaire n'était pas dans les 19 exemples comparés hier (continuation : arrêt sur les efforts au lieu des résidus) → comparer aussi les itérations des balayages, pas seulement des calculs isolés. Méthode du sillage proche (12 octobre) non écrite, irreproductible → toute mesure publiée passe par un script du dépôt (fait ici). Ce qui a servi : regarder la figure refaite à côté de l'ancienne (signe de C_m), polaire de l'ancien code côte à côte (attribution à C24 en 11 min) |
 
 ## Indicateur du jalon A : résultats faux silencieux trouvés par audit
 
@@ -51,7 +52,11 @@ au rayon du domaine (R = 20 : 2.080 ; R = 80 : 2.019) → l'audit 3 doit aussi v
 chaque accord de validation publié résiste au maillage et à la taille du domaine.
 2026-10-10 (maillage en C) : avec `pseudo_cfl = 20`, « Convergé » (arrêt sur `monitor_tol`)
 alors que les résidus ne descendent plus ; C_d à 0.7 % du calcul convergé sans pseudo_cfl
-(NACA 0012, O-grid). Candidat « convergence annoncée trompeuse » pour l'audit 3.
+(NACA 0012, O-grid). Candidat « convergence annoncée trompeuse » pour l'audit 3. 2026-10-15 (G1 partie 2) :
+figure de la polaire du README avec C_m de signe opposé au code depuis le 30 septembre
+(convention changée, figure non refaite) ; ligne Ra = 1e6 de de Vahl Davis non reproductible
+(0.11 %, réglages inconnus) ; mesure du sillage proche non reproductible (méthode non
+écrite) : documentation trompeuse ou invérifiable, corrigée.
 
 ## Campagnes de non-régression (tools/audit) : dernier relevé
 

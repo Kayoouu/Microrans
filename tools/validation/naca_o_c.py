@@ -8,6 +8,8 @@ réglages du solveur pour les deux maillages : pas de pseudo-temps local (pseudo
 sans lui, les efforts du maillage en C dérivent encore après 3 000 itérations), arrêt quand
 les efforts varient de moins de 1e-5 sur 100 itérations (comme l'exemple ; 1e-6 demande
 9 550 itérations au niveau 0 en C, contre 1 972 en O).
+Sillage proche : cellules traversées par le segment x = 1.1 (0.1 corde derrière le bord de
+fuite), |y| ≤ 0.15, et vitesse minimale |U| de ces cellules.
 
     python tools/validation/naca_o_c.py <dossier> [niveaux, défaut 2 1 0]
     (variable d'environnement KINDS = "ogrid" ou "cgrid" : un seul des deux maillages)
@@ -19,11 +21,14 @@ import sys
 import time
 from pathlib import Path
 
+import numpy as np
+
 REPO = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO))
 
 from microrans.cli import examples_dir  # noqa: E402
 from microrans.fv2d.case import run_case  # noqa: E402
+from microrans.fv2d.sampling import locate  # noqa: E402
 from microrans.gci import gci  # noqa: E402
 from microrans.mesh2d.builder import load_config  # noqa: E402
 
@@ -48,6 +53,11 @@ def run(kind, level):
          "Cd_pression": a.get("Cd_pressure"), "Cd_frottement": a.get("Cd_viscous"),
          "Cm": a.get("Cm"), "iterations": s.get("iterations"), "converge": s.get("converged"),
          "temps_s": round(time.perf_counter() - t0, 1)}
+    y = np.linspace(-0.15, 0.15, 20001)
+    cells = locate(solver.mesh, np.column_stack([np.full_like(y, 1.1), y]))
+    cells = np.unique(cells[cells >= 0])
+    r["sillage_cellules"] = int(len(cells))
+    r["sillage_U_min"] = float(np.linalg.norm(np.asarray(solver.U)[cells], axis=1).min())
     print(f"== {kind} niveau {level} : {r}", flush=True)
     return r
 

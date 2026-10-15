@@ -1,4 +1,4 @@
-# Liste de travail (ordre = priorité ; mise à jour le 2026-10-13 ; jalons A, B, C)
+# Liste de travail (ordre = priorité ; mise à jour le 2026-10-15 ; jalons A, B, C)
 
 Méthode pour chaque tâche : mesurer d'abord (profil, chiffres de départ), changer, mesurer
 côte à côte dans les mêmes conditions, tests, docs (README, chiffres), commit, CI verte,
@@ -7,8 +7,8 @@ inutile (mesure à l'appui), l'écrire dans le journal et passer à la suivante.
 
 ## En cours
 
-**Lot G1 (C24), partie 2** : remesurer les chiffres publiés d'avant la correction (marqués
-« avant C24 » au README). Voir point 1 ci-dessous. Partie 1 faite le 2026-10-14.
+Rien (G1 partie 2 fini le 2026-10-15). Suivant : point 1 ci-dessous (limiteur non
+orthogonal).
 
 ## À faire
 
@@ -28,33 +28,22 @@ faits. Côté
 utilisateur (je ne peux pas le faire) : publier une release, faire essayer l'exécutable
 Windows par un humain sur un vrai PC (jamais fait : la CI vérifie seulement qu'il démarre).
 
-1. **Lot G1, partie 2 — remesurer après C24** (code corrigé le 2026-10-14 : Rhie-Chow sur
-   la diagonale physique en stationnaire ; SIMPLEC = couplé à 1e-8). À refaire, scripts
-   existants : `tools/validation/naca_domaine.py` (R = 30 / 100 / 300 : README § 6 et
-   § 8 6b, en-têtes naca0012_sa ligne 3 et naca0012_polaire lignes 2-3),
-   `tools/validation/naca_o_c.py` (O contre C : § 6, § 8 point 6 — la traînée de pression
-   en O a pris +3.6 %, l'écart O / C change), polaire (`microrans polar naca0012_polaire
-   --alpha -4 14 2` : pente, C_m, figure docs/polaire_naca0012_sa.png),
-   `tools/validation/gci_maillage.py` (tableau GCI et texte), tableau § 5.5 (itérations et
-   temps SIMPLEC ; script ?), convection naturelle de Vahl Davis (§ 6 ; script ?), écarts
-   de la cavité à Ghia (§ 6). Puis retirer les mentions « avant C24 ». Estimé 1 lot.
-   Relever d'abord la mesure NACA après C24 (relax_U 0.5, pseudo_cfl 20) lancée le
-   2026-10-14 à 04:47 : scratchpad g1/apres_maj_naca.log (sinon la relancer :
-   `VARIANTES="relax_U=0.5 pseudo_cfl=20" python tools/validation/rhie_chow_reglages.py
-   <dossier> naca0012_sa`, ≈ 30 min).
-2. **Limiteur de la correction non orthogonale** (`nonorth_limit`, défaut 0.5) : cause
+1. **Limiteur de la correction non orthogonale** (`nonorth_limit`, défaut 0.5) : cause
    mesurée du plateau de résidus sur maillage non orthogonal (NACA de l'exemple : plateau
    p 1e-5 avant C24, 1e-4 depuis ; avec `nonorth_limit = 1`, 2e-8 en 600 it avant comme
-   après). Mesurer la stabilité sans limiteur (triangles, hybride, mesh_naca_multi,
-   cylindre hybride) et une autre forme (limiteur gelé, lissé) avant de changer le défaut.
-   Estimé 1 lot.
-3. **Lot G2 — figures** (audit 3 : L8 sondes tracées comme résidus, L9 bruit d'arrondi à
+   après). Coût mesuré le 2026-10-15 : polaire NACA 8 047 it contre 6 465 avant C24
+   (+24 % ; ×2 à ×3 de 10° à 14° : arrêt sur les efforts au lieu des résidus). Mesurer la
+   stabilité sans limiteur (triangles, hybride, mesh_naca_multi, cylindre hybride) et une
+   autre forme (limiteur gelé, lissé ; ou correction de Majumdar sur la seule partie
+   orthogonale) avant de changer le défaut. Critère : polaire revenue à ≈ 6 500 it, mêmes
+   efforts. Estimé 1 lot.
+2. **Lot G2 — figures** (audit 3 : L8 sondes tracées comme résidus, L9 bruit d'arrondi à
    pleine échelle dans les profils, L10 cadrage du tuyau axisymétrique, L11 figures de
    champ du tube de Sod). Estimé 1 lot. Un test par point.
-4. **Audit 3, partie 2** : chaque accord de validation du README face au maillage et à la
+3. **Audit 3, partie 2** : chaque accord de validation du README face au maillage et à la
    taille du domaine (cylindre et NACA déjà trouvés ; après G1, les chiffres ayant bougé) ;
    figures restantes (pression, vorticité, ν_t, maillages) ; interface (figures de la page
-   Résultats). Convergence apparente trompeuse (C_l de l'O-grid, ordre apparent 6.7) à
+   Résultats). Convergence apparente trompeuse (C_l de l'O-grid, ordre apparent 5.8) à
    relire. Puis audit 4 : le jalon A est atteint quand un audit complet trouve 0 résultat
    faux silencieux.
 

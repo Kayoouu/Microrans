@@ -1,6 +1,6 @@
 # Profil NACA 0012 à 4° d'incidence, Re = 1e6, modèle Spalart-Allmaras, maillage en O.
 # Démonstration (pas de référence quantitative embarquée) : Cl ≈ 0.432, Cd ≈ 0.0127, ~30 s.
-# Champ lointain à 30 cordes : Cl ≈ 0.439, Cd ≈ 0.0122 à 300 cordes (README § 8, point 6b).
+# Champ lointain à 30 cordes : Cl ≈ 0.438, Cd ≈ 0.0123 à 300 cordes (README § 8, point 6b).
 # microrans run2d naca0012_sa.toml
 [mesh]
 type = "ogrid"
