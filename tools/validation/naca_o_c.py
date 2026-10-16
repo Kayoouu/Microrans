@@ -43,8 +43,11 @@ def run(kind, level):
     c["mesh"].update(type=kind, n_around=64 * k, n_radial=32 * k, first_height=4e-5 / k)
     if kind == "cgrid":
         c["mesh"]["n_wake"] = 16 * k
+    # nonorth_limit = 0.5 : réglage des mesures publiées (15 octobre 2026, ancien défaut) ;
+    # sans limiteur (défaut depuis le 16), le pseudo-temps converge bien plus lentement sur
+    # ce profil (niveau 1 : plus de 3 000 itérations au lieu de 2 063)
     c["solver"].update(max_iter=30000, tol=1e-9, monitor_tol=1e-5, pseudo_cfl=20.0,
-                       log_every=1000)
+                       log_every=1000, nonorth_limit=0.5)
     t0 = time.perf_counter()
     s, solver = run_case(c, out_dir=OUT / f"{kind}_{level}", verbose=False, plot=False,
                          return_solver=True)

@@ -158,7 +158,11 @@ décrits par un fichier de contour : non vérifiés.
   upwind puis repasser en linearUpwind » est vérifiée sur ce cas, en ligne de commande
   (`--continue`) : plus de divergence, résidus en baisse régulière (3.5·10⁻⁵ à 800
   itérations) ; Cl passe de 0.665 (upwind seul) à 0.755, le résultat upwind n'est donc
-  pas final.
+  pas final. *2026-10-16 (limiteur non orthogonal)* : même maillage, laminaire Re = 100,
+  `linearUpwind`, entrée / sortie / symétrie haut et bas (conditions peut-être différentes
+  de celles devinées alors par l'interface) : pas de divergence, résidus sous 1e-5 vers
+  1 090 itérations, avec et sans limiteur (`tools/validation/nonorth_limiteur.py`). La
+  divergence d'alors n'est pas reproduite ; sa cause reste inconnue.
 - **Interface plus lente que la ligne de commande** : cavité, 351 itérations, 8.6 s dans
   l'interface (hors écran) contre 3.5 s en ligne de commande. Suivi en direct des résidus
   probablement en cause ; à mesurer.
@@ -450,6 +454,7 @@ Chaque exemple stationnaire est lancé avec ses propres réglages, puis prolong�
 | # | Constat | Reproduction | Statut |
 |---|---|---|---|
 | C24 | **La solution stationnaire convergée dépend des réglages d'accélération de la convergence** (`pseudo_cfl`, et `relax_U` comme le README le dit déjà : « C_d −0.6 % entre 0.7 et 0.5 »). NACA 0012 SA (exemple) : `pseudo_cfl = 20` → C_d +0.75 à +0.87 %, C_l −0.20 %, sans message. Cause probable : l'interpolation de Rhie-Chow (forme OpenFOAM, `rAU = V / a_P`) prend dans a_P le terme de pseudo-temps ou de sous-relaxation, donc le flux convergé en dépend (problème connu, Majumdar 1988 ; correction classique : terme de correction de relaxation, ou `ddtCorr` en pseudo-temps). Le README (§ 8, point 6) l'explique à tort par un arrêt sur `monitor_tol` avec des résidus qui ne descendent plus. | `python tools/audit/c17_convergence_annoncee.py SORTIE 'naca0012_sa:solver.pseudo_cfl=20'` ; contre-épreuve ci-dessus | corrigé (G1, 2026-10-14) : en stationnaire, flux de Rhie-Chow ramené à V / a_P sans relaxation ni pseudo-temps (comme le solveur couplé) : correction de Majumdar (1 − α)·(φ − interp(U)·S) de l'itération précédente pour relax_U, terme explicite pour le pseudo-temps (une première version tout explicite, poussée en f9bc44e, bloquait les résidus du NACA 30 fois plus haut : correction non orthogonale différée amplifiée ; Majumdar : 10 fois, et le plateau vient du limiteur `nonorth_limit` : sans lui, 2e-8 en 600 itérations avant comme après) ; à convergence, SIMPLE / SIMPLEC (relax_U 0.9, 0.7, 0.6) et le pseudo-temps retrouvent la solution du couplé à 1e-8 près (avant : 2e-4 à 2.3e-2), mêmes nombres d'itérations (±2 %). Mesure `tools/validation/rhie_chow_reglages.py`, avant → après, écart relatif des efforts au calcul par défaut : cavité relax_U 0.5 1.0e-2 → 7e-9, pseudo_cfl = 20 2.0e-3 → 2e-7 ; cylindre Re 20 1.1e-4 → 1.5e-9 ; plaque SA 1.9e-3 → 2e-9 (effort normal) ; NACA SA relax_U 0.5 : C_d −0.60 % avant. Exemples, mêmes réglages : NACA C_d +0.89 %, C_l −0.24 % (= couplé), cavités −0.14 à −0.21 %, autres ≤ 0.034 %. Tests (échouent sur l'ancien code). Chiffres publiés d'avant : marqués au README, remesure (G1, partie 2) |
+| C25 | *(trouvé au lot du limiteur non orthogonal, 2026-10-16)* **Balayage par continuation : « convergé » trop tôt.** Chaque point part de la solution du précédent ; les résidus normalisés passent sous `tol` alors que les efforts bougent encore. NACA 0012 (exemple de polaire, sans limiteur), `tol = 1e-5` : 2 247 itérations, C_l à 4° −0.56 %, C_d jusqu'à 1.9 % de la référence (résidus à 1e-11) ; symétrie C_l(−α) = −C_l(α) perdue. Avant le 16 octobre, en partie masqué par le plateau des résidus ; avant C24, déjà 0.2 à 0.3 % sur C_d à 10-14° (ancienne polaire contre calculs menés à convergence). | `microrans polar naca0012_polaire --alpha -4 14 2 --set solver.tol=1e-5` | **contourné** : `tol = 1e-7` dans l'exemple (C_d à 0.02 %) et le test de la polaire symétrique, documenté (README § 8, point 10) ; correction (efforts stabilisés exigés en continuation) : prochain lot |
 
 ## L. Figures et sorties
 

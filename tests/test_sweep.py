@@ -51,7 +51,9 @@ def test_symmetric_airfoil_polar(tmp_path):
     cfg = _ogrid_case({"type": "naca", "code": "0012", "chord": 1.0, "name": "airfoil"},
                       500, 48, 24, 5e-3, radius=10.0)
     cfg["output"]["moment_center"] = [0.25, 0.0]
-    cfg["solver"]["tol"] = 1e-5
+    # 1e-7 : sans limiteur non orthogonal (2026-10-16), les résidus descendent et 1e-5
+    # arrête la continuation trop tôt (C_l(0) = 2.4e-5) ; avec ψ = 0.5, ils plafonnaient
+    cfg["solver"]["tol"] = 1e-7
     rows = run_sweep(cfg, "physics.angle_of_attack", "-3:3:3", out_dir=tmp_path / "c",
                      verbose=False)
     cl, cd, cm = ([r[f"{k}_airfoil"] for r in rows] for k in ("Cl", "Cd", "Cm"))

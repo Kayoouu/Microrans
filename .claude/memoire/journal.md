@@ -3,6 +3,40 @@
 Détail des chiffres : README (§ 6 validation, § 7 performances, § 8 limites) et messages de
 commit. Ce journal sert à retrouver ce qui a été fait, pourquoi, et ce qui a été constaté.
 
+## 2026-10-16 — Limiteur de la correction non orthogonale : défaut ψ = 1
+
+- Relance quotidienne (03:54 UTC). Vendredi ; campagnes du 12 (4 jours) : pas de campagne.
+  CI verte au départ (51bb613).
+- Mécanisme : `nonorth_flux` borne la correction à ψ/(1−ψ)·Γg|Δφ| ; ψ = 0.5 → partie
+  différée aussi forte que la partie implicite là où la borne agit : plateau.
+- Étude `tools/validation/nonorth_limiteur.py` (ψ = 0.5 / 1, sans arrêt sur les efforts) :
+  NACA O (76°) p plateau 1.2e-4 / résidus 1e-12 en 1 457 it, C_d −0.019 %, C_l +0.006 % ;
+  NACA C (78°) p 1.9e-4 / U, p 1e-6 (ν̃ 8.7e-5 dans les deux : lenteur connue du C) ;
+  cylindre hybride (55°) sous 1e-5 à 1 094 / 1 069 it, C_d +0.003 %, C_l −0.0085 → −0.0006
+  (nul en théorie) ; triangles (46°) 989 / 968 it, C_d +0.045 % ; mesh_naca_multi (63°,
+  laminaire Re 100, linearUpwind : lancé ainsi par erreur, [schemes] n'existe pas) 1 097 /
+  1 087 it, C_d main +0.11 % : **aucune divergence** ; la divergence de l'audit 1 sur ce
+  maillage n'est pas reproduite (conditions peut-être différentes).
+- NACA de l'exemple sans limiteur : efforts à 1e-3 / 1e-4 / 1e-5 / 1e-6 du final aux it
+  404 / 553 / 710 / 866 (résidu max 6.4e-6 / 6.3e-7 / 6.1e-8 / 6.2e-9) → `tol = 1e-5` arrête
+  trop tôt (c17 : 373 it, ΔF 0.16 %). Exemples NACA : `tol = 1e-7` → 677 it, ΔF 1.6e-5 (c17).
+- Polaire : sans limiteur, tol 1e-5 : 2 247 it mais erreurs d'itération (C_l 4° −0.56 %,
+  C_d jusqu'à 1.9 %, continuation). Référence (tol 1e-11) 13 195 it ; tol 1e-7 : 5 866 it,
+  C_l à 8e-5, C_d à 0.02 % de la référence (défaut d'hier : 8 047 it). Polaire du nouvel
+  exemple = 5 866 it, pente 0.1081, |C_m| ≤ 0.0074, C_l(0) −3e-6.
+- **Correction d'hier** : l'ancienne polaire (avant C24) s'arrêtait sur les résidus à 10-14°
+  (316-406 it) avec une erreur d'itération ; comparaison menée à convergence (4 000 it,
+  ψ = 0.5 des deux côtés) : C24 = C_d +2.2 % à 10°, +3.4 % à 14° (publié hier +1.9 / +3.6),
+  C_l −0.46 / −0.81 %. Et l'écart polaire ψ = 0.5 / référence ψ = 1 à 10° (C_l 3e-4, C_d
+  0.08 %) est l'effet du limiteur (discrétisation), pas une erreur d'itération : polaire
+  ψ = 0.5 = son calcul convergé à 5e-5 près.
+- Couplé, petit profil : 157 → 36 it. pseudo_cfl = 20 : plus lent sans limiteur (niveau 0
+  1 055 → 1 683 it ; niveau 1 2 063 → > 3 000) : le terme explicite C24 ne peut pas garder
+  le limiteur seul (point fixe dépendrait de pseudo_cfl) → README : avec pseudo_cfl, garder
+  0.5 ; naca_o_c.py fixe ψ = 0.5 (étude du niveau 2 arrêtée après 25 min).
+- Domaine (naca_domaine, ψ = 1) : O R = 30 / 100 / 300 C_l 0.432161 / 0.436517 / 0.437758,
+  C_d 0.012658 / 0.012377 / 0.012293 (convergés à 1e-12) → 0.43838 / 0.01225.
+
 ## 2026-10-15 — Lot G1 (C24), partie 2 : remesures après la correction
 
 - Relance quotidienne (03:53 UTC). Jeudi ; campagnes du lundi faites le 12 : pas de

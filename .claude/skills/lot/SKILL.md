@@ -37,7 +37,9 @@ dans `CLAUDE.md` ; cette page dit comment les appliquer avec les outils `tools/d
    nouveau, un cas orthogonal et un non orthogonal) ; un arrêt sur les efforts cache un
    plateau (G1 : f9bc44e poussé avec des résidus du NACA 30 fois plus hauts). Y ajouter
    un balayage (polaire, continuation) : c9d3b09 a coûté +24 % d'itérations sur la polaire,
-   invisible sur les exemples isolés.
+   invisible sur les exemples isolés. Comparer un balayage à une **référence menée à
+   convergence** (tol 1e-11), pas à un autre balayage : en continuation, l'arrêt sur `tol`
+   laisse jusqu'à 2 % d'erreur d'itération (C25 ; chiffres C24 du 15 octobre faussés).
 4. **Tout chiffre écrit est mesuré** : temps et mémoire par
    `python tools/dev/ab.py temps --repet 2 -- …` (ordre A B B A, machine libre : la charge
    est affichée) ; préciser les conditions dans le texte. Étude de plusieurs minutes

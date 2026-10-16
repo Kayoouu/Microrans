@@ -141,6 +141,20 @@ def test_hybrid_mesh_does_not_diverge():
     assert s.history[-1]["Ux"] < 1e-3
 
 
+def test_nonorthogonal_mesh_residuals_converge():
+    """Plateau des résidus sur maillage non orthogonal (2026-10-16) : avec le limiteur de la
+    correction non orthogonale à ψ = 0.5 (ancien défaut), p restait à 1e-4 après 600
+    itérations sur ce profil en O (64°) ; sans limiteur (défaut ψ = 1), 1e-9 en ≈ 300."""
+    from microrans.mesh2d import NACA4
+    a = np.radians(4.0)
+    U = [float(np.cos(a)), float(np.sin(a))]
+    m = o_grid(NACA4("0012"), 64, 32, 10.0, 1e-3)
+    s = Solver2D(m, 1e-3, {"airfoil": {"type": "wall"}, "farfield": {"type": "farfield", "U": U}},
+                 initial_U=U, reference_velocity=1.0)
+    assert s.run_steady(max_iter=500, tol=1e-9)
+    assert s.history[-1]["p"] < 1e-9
+
+
 def test_cli_run2d(tmp_path):
     case = tmp_path / "cav.toml"
     case.write_text("""

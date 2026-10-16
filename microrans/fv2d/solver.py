@@ -155,7 +155,12 @@ class Settings:
     turbulence_every_outer: bool = False
     # maillages non orthogonaux
     n_nonorth: int = 1                    # boucles de correction non orthogonale (pression)
-    nonorth_limit: float = 0.5            # limiteur ψ de la correction (1 = aucun)
+    # limiteur ψ de la correction (1 = aucun, défaut depuis le 2026-10-16) ; ψ = 0.5 bloquait
+    # les résidus sur maillage non orthogonal (NACA de l'exemple : p vers 1e-4 ; borne
+    # ψ/(1−ψ)·|partie orthogonale| = 1 : correction différée aussi forte que la partie
+    # implicite) ; sans limiteur : résidus à 1e-12, stable sur les 5 cas de
+    # tools/validation/nonorth_limiteur.py (jusqu'à 78°).
+    nonorth_limit: float = 1.0
 
 
 def _diverged(when: str, steady: bool = True) -> str:

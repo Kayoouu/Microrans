@@ -329,7 +329,8 @@ _SOLVER_DOC = {
     "n_corr": "corrections de pression (défaut 2)",
     "turbulence_every_outer": "turbulence à chaque boucle externe (défaut false)",
     "n_nonorth": "corrections non orthogonales (défaut 1)",
-    "nonorth_limit": "limiteur de la correction non orthogonale (défaut 0.5)",
+    "nonorth_limit": "limiteur ψ de la correction non orthogonale (défaut 1 : aucun ; < 1 la borne, "
+                     "au prix de résidus bloqués : 0.5 → p vers 1e-4 sur le NACA de l'exemple)",
     # communs
     "max_iter": "itérations maximales (stationnaire)",
     "tol": "critère de convergence sur les résidus",

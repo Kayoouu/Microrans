@@ -218,7 +218,7 @@ class FVM:
     def _sum_b(self, w):
         return self._sum(self.Pb, w) if self.nb else self.xp.zeros(self.nc)
 
-    def nonorth_flux(self, gam_i, grad_phi, phi, limit: float | None = 0.5):
+    def nonorth_flux(self, gam_i, grad_phi, phi, limit: float | None = 1.0):
         """Partie non orthogonale du flux diffusif Γ (∇φ)_f·k, limitée comme `limited ψ` d'OpenFOAM."""
         xp = self.xp
         corr = gam_i * xp.sum(self.interp(grad_phi) * self.kvec, axis=1)
@@ -229,7 +229,7 @@ class FVM:
         return corr
 
     def assemble(self, F_i, F_b, gam_i, gam_b, bc, grad_phi=None, scheme="upwind",
-                 bounded=False, phi=None, nonorth_limit: float | None = 0.5, grad_conv=None):
+                 bounded=False, phi=None, nonorth_limit: float | None = 1.0, grad_conv=None):
         """Convection (flux F) + diffusion (Γ) d'un scalaire. Retourne (diag, upper, lower, rhs).
 
         grad_conv : gradient utilisé par la correction linearUpwind (par défaut grad_phi ;

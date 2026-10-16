@@ -442,7 +442,7 @@ Contenu libre, sous la forme `nom = valeur`.
 | `n_corr` | corrections de pression (défaut 2) | 2 |  | incompressible seulement |
 | `n_nonorth` | corrections non orthogonales (défaut 1) | 1 |  | incompressible seulement |
 | `n_outer` | boucles externes PIMPLE (défaut 2) | 2 |  | incompressible seulement |
-| `nonorth_limit` | limiteur de la correction non orthogonale (défaut 0.5) | 0.5 |  | incompressible seulement |
+| `nonorth_limit` | limiteur ψ de la correction non orthogonale (défaut 1 : aucun ; < 1 la borne, au prix de résidus bloqués : 0.5 → p vers 1e-4 sur le NACA de l'exemple) | 1 |  | incompressible seulement |
 | `numba` | noyaux Numba (défaut false) | false |  | incompressible seulement |
 | `order` | 1 \| 2 (défaut) |  | 2 | compressible seulement |
 | `pseudo_cfl` | CFL de pseudo-temps (stationnaire pseudo-transitoire) | auto |  | incompressible seulement |

@@ -1,13 +1,15 @@
-# État du projet (mis à jour le 2026-10-15)
+# État du projet (mis à jour le 2026-10-16)
 
 ## Où on en est
 
 - microrans : outil RANS / URANS 1D, 2D, 3D (périmètre réduit) avec mailleur, interface
   PySide6 et exécutables PyInstaller Windows / Linux (CI GitHub Actions).
-- Dernier lot : **G1 (C24), partie 2** (2026-10-15) : chiffres du README remesurés après
-  la correction (domaine et O / C du NACA, polaire, GCI, de Vahl Davis, Ghia) ; polaire :
-  C_d +0.4 % à +3.6 %, mais +24 % d'itérations (×2 à ×3 de 10° à 14°) : plateau de
-  résidus dû au limiteur non orthogonal → tâche suivante. Partie 1 (2026-10-14) : flux de
+- Dernier lot : **limiteur non orthogonal** (2026-10-16) : défaut `nonorth_limit = 1`
+  (sans limiteur) : NACA résidus à 1e-12 au lieu d'un plateau 1e-4, polaire 8 047 → 5 866
+  it, aucune divergence sur 5 cas non orthogonaux (jusqu'à 78°), efforts ≤ 0.11 % ;
+  exemples NACA `tol = 1e-7` (à 1e-5 : arrêt trop tôt, 0.16 %). Limite : pseudo_cfl plus
+  lent sans limiteur (garder 0.5). Avant : **G1 (C24), partie 2** (2026-10-15) : chiffres
+  du README remesurés après la correction. Partie 1 (2026-10-14) : flux de
   Rhie-Chow du stationnaire sur la diagonale physique → SIMPLE / SIMPLEC = couplé à 1e-8,
   quels que soient relax_U / pseudo_cfl ; NACA C_d +0.89 %, C_l −0.24 %. Avant : **audit 3, partie 1**
   (2026-10-13) : campagnes sans régression, c17 (21 exemples honnêtes), C24, figures L8 à
@@ -45,6 +47,9 @@ calcul stationnaire 10⁶ cellules = quelques centaines d'itérations ≈ 1 à 1
 
 ## Décisions prises (et pourquoi)
 
+- Correction non orthogonale sans limiteur par défaut (2026-10-16) : ψ = 0.5 bloquait les
+  résidus (borne = partie implicite) ; ψ = 1 mesuré stable sur 5 cas (O, C, hybride,
+  triangles, multi-corps), efforts ≤ 0.11 % ; ψ < 1 reste disponible (pseudo_cfl : 0.5).
 - Pas de changement de langage : l'exécutable va aussi vite que Python (mesuré) ; le coût
   est dans les algorithmes (distance à la paroi, SIMPLE), pas dans l'emballage.
 - Distance à la paroi : exacte, k-d (8 voisins, `workers=-1`) + arbre de boîtes
