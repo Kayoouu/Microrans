@@ -4,6 +4,10 @@
     python tools/dev/ci.py attendre          # attend la fin des workflows du commit poussé
     python tools/dev/ci.py attendre --executables   # lance aussi la construction (build.yml)
 
+--executables ne relance pas une construction qui existe déjà pour ce commit (lancée par une
+poussée de packaging/ ou par un appel précédent, par exemple avant un redémarrage de la
+session : construction en double le 2026-10-17) ; --relancer en force une nouvelle.
+
 « attendre » : à lancer en arrière-plan ; échec → jobs et étapes en échec (le détail des
 journaux : outil MCP get_job_logs). Exécutables : identifiants des artefacts et une ligne
 prête pour etat.md. Codes de sortie : 0 tout vert, 1 échec, 2 délai dépassé ou API
@@ -103,7 +107,7 @@ def cmd_etat(court=False) -> int:
     return 0
 
 
-def cmd_attendre(executables, delai) -> int:
+def cmd_attendre(executables, delai, relancer=False) -> int:
     sha = sha_pousse()
     if git("rev-parse", "HEAD") != sha:
         print("HEAD n'est pas poussé : pousser d'abord (la CI suit le commit distant).")
@@ -111,8 +115,14 @@ def cmd_attendre(executables, delai) -> int:
     # marge d'une minute : horloges locale et GitHub pas tout à fait synchrones
     debut = (datetime.now(timezone.utc) - timedelta(minutes=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
     if executables:
-        api("actions/workflows/build.yml/dispatches", "POST", [f"ref={BRANCHE}"])
-        print(f"Construction des exécutables lancée sur {sha[:7]}.")
+        deja = [r for r in executions(sha) if r["name"] == "executables"]
+        if deja and not relancer:
+            debut = ""           # suivre la plus récente, sans en lancer une autre
+            print(f"Construction des exécutables déjà lancée sur {sha[:7]} : suivie "
+                  f"(--relancer pour en lancer une nouvelle).")
+        else:
+            api("actions/workflows/build.yml/dispatches", "POST", [f"ref={BRANCHE}"])
+            print(f"Construction des exécutables lancée sur {sha[:7]}.")
     attendus = {"tests"} | ({"executables"} if executables else set())
     t0 = time.time()
     while True:
@@ -148,13 +158,16 @@ def main() -> int:
     ap.add_argument("action", choices=("etat", "attendre"))
     ap.add_argument("--executables", action="store_true",
                     help="attendre : lancer aussi build.yml (workflow_dispatch)")
+    ap.add_argument("--relancer", action="store_true",
+                    help="attendre --executables : construire même si une construction "
+                         "existe déjà pour ce commit")
     ap.add_argument("--court", action="store_true", help="etat : une seule ligne")
     ap.add_argument("--delai", type=float, default=2400, help="attendre : secondes max")
     a = ap.parse_args()
     try:
         if a.action == "etat":
             return cmd_etat(a.court)
-        return cmd_attendre(a.executables, a.delai)
+        return cmd_attendre(a.executables, a.delai, a.relancer)
     except ApiInaccessible as e:
         print(f"API GitHub inaccessible ({e}). Utiliser les outils MCP (actions_list, "
               f"actions_get), ou add_repo Kayoouu/Microrans avec access push.")

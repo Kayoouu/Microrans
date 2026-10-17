@@ -26,6 +26,17 @@ commit. Ce journal sert à retrouver ce qui a été fait, pourquoi, et ce qui a 
   it (hier 5 866 à tol 1e-7), C_l à 5.8e-5, C_d à 0.015 % de la référence. NACA : 636 it ;
   §5.5 SIMPLEC 636 it 29.8 s / couplé 109 it 9.6 s.
 - Calculs réels = émulation sur historiques (mêmes itérations, 7 cas vérifiés).
+- Suite 514 réussis, 2 ignorés (10.6 min). Commit 643462f (04:39), CI verte : tests
+  https://github.com/Kayoouu/Microrans/actions/runs/39003378859, exécutables 39003381187 et
+  39003896034 (le second en double, voir ci-dessous ; tous deux verts).
+- c17 relancée sur 643462f : 21 exemples « convergés » sur les résidus ; après prolongation,
+  efforts stables à ≤ 5.8e-5 (plaque compressible, hors garde-fou ; incompressibles ≤ 4.5e-5,
+  tuyau SST) au lieu de ≤ 4.6e-4 le 13 (sphère : 6.2e-8). Paroi adiabatique de la
+  convection : 1.0 rapporté à sa propre norme, mais résultante 1.7e-6 contre 1 365 sur les
+  parois chaude / froide (bruit, comme le 13 ; chaude / froide 2.7e-8).
+- Outil : `ci.py attendre --executables` relancé après un redémarrage de la session a
+  lancé une 2e construction en double ; corrigé : il suit une construction existante du
+  commit, `--relancer` pour en forcer une (vérifié : 3 exécutions, aucune nouvelle).
 
 ## 2026-10-16 — Limiteur de la correction non orthogonale : défaut ψ = 1
 
