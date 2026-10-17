@@ -141,6 +141,22 @@ def test_hybrid_mesh_does_not_diverge():
     assert s.history[-1]["Ux"] < 1e-3
 
 
+def test_forces_settled_guard():
+    """C25 : l'arrêt sur les résidus attend que l'effort de chaque paroi ait cessé de varier
+    (relatif à sa norme ; paroi sans effort ignorée ; fenêtre ≤ moitié de l'historique)."""
+    from microrans.fv2d.solver import _forces_settled
+    base = np.array([[1.0, 0.2], [0.0, 0.0]])            # 2e paroi : effort nul
+    hist = [base * (1 + 0.5 ** k) for k in range(30)]   # convergence géométrique
+    assert not _forces_settled(hist[:10], 1e-4, 100)    # variation 6e-2 sur 5 it
+    assert _forces_settled(hist, 1e-4, 100)             # 6e-5 sur 15 it
+    assert not _forces_settled(hist[:1], 1e-4, 100)     # un seul relevé : rien à comparer
+    noisy = [f + np.array([[0.0, 0.0], [1e-9 * k, 0.0]]) for k, f in enumerate(hist)]
+    assert _forces_settled(noisy, 1e-4, 100)            # bruit d'une paroi sans effort
+    # passage par un extremum : les deux bouts de la fenêtre se rejoignent, pas le milieu
+    bump = [base * (1 + 1e-2 * np.sin(np.pi * k / 20)) for k in range(41)]
+    assert np.allclose(bump[-1], bump[20]) and not _forces_settled(bump, 1e-4, 20)
+
+
 def test_nonorthogonal_mesh_residuals_converge():
     """Plateau des résidus sur maillage non orthogonal (2026-10-16) : avec le limiteur de la
     correction non orthogonale à ψ = 0.5 (ancien défaut), p restait à 1e-4 après 600

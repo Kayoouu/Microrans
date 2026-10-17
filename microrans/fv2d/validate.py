@@ -336,6 +336,7 @@ _SOLVER_DOC = {
     "tol": "critère de convergence sur les résidus",
     "monitor_tol": "arrêt quand les efforts varient de moins de monitor_tol",
     "monitor_window": "fenêtre (itérations) de monitor_tol",
+    "forces_check": "arrêt sur tol accepté seulement si les efforts des parois sont restés à moins de forces_check (relatif) de leur valeur sur min(monitor_window, it/2) itérations (défaut 1e-4 ; 0 : désactivé)",
     # compressible (fv2d/compressible.py, CompressibleSettings)
     "flux": "roe (défaut) | hllc", "order": "1 | 2 (défaut)",
     "limiter": "venkatakrishnan (défaut) | barth_jespersen | none",
@@ -788,6 +789,7 @@ def _check_values(cfg: dict, kind: str, mesh_type: str, mesh_only: bool, errors:
     V.num("solver", sc, "tol", ge=0)
     V.num("solver", sc, "monitor_tol", gt=0)
     V.num("solver", sc, "monitor_window", ge=1, integer=True)
+    V.num("solver", sc, "forces_check", ge=0)
     oc = cfg.get("output") if isinstance(cfg.get("output"), dict) else {}
     vf = oc.get("vtk_format", "binary")
     if str(vf).lower() not in ("binary", "ascii"):

@@ -1,4 +1,4 @@
-# Liste de travail (ordre = priorité ; mise à jour le 2026-10-16 ; jalons A, B, C)
+# Liste de travail (ordre = priorité ; mise à jour le 2026-10-17 ; jalons A, B, C)
 
 Méthode pour chaque tâche : mesurer d'abord (profil, chiffres de départ), changer, mesurer
 côte à côte dans les mêmes conditions, tests, docs (README, chiffres), commit, CI verte,
@@ -7,8 +7,8 @@ inutile (mesure à l'appui), l'écrire dans le journal et passer à la suivante.
 
 ## En cours
 
-Rien (limiteur non orthogonal fini le 2026-10-16 : défaut ψ = 1). Suivant : point 1
-ci-dessous (C25, continuation des balayages).
+Rien (C25 corrigé le 2026-10-17 : garde-fou forces_check). Suivant : point 1
+ci-dessous (G2, figures).
 
 ## À faire
 
@@ -28,23 +28,19 @@ faits. Côté
 utilisateur (je ne peux pas le faire) : publier une release, faire essayer l'exécutable
 Windows par un humain sur un vrai PC (jamais fait : la CI vérifie seulement qu'il démarre).
 
-1. **C25 — balayage par continuation « convergé » trop tôt** (résultat faux silencieux,
-   trouvé le 2026-10-16) : les résidus passent sous `tol` alors que les efforts bougent
-   (polaire NACA, tol 1e-5 : C_d jusqu'à 1.9 %). Contourné (exemple et test à tol 1e-7).
-   Corriger : en continuation, exiger aussi les efforts stabilisés (monitor_tol) ou un
-   critère équivalent ; mesurer sur la polaire (référence : scratchpad g3/polaire_ref, tol
-   1e-11) et un balayage de Reynolds orthogonal (cavité, cylindre) ; tol par défaut 1e-5
-   à reconsidérer (NACA seul : 0.16 %). Estimé 1 lot.
-2. **Lot G2 — figures** (audit 3 : L8 sondes tracées comme résidus, L9 bruit d'arrondi à
+1. **Lot G2 — figures** (audit 3 : L8 sondes tracées comme résidus, L9 bruit d'arrondi à
    pleine échelle dans les profils, L10 cadrage du tuyau axisymétrique, L11 figures de
    champ du tube de Sod). Estimé 1 lot. Un test par point.
-3. **Audit 3, partie 2** : chaque accord de validation du README face au maillage et à la
+2. **Audit 3, partie 2** : chaque accord de validation du README face au maillage et à la
    taille du domaine (cylindre et NACA déjà trouvés ; après G1, les chiffres ayant bougé) ;
    figures restantes (pression, vorticité, ν_t, maillages) ; interface (figures de la page
    Résultats). Convergence apparente trompeuse (C_l de l'O-grid, ordre apparent 5.8) à
    relire. Pseudo-temps (`pseudo_cfl`) sur maillage non orthogonal : lent sans
    limiteur (NACA 2 063 → > 3 000 it), lent aussi avec (résidus U_y 1e-4) : à comprendre ;
-   étude O / C (naca_o_c.py, ψ = 0.5 fixé) à refaire sans pseudo_cfl ? Puis audit 4 : le jalon A est atteint quand un audit complet trouve 0 résultat
+   étude O / C (naca_o_c.py, ψ = 0.5 fixé) à refaire sans pseudo_cfl ? `monitor_tol` (arrêt
+   sur les efforts seuls, écart entre les bouts de la fenêtre) : même faiblesse possible au
+   passage d'un extremum que le premier garde-fou (non mesuré) ; compressible : pas de
+   garde-fou (critère à part). Puis audit 4 : le jalon A est atteint quand un audit complet trouve 0 résultat
    faux silencieux.
 
 ### Jalon B — 3D académique, petite géométrie (≈ 1.5 à 3 mois de plus ; janvier–février 2027)

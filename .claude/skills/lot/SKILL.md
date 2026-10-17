@@ -40,6 +40,8 @@ dans `CLAUDE.md` ; cette page dit comment les appliquer avec les outils `tools/d
    invisible sur les exemples isolés. Comparer un balayage à une **référence menée à
    convergence** (tol 1e-11), pas à un autre balayage : en continuation, l'arrêt sur `tol`
    laisse jusqu'à 2 % d'erreur d'itération (C25 ; chiffres C24 du 15 octobre faussés).
+   Critère d'arrêt choisi sur des historiques enregistrés : le confirmer par le calcul réel
+   complet (C25 : un 1er garde-fou bon sur 36 historiques a laissé passer 1.3e-3 à 12°).
 4. **Tout chiffre écrit est mesuré** : temps et mémoire par
    `python tools/dev/ab.py temps --repet 2 -- …` (ordre A B B A, machine libre : la charge
    est affichée) ; préciser les conditions dans le texte. Étude de plusieurs minutes

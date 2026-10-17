@@ -1,10 +1,14 @@
-# État du projet (mis à jour le 2026-10-16)
+# État du projet (mis à jour le 2026-10-17)
 
 ## Où on en est
 
 - microrans : outil RANS / URANS 1D, 2D, 3D (périmètre réduit) avec mailleur, interface
   PySide6 et exécutables PyInstaller Windows / Linux (CI GitHub Actions).
-- Dernier lot : **limiteur non orthogonal** (2026-10-16) : défaut `nonorth_limit = 1`
+- Dernier lot : **C25** (2026-10-17) : garde-fou `forces_check = 1e-4` : l'arrêt sur les
+  résidus attend que les efforts des parois soient stables (amplitude sur min(100, it/2)
+  it) ; à tol 1e-5 seul, NACA : 0.6 à 1.3 % d'erreur ; avec, ≤ 5e-5 sur 36 historiques,
+  +5 % d'itérations (sphère ×2.2). Exemples NACA revenus à tol 1e-5. Avant : **limiteur
+  non orthogonal** (2026-10-16) : défaut `nonorth_limit = 1`
   (sans limiteur) : NACA résidus à 1e-12 au lieu d'un plateau 1e-4, polaire 8 047 → 5 866
   it, aucune divergence sur 5 cas non orthogonaux (jusqu'à 78°), efforts ≤ 0.11 % ;
   exemples NACA `tol = 1e-7` (à 1e-5 : arrêt trop tôt, 0.16 %). Limite : pseudo_cfl plus
@@ -47,6 +51,9 @@ calcul stationnaire 10⁶ cellules = quelques centaines d'itérations ≈ 1 à 1
 
 ## Décisions prises (et pourquoi)
 
+- Critère d'arrêt stationnaire (2026-10-17) : résidus < tol ET efforts stables à
+  forces_check = 1e-4 (amplitude sur la fenêtre, pas l'écart entre ses bouts : extremum) ;
+  coût +5 % mesuré ; plus fiable que baisser tol (1e-7 : erreurs jusqu'à 1.5e-4).
 - Correction non orthogonale sans limiteur par défaut (2026-10-16) : ψ = 0.5 bloquait les
   résidus (borne = partie implicite) ; ψ = 1 mesuré stable sur 5 cas (O, C, hybride,
   triangles, multi-corps), efforts ≤ 0.11 % ; ψ < 1 reste disponible (pseudo_cfl : 0.5).

@@ -425,6 +425,7 @@ Contenu libre, sous la forme `nom = valeur`.
 | `flux` | roe (défaut) \| hllc |  | `roe` | compressible seulement |
 | `fmg_levels` | démarrage multigrille : niveaux grossiers (défaut 0) |  |  | incompressible seulement |
 | `fmg_tol` | démarrage multigrille : tolérance des niveaux grossiers |  |  | incompressible seulement |
+| `forces_check` | arrêt sur tol accepté seulement si les efforts des parois sont restés à moins de forces_check (relatif) de leur valeur sur min(monitor_window, it/2) itérations (défaut 1e-4 ; 0 : désactivé) | 0.0001 |  | incompressible seulement |
 | `implicit_jacobian` | roe \| rusanov |  | `roe` | compressible seulement |
 | `limiter` | venkatakrishnan (défaut) \| barth_jespersen \| none |  | `venkatakrishnan` | compressible seulement |
 | `limiter_freeze` | limiteur gelé après N itérations (défaut 0 : jamais) |  | 0 | compressible seulement |

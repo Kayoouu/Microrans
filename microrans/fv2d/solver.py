@@ -130,6 +130,13 @@ class Settings:
     # les parois varient de moins de monitor_tol (relatif) sur monitor_window itérations
     monitor_tol: float | None = None
     monitor_window: int = 100
+    # garde-fou (C25, 2026-10-17) : un arrêt sur les résidus (tol) n'est accepté que si
+    # l'effort de chaque paroi est resté à moins de forces_check (relatif à sa norme) de sa
+    # valeur actuelle sur les min(monitor_window, it/2) dernières itérations. Sans lui,
+    # NACA 0012 SA à tol = 1e-5 : efforts encore à 0.6 % (repos) à 1.3 % (polaire) de leur
+    # valeur finale ; avec, 5e-5 au plus sur 17 exemples, 2 balayages et 3 cas couplés,
+    # +5 % d'itérations au total (sphère ×2.2). 0 : désactivé ; sans paroi : sans effet.
+    forces_check: float = 1e-4
     # solveurs linéaires (voir microrans.linalg) : auto | direct | amg | bicgstab | pyamg
     solver_p: str = "auto"                # auto : LU si < 20 000 cellules, sinon AMG + CG
     solver_U: str = "auto"                # auto : BiCGStab + Jacobi
@@ -161,6 +168,25 @@ class Settings:
     # implicite) ; sans limiteur : résidus à 1e-12, stable sur les 5 cas de
     # tools/validation/nonorth_limiteur.py (jusqu'à 78°).
     nonorth_limit: float = 1.0
+
+
+def _forces_settled(hist, thr: float, window: int) -> bool:
+    """Garde-fou de l'arrêt sur les résidus (C25) : sur les min(window, n/2) dernières
+    itérations, l'effort de chaque paroi (hist : tableaux (parois, dim), un par itération)
+    est resté à moins de thr de sa valeur actuelle, relativement à sa norme (au moins
+    1e-3 × la plus grande, pour une paroi sans effort). Écart maximal sur toute la fenêtre,
+    pas entre ses deux bouts : au passage d'un extremum, les deux bouts se rejoignent
+    (polaire NACA, 12° : 8e-5 entre les bouts, efforts encore à 1.3e-3 du final)."""
+    w = min(window, len(hist) // 2)
+    if w < 1:
+        return False
+    F = hist[-1]
+    n = np.linalg.norm(F, axis=1)
+    if not n.max() > 0:
+        return True
+    scale = np.maximum(n, 1e-3 * n.max())
+    dev = np.linalg.norm(np.stack(hist[-1 - w:]) - F, axis=2).max(axis=0)
+    return bool(np.max(dev / scale) < thr)
 
 
 def _diverged(when: str, steady: bool = True) -> str:
@@ -1618,6 +1644,9 @@ class Solver2D:
         t0 = time.perf_counter()
         converged = False
         forces = []
+        guard = s.forces_check if s.forces_check and self.forces() else None
+        wall_forces = []                              # efforts par paroi (garde-fou)
+        held = False                                  # arrêt sur les résidus retenu (message)
         for it in range(1, max_iter + 1):
             self.residuals_now = {}
             if s.pseudo_dt or s.pseudo_cfl:
@@ -1685,8 +1714,15 @@ class Solver2D:
             if verbose and (it % log_every == 0 or it == 1):
                 print("  it %5d  " % it + "  ".join(f"{k}={v:.2e}" for k, v in rec.items()
                                                     if k != "iteration"))
+            if s.monitor_tol or guard:
+                walls = self.forces().values()
+                if s.monitor_tol:
+                    forces.append(xp.concatenate([f["total"] for f in walls]))
+                if guard:
+                    wall_forces.append(np.stack([np.asarray(
+                        f["total"].get() if hasattr(f["total"], "get") else f["total"],
+                        dtype=float) for f in walls]))
             if s.monitor_tol:
-                forces.append(xp.concatenate([f["total"] for f in self.forces().values()]))
                 w = s.monitor_window
                 if len(forces) > w:
                     ref = xp.maximum(xp.abs(forces[-1]), 1e-12 * self.u_scale ** 2)
@@ -1695,7 +1731,12 @@ class Solver2D:
             if callback and callback(self, it):
                 break                                  # arrêt demandé (interface graphique)
             if max(v for k, v in self.residuals_now.items()) < tol:
-                converged = True
+                if guard is None or _forces_settled(wall_forces, guard, s.monitor_window):
+                    converged = True
+                elif verbose and not held:
+                    held = True
+                    print(f"  it {it} : résidus < tol, mais efforts encore en variation "
+                          f"(> {guard:g} relatif) : poursuite ([solver] forces_check)")
             if converged:
                 break
         self.converged = converged

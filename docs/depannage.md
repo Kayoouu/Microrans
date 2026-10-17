@@ -182,6 +182,14 @@ code de sortie vaut 1.
    instationnaire : essayer `mode = "transient"`. L'inverse n'est pas vrai : un calcul
    stationnaire peut converger alors que l'écoulement réel est instationnaire (§ 4).
 
+Résidus déjà sous `tol`, mais le calcul continue (journal : « résidus < tol, mais efforts
+encore en variation… : poursuite ») : c'est le garde-fou `[solver] forces_check`. L'arrêt sur
+les résidus n'est accepté que si l'effort de chaque paroi est resté à 1e-4 près (relatif)
+de sa valeur sur les 100 dernières itérations : sur un profil NACA 0012, `tol = 1e-5`
+seul laissait les efforts à 0.6 à 1.3 % de leur valeur finale. Un « NON CONVERGÉ » avec des
+résidus sous `tol` signifie donc que les efforts bougeaient encore : augmenter `max_iter`.
+`forces_check = 0` revient à l'ancien critère (déconseillé).
+
 ## 4. « Convergé », mais résultat douteux
 
 ### y⁺ trop grand pour le traitement de paroi

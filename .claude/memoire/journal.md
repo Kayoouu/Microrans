@@ -3,6 +3,30 @@
 Détail des chiffres : README (§ 6 validation, § 7 performances, § 8 limites) et messages de
 commit. Ce journal sert à retrouver ce qui a été fait, pourquoi, et ce qui a été constaté.
 
+## 2026-10-17 — C25 : garde-fou des efforts sur l'arrêt par les résidus
+
+- Relance quotidienne (03:53 UTC). Samedi ; campagnes du 12 (5 jours) : pas de campagne.
+  CI verte au départ (273e8dd).
+- Mesure (historiques efforts / résidus à chaque itération, menés à 1e-11 ; scratchpad g4/) :
+  polaire NACA, arrêt à résidus < 1e-5 → erreur 5.7e-3 (4°, continuation), 5.8e-3 (4°, départ
+  du repos), 1.3e-2 (10°), 1.3e-2 (14°) : **le diagnostic d'hier (continuation) était faux** :
+  c'est le critère sur les résidus ; au moment de l'arrêt, les efforts varient de 1e-2 à
+  3e-1 sur 100 it. Cylindre Re 10 → 20 (orthogonal) : 1e-4 à tol 1e-5.
+- Critères essayés après coup sur 36 historiques (17 exemples, 3 couplés, polaire, cylindre) :
+  dérive sur 100 it < 1e-3 ou 3e-4 : laisse passer 3e-3 (10°, dérive lente) ; estimation de
+  type Aitken : sous-estime jusqu'à ×3e4 ; dérive entre les deux bouts < 1e-4 : bon sur les
+  historiques, mais la polaire réelle a laissé passer 1.3e-3 à 12° (passage par un minimum de
+  C_l : bouts égaux) → **écart maximal sur la fenêtre** (amplitude) < 1e-4, fenêtre
+  min(100, it/2) (sinon le couplé serait forcé à 100 it) : erreur ≤ 5e-5 partout, +5 %
+  d'itérations sur les exemples (sphère 100 → 222, cylindre 182 → 246, convection 84 → 99,
+  plaque SA 290 → 363, T3A +19 %, couplé cylindre 19 → 27, NACA 80 → 109 ; cavité 351 → 352).
+  Surcoût du calcul des efforts : cavité +3 % (ab.py temps, 3 mesures alternées).
+- `[solver] forces_check = 1e-4` (0 : désactivé ; sans paroi : sans effet). Exemples NACA et
+  test de la polaire revenus à tol 1e-5 (le test échoue avant). Polaire de l'exemple : 6 216
+  it (hier 5 866 à tol 1e-7), C_l à 5.8e-5, C_d à 0.015 % de la référence. NACA : 636 it ;
+  §5.5 SIMPLEC 636 it 29.8 s / couplé 109 it 9.6 s.
+- Calculs réels = émulation sur historiques (mêmes itérations, 7 cas vérifiés).
+
 ## 2026-10-16 — Limiteur de la correction non orthogonale : défaut ψ = 1
 
 - Relance quotidienne (03:54 UTC). Vendredi ; campagnes du 12 (4 jours) : pas de campagne.

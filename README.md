@@ -446,7 +446,11 @@ deux côtés, écart affiché). Sélection d'un matériel Intel précis : `backe
 ### 5.4 Autres choix
 
 - **Stationnaire** : SIMPLEC (relaxation U auto 0.9 / 0.7 selon la non-orthogonalité),
-  tolérance de pression relâchée (0.01) ; arrêt sur les résidus normalisés ou sur la
+  tolérance de pression relâchée (0.01) ; arrêt sur les résidus normalisés (`tol`),
+  accepté seulement si l'effort de chaque paroi est resté à `forces_check` = 1e-4 près
+  (relatif) de sa valeur sur les 100 dernières itérations (garde-fou du 17 octobre 2026 :
+  à `tol = 1e-5` seul, NACA 0012 SA, efforts encore à 0.6 à 1.3 % de leur valeur finale ;
+  avec lui, 5e-5 au plus sur tous les exemples, +5 % d'itérations au total), ou sur la
   stabilisation des efforts (`monitor_tol`).
 - **Maillages très fins et étirés** : la sous-relaxation implicite équivaut à un pas de
   pseudo-temps local ∝ Δy²/ν près des parois, d'où O(N²) itérations (canal Re_τ = 395 :
@@ -495,7 +499,7 @@ défaut, couplé avec `relax_U = 1` ; temps de calcul hors maillage) :
 | Mélange de deux courants (scalaires) | 5 120 | 202 it., 7.0 s | 83 it., 2.8 s | ×2.5 |
 | Sang, Carreau (non newtonien) | 2 400 | 119 it., 1.0 s | 29 it., 0.4 s | ×2.3 |
 | Tuyau turbulent SST | 128 | 2 663 it., 9.7 s | 516 it., 1.9 s | ×5.2 |
-| NACA 0012, SA (16 octobre 2026, sans limiteur non orthogonal, `tol = 1e-7`) | 8 192 | 677 it., 30.3 s | 80 it., 9.1 s | ×3.3 |
+| NACA 0012, SA (17 octobre 2026, sans limiteur non orthogonal, garde-fou `forces_check`) | 8 192 | 636 it., 29.8 s | 109 it., 9.6 s | ×3.1 |
 | Plaque plane SST, lois de paroi | 2 688 | 231 it., 3.6 s | 101 it., 2.4 s | ×1.5 |
 | Plaque plane SA | 7 168 | 291 it., 9.3 s | 109 it., 6.5 s | ×1.4 |
 | Plaque plane, transition SST-γ (T3A) | 13 760 | 448 it., 54.1 s | 503 it., 74.1 s | **×0.73** |
@@ -521,9 +525,11 @@ comme à 0.8. Corrigé le 14 octobre 2026 (C24) : SIMPLEC donne maintenant 0.012
 dissipation, diagonale physique). Itérations et temps du tableau mesurés avant cette
 correction ; itérations SIMPLEC depuis, sur les 19 exemples stationnaires : −1 % à +3.7 %,
 bien moins que la variation des durées d'un jour à l'autre (jusqu'à 1.7 fois) : les
-rapports du tableau restent valables. Ligne du NACA remesurée le 16 octobre 2026 (limiteur
-non orthogonal retiré, `tol = 1e-7` ; avant : 834 it., 37.4 s contre 170 it., 11.7 s) ;
-SIMPLEC et couplé y donnent le même C_d (0.012658) et C_l à 1e-5 près.
+rapports du tableau restent valables. Ligne du NACA remesurée le 17 octobre 2026 (limiteur
+non orthogonal retiré, garde-fou `forces_check` ; avant : 834 it., 37.4 s contre 170 it.,
+11.7 s) ; SIMPLEC et couplé y donnent le même C_d (0.012658) et C_l à 1e-5 près. Le
+garde-fou ajoute aussi des itérations au couplé quand il converge vite (cylindre 19 → 27,
+NACA 80 → 109).
 
 **Ce qu'il faut en retenir :**
 - **Laminaire** : 2 à 27 fois plus rapide, et le gain **augmente avec le maillage**.
@@ -602,7 +608,7 @@ quasi nul : ~0.1 %). Valeurs de cette section remesurées après la correction l
 | Canal Re_τ = 2000, **lois de paroi**, 1re cellule à y⁺ ≈ 50 (24 cellules), SA / SST / k-ω | U_b / U_b résolu (1D, y⁺ = 0.2) | −2.3 % / +3.5 % / −0.5 % | même modèle résolu ; y⁺ ≈ 25 : −3.6 / +4.8 / −0.3 % |
 | NACA 0012, α = 4°, Re = 1e6, SA, champ lointain à R = 30 cordes | C_l ; C_d | 0.432 ; 0.0127 (R = 300 : 0.438 ; 0.0123 ; avant la correction C24 du 14 octobre 2026 : 0.433 ; 0.0125 à R = 30) | 2πα = 0.439 (démonstration, voir limites) ; effet du domaine : § 8, point 6b |
 | idem, maillage en C (expérimental, 12 288 cellules) contre O-grid (8 192), 128 mailles sur le profil | C_d (dont pression) ; C_l | C : 0.01227 (0.00349) ; 0.4246 — O : 0.01267 (0.00384) ; 0.4321 (15 octobre 2026, `nonorth_limit = 0.5`) | pas de référence embarquée ; sillage proche mal résolu en O (§ 8, point 6) |
-| NACA 0012, polaire −4° à 14°, Re = 1e6, SA (8 192 cellules ; remesurée le 16 octobre 2026, 5 866 itérations ; effet de C24, calculs menés à convergence : C_d +0.4 % à 0°, +2.2 % à 10°, +3.4 % à 14°, C_l −0.2 à −0.8 %) | pente dC_l/dα (moindres carrés, −4° à 4°) ; C_m quart de corde (cabré positif) ; symétrie | 0.1081 /° ; \|C_m\| < 0.008 (0.0074 à 14°) ; C_l(−α) = −C_l(α) à 1e-4 près ; C_l(0) = −3e-6 | 2π = 0.1097 /° (profil mince) ; 0 (profil symétrique) ; exacte |
+| NACA 0012, polaire −4° à 14°, Re = 1e6, SA (8 192 cellules ; remesurée le 17 octobre 2026, 6 216 itérations ; effet de C24, calculs menés à convergence : C_d +0.4 % à 0°, +2.2 % à 10°, +3.4 % à 14°, C_l −0.2 à −0.8 %) | pente dC_l/dα (moindres carrés, −4° à 4°) ; C_m quart de corde (cabré positif) ; symétrie | 0.1081 /° ; \|C_m\| < 0.008 (0.0074 à 14°) ; C_l(−α) = −C_l(α) à 6e-5 près ; C_l(0) = −3e-7 | 2π = 0.1097 /° (profil mince) ; 0 (profil symétrique) ; exacte |
 | Cylindre Re = 20, écoulement incliné de 30° | C_d (axes écoulement) | écart 0.01 % avec 0° | invariance exacte |
 | Canal, débit imposé (plan / axisymétrique 360°) | débit en sortie | exact à 1e-9 | conservation |
 | Canal entraîné par une pression totale Δp | p + ½U² en entrée ; débit | = p0 à 1e-12 ; −0.8 % | Poiseuille Δp h³/(12 ν L) |
@@ -771,8 +777,8 @@ modèles (bilan exact) ; amplitude du frottement oscillant de 0.18 (k-ε) à 0.3
 Gains : solveurs linéaires (§ 5.2), assemblage CSR à structure figée, arrêt sur efforts
 stabilisés (NACA : le résidu de pression plafonnait à ~1.5e-5 alors que les efforts étaient
 stables depuis longtemps). Depuis le 16 octobre 2026, sans limiteur de la correction non
-orthogonale, les résidus descendent et l'exemple s'arrête sur `tol = 1e-7` : 677 itérations
-au lieu de 862, 30.4 s contre 34.4 s (médianes de 4 mesures alternées, même machine).
+orthogonale, les résidus descendent ; avec le garde-fou `forces_check` (17 octobre),
+l'exemple s'arrête à 636 itérations au lieu de 862 (29.8 s le 17 octobre).
 
 **Démarrage multigrille** (`[solver] fmg_levels`, désactivé par défaut) : temps total, niveaux
 grossiers compris ; résultats identiques (efforts à 5 chiffres).
@@ -906,9 +912,9 @@ redonne l'ancien fichier texte, identique octet pour octet.
    sur les 5 cas de `tools/validation/nonorth_limiteur.py` (NACA en O et en C, 76° et 78° ;
    cylindre sur maillage hybride et sur triangles ; deux profils de `mesh_naca_multi`, 63°),
    efforts changés de 0.003 % (C_d du cylindre hybride) à 0.11 % (C_d de `mesh_naca_multi`).
-   Les résidus descendant vraiment, `tol = 1e-5` peut arrêter trop tôt : NACA de l'exemple,
-   efforts encore à 0.16 % de leur valeur finale (1e-5 près quand le résidu maximal passe
-   6e-8) ; les deux exemples NACA ont donc `tol = 1e-7`. Avec le pseudo-temps
+   Les résidus descendant vraiment, `tol = 1e-5` seul arrêtait trop tôt (NACA de
+   l'exemple : efforts encore à 0.16 % de leur valeur finale) : garde-fou `forces_check`
+   depuis le 17 octobre (§ 5.4 ; exemple : 636 itérations, efforts à 3e-5). Avec le pseudo-temps
    (`pseudo_cfl = 20`), le même profil converge en revanche plus lentement sans limiteur
    (efforts encore en mouvement après 3 000 itérations, contre arrêt à 2 063 avec 0.5) :
    avec `pseudo_cfl`, garder `nonorth_limit = 0.5`. Un maillage plus déformé pourrait aussi
@@ -981,12 +987,11 @@ redonne l'ancien fichier texte, identique octet pour octet.
    généralement C_l max). Écoulement supposé entièrement turbulent (pas de transition) :
    traînée à faible incidence surestimée par rapport à un profil réel à ce Reynolds. La
    continuation ne réduit pas systématiquement le nombre d'itérations (de −41 % à +53 %
-   mesurés, voir `fv2d/sweep.py`). **Continuation et `tol`** : chaque point part de la solution du
-   précédent ; les résidus y passent vite sous `tol` alors que les efforts bougent encore.
-   NACA 0012 sans limiteur non orthogonal, `tol = 1e-5` : C_l à 4° −0.56 %, C_d jusqu'à
-   1.9 % de la valeur convergée, annoncés « convergé » (16 octobre 2026 ; avant C24, déjà
-   0.2 à 0.3 % sur C_d à 10-14°). Utiliser `tol = 1e-7` comme l'exemple `naca0012_polaire`
-   (C_d à 0.02 %, C_l à 8e-5 près) ; correction prévue (C25).
+   mesurés, voir `fv2d/sweep.py`). Jusqu'au 16 octobre 2026, `tol = 1e-5` arrêtait chaque
+   point trop tôt (C25) : NACA 0012, C_d jusqu'à 1.9 % de la valeur convergée, annoncé
+   « convergé » ; la continuation n'y est pour presque rien (au départ du repos, 0.6 %
+   d'erreur au même critère). Corrigé par le garde-fou `forces_check` (§ 5.4) : polaire de
+   l'exemple à `tol = 1e-5`, C_l à 6e-5 et C_d à 0.015 % d'une polaire menée à 1e-11.
 11. **Sortie** (`outlet`) : pression imposée et vitesse à gradient nul, comme OpenFOAM.
    Si l'écoulement n'est pas établi à la sortie et que le Reynolds est très faible
    (Re ~ 1-10), la pression près de la sortie est faussée (test de la source radiale :

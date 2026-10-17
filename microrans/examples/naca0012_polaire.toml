@@ -39,7 +39,7 @@ U = [1.0, 0.0]
 [solver]
 mode = "steady"
 max_iter = 3000
-tol = 1e-7                # continuation : à 1e-5, arrêt trop tôt (C_d jusqu'à 1.9 % d'écart)
+tol = 1e-5
 monitor_tol = 1e-5
 log_every = 500
 
