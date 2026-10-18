@@ -27,6 +27,8 @@ commit. Ce journal sert à retrouver ce qui a été fait, pourquoi, et ce qui a 
   avertissement ; seul le tube de Sod (1:400) ; sang et tuyau thermique 1:20 lisibles.
 - 7 tests (tests/test_figures_g2.py), 6 échouent avant, 1 preuve faible (fonction nouvelle,
   couverte par le test réel). Sorties identiques au bit près (ab.py, sang, tuyau, Sod).
+- Suite 521 réussis, 2 ignorés (6.2 min). Commit e69803a (04:26), CI verte 04:34 : tests
+  https://github.com/Kayoouu/Microrans/actions/runs/39097108480, exécutables 39097111987.
 - Fausse alerte : le test du Profil de l'interface plantait (300 points contre 200) faute
   d'avoir chargé le cas 3D (ligne à 2 composantes) ; parcours réel correct.
 

@@ -42,6 +42,9 @@ dans `CLAUDE.md` ; cette page dit comment les appliquer avec les outils `tools/d
    laisse jusqu'à 2 % d'erreur d'itération (C25 ; chiffres C24 du 15 octobre faussés).
    Critère d'arrêt choisi sur des historiques enregistrés : le confirmer par le calcul réel
    complet (C25 : un 1er garde-fou bon sur 36 historiques a laissé passer 1.3e-3 à 12°).
+   Script de comparaison (avant / après sur tous les exemples) : vérifier d'abord qu'il
+   reproduit le défaut connu (G2 : lancé sans les types de frontières, il ne voyait
+   pas le défaut de cadrage du tuyau).
 4. **Tout chiffre écrit est mesuré** : temps et mémoire par
    `python tools/dev/ab.py temps --repet 2 -- …` (ordre A B B A, machine libre : la charge
    est affichée) ; préciser les conditions dans le texte. Étude de plusieurs minutes
@@ -64,7 +67,8 @@ dans `CLAUDE.md` ; cette page dit comment les appliquer avec les outils `tools/d
 
 1. `python tools/dev/suite.py` **en arrière-plan** (suite complète sur une copie : on peut
    éditer la doc pendant ce temps), **une fois le code du lot fini** (F3 : une suite lancée
-   sur un arbre provisoire, à refaire ; G1 : en-têtes des exemples, dans microrans/, compris). Avant, si un format de sortie change (en-tête CSV,
+   sur un arbre provisoire, à refaire ; G1 : en-têtes des exemples, dans microrans/, compris ;
+   G2 : docstrings de microrans/ aussi : les mettre à jour avant de lancer la suite). Avant, si un format de sortie change (en-tête CSV,
    clé JSON, titre de figure) : `grep -rn "<ancien texte>" tests/` et mettre à jour les
    tests trouvés (F3 : en-tête de wall_*.csv figé dans test_case3d, vu après 10 min). Le hook avant poussée la **réclame** si microrans/ ou
    tests/ changent ; il vérifie aussi ruff, branche, force, tags, noms de modèles, tomllib.

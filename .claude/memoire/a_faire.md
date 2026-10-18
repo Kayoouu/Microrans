@@ -79,6 +79,8 @@ turbulence, viscoélasticité.
 
 ## Petits travaux
 
+- Docstring de microrans/fv2d/case.py (sorties [output]) : ajouter « tracées dans
+  probes.png » aux sondes (G2 ; au prochain commit qui touche microrans/).
 - Profils sur un plan ou un axe de symétrie (mesuré au lot G2) : U_z de la cavité cubique
   4.3e-4 |U| sur ses lignes médianes (z = 0.5, sur des faces de mailles), U_y de l'éolienne
   3e-4 sur l'axe, du filtre poreux 1.5e-3 sur l'axe ; nuls en théorie. Interpolation

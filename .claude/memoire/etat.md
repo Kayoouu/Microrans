@@ -13,9 +13,9 @@
   orthogonal** (16) : défaut `nonorth_limit = 1`, plus de plateau des résidus (pseudo_cfl :
   garder 0.5) ; **G1 / C24** (14-15) : Rhie-Chow sur la diagonale physique, SIMPLE =
   couplé ; audit 3 partie 1 (13) ; maillage en C, GCI, F1 à F4, audit 2 : `journal.md`.
-- Exécutables de 643462f (C25, forces_check) : run https://github.com/Kayoouu/Microrans/actions/runs/39003896034
-  (Windows : artefact 12090063710, Linux : 12090700287 ; expirent le 2027-01-15). CI verte
-  (tests https://github.com/Kayoouu/Microrans/actions/runs/39003378859).
+- Exécutables de e69803a (G2, figures) : run https://github.com/Kayoouu/Microrans/actions/runs/39097111987
+  (Windows : artefact 12125326823, Linux : 12124589493 ; expirent le 2027-01-16). CI verte
+  (tests https://github.com/Kayoouu/Microrans/actions/runs/39097108480).
 - Suite de tests : 523 (521 réussis, 2 ignorés), 5 à 11 min en série sur la machine de session.
 - Objectif accepté le 2026-10-05 : jalon A (2D académique crédible), puis B (3D
   académique, petite géométrie) ; C (pré-industriel) non visé. Détail : `a_faire.md`.
