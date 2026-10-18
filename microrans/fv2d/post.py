@@ -7,22 +7,34 @@ from pathlib import Path
 import numpy as np
 
 from ..mesh2d.plot import plot_field, plot_mesh
-from ..postprocess import MODEL_COLORS, REF_COLOR, _pyplot, log_values
+from ..postprocess import (MODEL_COLORS, REF_COLOR, _pyplot, is_probe_key, log_values,
+                           plot_probes)
 
 
-def _body_size(solver):
-    """Sommets des parois (projetés sur x, y en 3D) et taille du corps."""
-    walls = [p.name for p in solver.mesh.patches if p.type == "wall"]
+def _body_size(solver, bodies_only=False):
+    """Sommets des parois (projetés sur x, y en 3D) et taille du corps. bodies_only (cadrage
+    des figures) : sans les parois dont tous les sommets sont sur la boîte englobante du
+    domaine (tuyau, canal), qui ne sont pas des corps (L10 : tuyau axisymétrique cadré sur
+    sa paroi, r de 0.7 à 1.3, cœur caché). Sans bodies_only : toutes les parois (échelle de
+    la vorticité, calée hors de leur couche limite)."""
+    m = solver.mesh
+    lo, hi = m.points.min(axis=0), m.points.max(axis=0)
+    tol = 1e-9 * float(np.max(hi - lo))
+
+    def on_box(w):
+        q = m.points[(n := m.patch_face_nodes(w).ravel())[n >= 0]]
+        return bool(np.all(np.any((np.abs(q - lo) < tol) | (np.abs(q - hi) < tol), axis=1)))
+    walls = [p.name for p in m.patches
+             if p.type == "wall" and not (bodies_only and on_box(p.name))]
     if not walls:
         return None, None
-    m = solver.mesh
     nodes = np.concatenate([m.patch_face_nodes(w).ravel() for w in walls])
     pts = m.points[nodes[nodes >= 0], :2]
     return pts, float(max(np.ptp(pts[:, 0]), np.ptp(pts[:, 1])))
 
 
 def _zoom(solver, downstream: float = 4.0):
-    pts, L = _body_size(solver)
+    pts, L = _body_size(solver, bodies_only=True)
     if pts is None:
         return None
     (x0, y0), (x1, y1) = pts.min(axis=0), pts.max(axis=0)
@@ -31,6 +43,23 @@ def _zoom(solver, downstream: float = 4.0):
     if L > 0.5 * max(bb[2] - bb[0], bb[3] - bb[1]):
         return None                       # parois = frontières du domaine : vue globale
     return (x0 - 1.0 * L, x1 + downstream * L, y0 - 1.5 * L, y1 + 1.5 * L)
+
+
+def _thin_band(mesh, zoom=None, mirror=None) -> bool:
+    """L11 : étendue tracée (cadrage, ou domaine avec son image miroir) en bande, plus de 50
+    fois plus longue que large : figures de champs 2D illisibles (tube de Sod, 1 × 400
+    mailles : une ligne d'un pixel) → True, avec un avertissement qui renvoie aux profils."""
+    if zoom is not None:
+        d = np.array([zoom[1] - zoom[0], zoom[3] - zoom[2]], dtype=float)
+    else:
+        d = np.ptp(mesh.points[:, :2], axis=0) * np.array([1.0, 2.0 if mirror else 1.0])
+    if d.min() >= 0.02 * d.max():
+        return False
+    import warnings
+    warnings.warn(f"Figures de champs omises : domaine en bande ({d.max() / d.min():.0f} "
+                  f"fois plus long que large), illisible en 2D. Profils : [[output.lines]] "
+                  f"(line_*.png) ; champs complets : fields.vtk (ParaView).", stacklevel=3)
+    return True
 
 
 def plot_case(solver, hist, out: Path, mode, force_patches, qdyn, slice_axis="z",
@@ -58,7 +87,7 @@ def plot_case(solver, hist, out: Path, mode, force_patches, qdyn, slice_axis="z"
             sel, plane = mesh.cells, f" (plan {mesh.axis} = {mesh.value:.4g})"
             if axis != "z":
                 zoom = None                           # zoom calculé dans le plan x, y
-    if mesh is not None:
+    if mesh is not None and not _thin_band(mesh, zoom, mir):
         if solver.dim == 2:
             plot_mesh(mesh, out / "mesh.png", zoom=zoom)
         plot_field(mesh, f["U_mag"][sel], out / "U.png", title="|U|" + plane, zoom=zoom,
@@ -88,10 +117,13 @@ def plot_case(solver, hist, out: Path, mode, force_patches, qdyn, slice_axis="z"
                        mirror=mir)
     if not hist:
         return
+    u_ref = float(np.max(f["U_mag"]))
+    plot_probes(hist, "iteration" if mode == "steady" else "time", out / "probes.png",
+                u_ref, 0.5 * u_ref ** 2)
     color = MODEL_COLORS.get(solver.model_name, "#4a3aa7")
     if mode == "steady":
         fig, ax = plt.subplots(figsize=(7, 4))
-        keys = [k for k in hist[0] if k not in ("iteration",)]
+        keys = [k for k in hist[0] if k != "iteration" and not is_probe_key(k)]
         styles = ["-", "--", "-.", ":", (0, (5, 1)), (0, (3, 1, 1, 1))]
         it = [h["iteration"] for h in hist]
         for i, k in enumerate(keys):

@@ -286,7 +286,7 @@ jobs = 1                   # points calculés en parallèle (0 = tous les cœurs
 [output]
 moment_center = [0.25, 0.0]   # Cm autour du quart de corde (positif = cabrer)
 nusselt = "bulk"           # conduites : Nu local sur la température de mélange
-probes = [[1.0, 0.0], [2.0, 0.5]]   # sondes : Ux, Uy, p à chaque itération (history.csv)
+probes = [[1.0, 0.0], [2.0, 0.5]]   # sondes : Ux, Uy, p à chaque itération (history.csv, probes.png)
 average_from = 50.0        # instationnaire : moyennes et écarts-types (Ux_mean, p_rms…)
 vtk_format = "binary"      # fields.vtk binaire (défaut) ou "ascii" (texte)
 animate = "vorticity"      # instationnaire : animation_vorticity.gif (~100 images)
@@ -295,6 +295,15 @@ name = "sillage"
 start = [1.0, -2.0]
 end = [1.0, 2.0]
 ```
+
+Figures (G2, 2026-10-18) : `convergence.png` ne trace que les résidus, les sondes ont leur
+figure `probes.png`. Dans les profils (`line_*.png`, « Profil » de l'interface) et les
+sondes, une composante de vitesse inférieure à 1e-9 |U|max (ou une pression dont la
+variation est inférieure à 1e-9 fois la pression dynamique maximale) est du bruit
+d'arrondi : tracée constante, avec la mention « nul : bruit d'arrondi » ; entre 1e-9 et
+1e-2, elle est tracée telle quelle avec sa taille relative (« petit : … ») ; les CSV restent
+bruts. Domaine plus de 50 fois plus long que large (tube de Sod) : figures de champs 2D
+omises (illisibles), avec un avertissement ; profils par `[[output.lines]]`.
 
 Axisymétrique : `[mesh] cut_axis = true` garde la moitié y > 0 d'un maillage autour d'un
 corps (nombre pair de points autour) et nomme la coupe `axis`. Efforts et flux de chaleur

@@ -3,6 +3,33 @@
 Détail des chiffres : README (§ 6 validation, § 7 performances, § 8 limites) et messages de
 commit. Ce journal sert à retrouver ce qui a été fait, pourquoi, et ce qui a été constaté.
 
+## 2026-10-18 — G2 : figures (L8 à L11)
+
+- Relance quotidienne (03:53 UTC). Dimanche ; campagnes du 12 (6 jours) : pas de campagne
+  (lundi 19). CI verte au départ (e9f3e67).
+- L8 : sondes retirées de convergence.png, de la courbe et du texte de progrès de
+  l'interface ; ligne de progrès « résidus  | sondes : … » ; nouvelle figure probes.png
+  (postprocess.plot_probes : une grandeur par graphe, une courbe par sonde ; compressible :
+  sondes relevées toutes les 10 it, tracées aux seules lignes présentes). Figure du sang :
+  avant, probe1_Ux / p plats vers 0.19 / 3e-3 sur l'axe « résidu » ; après, résidus seuls.
+- L9 : mesure des profils des exemples (sorties c17) : bruit d'arrondi seulement au canal 3D
+  (U_y 1e-16, U_z 1e-31, p 2.5e-16 relatifs) et à la conduite carrée (2e-16) ; cavité
+  cubique U_z 4e-4, éolienne U_y 3e-4, filtre poreux U_y 1.5e-3 : **pas** du bruit
+  (l'audit se trompait ; noté aux petits travaux). Règle (sampling.profile_note) : < 1e-9
+  → constant + « nul : bruit d'arrondi » ; < 1e-2 → tel quel + taille relative ;
+  line_*.png, Profil de l'interface, probes.png (tube de Sod : U_y des sondes 8e-25).
+  p : la moyenne tracée est ramenée à 0 si elle est elle-même du bruit (canal : −5.5e-14).
+- L10 : _body_size(bodies_only=True) pour le cadrage seulement (paroi entièrement sur la
+  boîte englobante = frontière) ; 1er essai sur toutes les utilisations : changeait la
+  taille de corps de 13 exemples (échelle de la vorticité, cavité : singularité du
+  couvercle écartée) → limité au cadrage ; script de comparaison : seul le tuyau change.
+- L11 : _thin_band (étendue tracée > 50:1, miroir compris) → figures de champs omises +
+  avertissement ; seul le tube de Sod (1:400) ; sang et tuyau thermique 1:20 lisibles.
+- 7 tests (tests/test_figures_g2.py), 6 échouent avant, 1 preuve faible (fonction nouvelle,
+  couverte par le test réel). Sorties identiques au bit près (ab.py, sang, tuyau, Sod).
+- Fausse alerte : le test du Profil de l'interface plantait (300 points contre 200) faute
+  d'avoir chargé le cas 3D (ligne à 2 composantes) ; parcours réel correct.
+
 ## 2026-10-17 — C25 : garde-fou des efforts sur l'arrêt par les résidus
 
 - Relance quotidienne (03:53 UTC). Samedi ; campagnes du 12 (5 jours) : pas de campagne.

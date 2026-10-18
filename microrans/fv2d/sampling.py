@@ -177,11 +177,43 @@ def line_points(start, end, n: int = 200):
     return t * np.linalg.norm(end - start), pts
 
 
+NOISE, SMALL = 1e-9, 1e-2
+
+
+def profile_note(key, values, u_ref=None, p_ref=None):
+    """L9 : (valeurs à tracer, mention ou None) pour le profil de la grandeur key.
+    Composante de vitesse : max |v| rapporté à u_ref (plus grande vitesse du champ) ;
+    pression : son étendue rapportée à p_ref (pression dynamique maximale). Sous NOISE
+    (1e-9) : bruit d'arrondi, tracé constant (0 pour une vitesse, la moyenne pour p) ; sous
+    SMALL (1e-2) : tracé tel quel, la mention donne sa taille relative (l'échelle
+    automatique l'agrandit). Avant : U_y à 1e-15 du canal 3D dessiné comme une courbe qui
+    varie fortement. Autres grandeurs, ou référence absente : inchangées."""
+    v = np.asarray(values, dtype=float)
+    fin = v[np.isfinite(v)]
+    vel = key in ("Ux", "Uy", "Uz")
+    ref = u_ref if vel else p_ref if key == "p" else None
+    if not ref or not ref > 0 or not fin.size:
+        return v, None
+    r = float(np.max(np.abs(fin)) if vel else np.ptp(fin)) / ref
+    if r < NOISE:
+        c = 0.0 if vel else float(fin.mean())
+        c = 0.0 if abs(c) < NOISE * ref else c    # canal 3D : p = −5.5e-14, bruit lui aussi
+        flat = np.where(np.isfinite(v), c, np.nan)
+        return flat, (f"nul : bruit d'arrondi (max |{key}| = {r:.0e} |U|max)" if vel else
+                      f"constant : variation = bruit d'arrondi ({r:.0e} × q max)")
+    if r < SMALL:
+        return v, (f"petit : max |{key}| = {r:.1e} |U|max" if vel else
+                   f"variation = {r:.1e} × q max")
+    return v, None
+
+
 def write_lines(solver, lines, out_dir, plot=True):
     """[[output.lines]] : name, start, end, n (défaut 200) → line_<name>.csv (+ .png)."""
     from pathlib import Path
     out_dir = Path(out_dir)
     written = []
+    U = np.asarray(solver.backend.to_host(solver.U))
+    u_ref = float(np.sqrt(np.max(np.sum(U * U, axis=1)))) if len(U) else 0.0
     for i, ln in enumerate(lines or []):
         import re
         name = str(ln.get("name", f"ligne{i + 1}"))
@@ -199,19 +231,22 @@ def write_lines(solver, lines, out_dir, plot=True):
                    header=",".join(cols), comments="", encoding="utf-8")
         written.append(path)
         if plot:
-            _plot_line(cols, out_dir / f"line_{name}.png", name)
+            _plot_line(cols, out_dir / f"line_{name}.png", name, u_ref, 0.5 * u_ref ** 2)
     return written
 
 
-def _plot_line(cols, path, name):
+def _plot_line(cols, path, name, u_ref=None, p_ref=None):
     from matplotlib.figure import Figure
     keys = [k for k in cols if k not in ("s", "x", "y", "z", "U_mag") and "_mean" not in k
             and "_rms" not in k and k not in ("k", "omega", "epsilon", "nu_tilde")][:6]
     fig = Figure(figsize=(4.0 * len(keys), 3.4), layout="constrained")
     axes = np.atleast_1d(fig.subplots(1, len(keys)))
     for ax, k in zip(axes, keys):
-        ax.plot(cols["s"], cols[k], color="#2a78d6", lw=1.6)
+        v, note = profile_note(k, cols[k], u_ref, p_ref)
+        ax.plot(cols["s"], v, color="#2a78d6", lw=1.6)
         ax.set(xlabel="abscisse s le long de la ligne", ylabel=k)
+        if note:
+            ax.set_title(note, fontsize=8, color="#52514e")
         ax.grid(True, alpha=0.3)
     fig.suptitle(f"Profil « {name} »")
     fig.savefig(path, dpi=120)

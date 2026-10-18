@@ -34,7 +34,7 @@ from ..fv2d.compressible import COMP_BC_TYPES
 from ..fv2d.solver import BC_TYPES, TIME_SCHEMES
 from ..linalg import SOLVERS
 from ..mesh2d.plot import patch_label
-from ..postprocess import log_values
+from ..postprocess import is_probe_key, log_values
 from ..solver import TIME_SCHEMES_1D
 from ..tomlio import dumps, loads, read_text
 from .widgets import (Binder, PlotCanvas, SciEdit, Vec2, Worker, _points_text,
@@ -2637,7 +2637,8 @@ class MainWindow(QMainWindow):
                 self._it0 = rec["iteration"] - 1          # suite d'un calcul repris
             self.progress.setValue(int(1000 * (rec["iteration"] - self._it0) / max(max_iter, 1)))
             self.run_info.setText(f"itération {rec['iteration']} — " + ", ".join(
-                f"{k} {v:.1e}" for k, v in rec.items() if k != "iteration"))
+                f"{k} {v:.1e}" for k, v in rec.items()
+                if k != "iteration" and not is_probe_key(k)))      # L8 : sans les sondes
         elif "time" in rec:
             self.progress.setValue(int(1000 * rec["time"] / max(t_end, 1e-300)))
             self.run_info.setText(f"t = {rec['time']:.4g} (Δt = {rec['dt']:.3g})")
@@ -2664,7 +2665,8 @@ class MainWindow(QMainWindow):
         steady = "iteration" in hist[-1]
         if steady:
             x = [h["iteration"] for h in hist]
-            keys = [k for k in hist[-1] if k != "iteration"]
+            # L8 : résidus seuls (les sondes sont dans probes.png et history.csv)
+            keys = [k for k in hist[-1] if k != "iteration" and not is_probe_key(k)]
             ys = [log_values([h.get(k, np.nan) for h in hist]) for k in keys]
         else:
             x = [h["time"] for h in hist]
@@ -2801,7 +2803,7 @@ class MainWindow(QMainWindow):
         QDesktopServices.openUrl(QUrl.fromLocalFile(str(path)))
 
     def plot_line(self):
-        from ..fv2d.sampling import Sampler, line_points
+        from ..fv2d.sampling import Sampler, line_points, profile_note
         s = self.solver
         if s is None:
             self.canvas.message("Aucun résultat : lancez d'abord un calcul.")
@@ -2821,10 +2823,15 @@ class MainWindow(QMainWindow):
                 f[key] = g[:, 1, 0] - g[:, 0, 1]
             cell = np.asarray(f[key])
             vals = np.where(smp.ok, cell[smp._c], np.nan)
+        # L9 : bruit d'arrondi tracé constant, petite grandeur signalée (comme line_*.png)
+        f = s.fields()
+        u_ref = float(np.max(f["U_mag"]))
+        q_ref = float(np.max(0.5 * f["rho"] * f["U_mag"] ** 2)) if "rho" in f else 0.5 * u_ref ** 2
+        vals, note = profile_note(key, vals, u_ref, q_ref)
         ax = self.canvas.axes()
         ax.plot(dist, vals, color="#2a78d6", lw=1.6)
         ax.set(xlabel="abscisse le long de la ligne", ylabel=FIELD_LABELS.get(key, key),
-               title=f"Profil de {FIELD_LABELS.get(key, key)}")
+               title=f"Profil de {FIELD_LABELS.get(key, key)}" + (f" — {note}" if note else ""))
         ax.grid(True, alpha=0.3)
         if not smp.ok.all():
             ax.text(0.01, 0.01, "points hors du domaine non tracés", transform=ax.transAxes,

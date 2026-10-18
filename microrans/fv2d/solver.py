@@ -1712,8 +1712,13 @@ class Solver2D:
             if probes:
                 rec.update(probes(self))            # sondes (NaN possible hors domaine)
             if verbose and (it % log_every == 0 or it == 1):
-                print("  it %5d  " % it + "  ".join(f"{k}={v:.2e}" for k, v in rec.items()
-                                                    if k != "iteration"))
+                # L8 : valeurs des sondes à part, après les résidus (avant : mêlées)
+                pr = "  ".join(f"{k}={v:.4g}" for k, v in rec.items()
+                               if k.startswith("probe"))
+                print("  it %5d  " % it + "  ".join(
+                    f"{k}={v:.2e}" for k, v in rec.items()
+                    if k != "iteration" and not k.startswith("probe"))
+                    + (f"  | sondes : {pr}" if pr else ""))
             if s.monitor_tol or guard:
                 walls = self.forces().values()
                 if s.monitor_tol:

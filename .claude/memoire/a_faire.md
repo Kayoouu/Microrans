@@ -1,4 +1,4 @@
-# Liste de travail (ordre = priorité ; mise à jour le 2026-10-17 ; jalons A, B, C)
+# Liste de travail (ordre = priorité ; mise à jour le 2026-10-18 ; jalons A, B, C)
 
 Méthode pour chaque tâche : mesurer d'abord (profil, chiffres de départ), changer, mesurer
 côte à côte dans les mêmes conditions, tests, docs (README, chiffres), commit, CI verte,
@@ -7,8 +7,8 @@ inutile (mesure à l'appui), l'écrire dans le journal et passer à la suivante.
 
 ## En cours
 
-Rien (C25 corrigé le 2026-10-17 : garde-fou forces_check). Suivant : point 1
-ci-dessous (G2, figures).
+Rien (G2, figures L8 à L11, fait le 2026-10-18). Suivant : point 1 ci-dessous (audit 3,
+partie 2) ; lundi 19 : campagnes c1, c6, c7, c8 d'abord (dernières le 12).
 
 ## À faire
 
@@ -28,10 +28,7 @@ faits. Côté
 utilisateur (je ne peux pas le faire) : publier une release, faire essayer l'exécutable
 Windows par un humain sur un vrai PC (jamais fait : la CI vérifie seulement qu'il démarre).
 
-1. **Lot G2 — figures** (audit 3 : L8 sondes tracées comme résidus, L9 bruit d'arrondi à
-   pleine échelle dans les profils, L10 cadrage du tuyau axisymétrique, L11 figures de
-   champ du tube de Sod). Estimé 1 lot. Un test par point.
-2. **Audit 3, partie 2** : chaque accord de validation du README face au maillage et à la
+1. **Audit 3, partie 2** : chaque accord de validation du README face au maillage et à la
    taille du domaine (cylindre et NACA déjà trouvés ; après G1, les chiffres ayant bougé) ;
    figures restantes (pression, vorticité, ν_t, maillages) ; interface (figures de la page
    Résultats). Convergence apparente trompeuse (C_l de l'O-grid, ordre apparent 5.8) à
@@ -82,6 +79,11 @@ turbulence, viscoélasticité.
 
 ## Petits travaux
 
+- Profils sur un plan ou un axe de symétrie (mesuré au lot G2) : U_z de la cavité cubique
+  4.3e-4 |U| sur ses lignes médianes (z = 0.5, sur des faces de mailles), U_y de l'éolienne
+  3e-4 sur l'axe, du filtre poreux 1.5e-3 sur l'axe ; nuls en théorie. Interpolation
+  (cellule d'un seul côté + gradient) ou solution non symétrique ? Mesurer aux centres de
+  part et d'autre.
 - Seuil du limiteur compressible par défaut (`venkat_k` 0.05) : remesurer Sod, rampe M = 2,
   plaque avec 0.1 et 0.3 ; changer le défaut seulement si ces cas restent bons (lot #30 :
   0.05 donne deux solutions stationnaires et biaise C_l sur le NACA).

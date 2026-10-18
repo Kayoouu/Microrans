@@ -99,6 +99,55 @@ def log_values(values) -> np.ndarray:
     return np.where(v > 0, v, np.nan)
 
 
+def is_probe_key(k: str) -> bool:
+    """Colonne d'historique d'une sonde (« probe1_Ux »…), pas un résidu."""
+    return k.startswith("probe")
+
+
+def plot_probes(hist: list[dict], xkey: str, path: Path, u_ref=None, p_ref=None) -> bool:
+    """L8 : valeurs des sondes au fil des itérations (xkey = "iteration") ou du temps
+    ("time"), une grandeur par graphe et une courbe par sonde. Avant : tracées avec les
+    résidus, sur l'axe logarithmique « résidu normalisé ». Vitesses et pression : règle du
+    bruit d'arrondi des profils (fv2d.sampling.profile_note, références u_ref et p_ref ;
+    tube de Sod : U_y à 1e-22 dessiné comme une courbe). False s'il n'y a pas de sonde."""
+    from .fv2d.sampling import profile_note
+    from .mesh2d.plot import PATCH_COLORS
+    # toutes les lignes (compressible : sondes relevées toutes les 10 itérations seulement)
+    keys = list(dict.fromkeys(k for h in hist for k in h if is_probe_key(k)))
+    if not keys:
+        return False
+    fields, probes = [], []
+    for k in keys:                            # « probe12_Ux » → sonde 12, grandeur Ux
+        n, f = k[5:].split("_", 1)
+        fields += [f] if f not in fields else []
+        probes += [n] if n not in probes else []
+    plt = _pyplot()
+    fig, axes = plt.subplots(len(fields), 1, figsize=(7, 1.2 + 1.6 * len(fields)),
+                             sharex=True, squeeze=False)
+    for ax, f in zip(axes[:, 0], fields):
+        xs, ys = [], []
+        for n in probes:
+            rows = [h for h in hist if f"probe{n}_{f}" in h]
+            xs.append([h[xkey] for h in rows])
+            ys.append(np.array([h[f"probe{n}_{f}"] for h in rows], dtype=float))
+        flat, note = profile_note(f, np.concatenate(ys), u_ref, p_ref)    # toutes sondes
+        ys = np.split(flat, np.cumsum([len(y) for y in ys])[:-1])
+        for i, (n, x, y) in enumerate(zip(probes, xs, ys)):
+            ax.plot(x, y, color=PATCH_COLORS[i % len(PATCH_COLORS)], label=f"sonde {n}")
+        ax.set_ylabel(f)
+        if note:
+            ax.set_title(note, fontsize=8, color=TEXT_2, fontweight="normal")
+    fig.suptitle("Sondes" if len(probes) > 1 else f"Sonde {probes[0]}", fontsize=10,
+                 fontweight="bold")
+    if len(probes) > 1:
+        axes[0, 0].legend(loc="best")
+    axes[-1, 0].set_xlabel("itération" if xkey == "iteration" else "t")
+    fig.tight_layout()
+    fig.savefig(path, dpi=130)
+    plt.close(fig)
+    return True
+
+
 def _color(name: str) -> str:
     return MODEL_COLORS.get(name, "#4a3aa7")
 

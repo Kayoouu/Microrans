@@ -285,6 +285,10 @@ def _write_lines(solver, lines, out, plot):
     import re
     from .sampling import _plot_line, line_points
     written = []
+    if lines:                                 # L9 : références des profils
+        f = solver.fields()
+        u_ref = float(np.max(f["U_mag"]))
+        q_ref = float(np.max(0.5 * f["rho"] * f["U_mag"] ** 2))
     for i, ln in enumerate(lines or []):
         name = str(ln.get("name", f"ligne{i + 1}"))
         if not re.fullmatch(r"[\w-]{1,64}", name):
@@ -298,7 +302,7 @@ def _write_lines(solver, lines, out, plot):
                    header=",".join(cols), comments="", encoding="utf-8")
         written.append(path)
         if plot:
-            _plot_line(cols, out / f"line_{name}.png", name)
+            _plot_line(cols, out / f"line_{name}.png", name, u_ref, q_ref)
     return written
 
 
@@ -477,20 +481,21 @@ def _merge(history, monitor):
 # ------------------------------------------------------------------ figures
 def plot_compressible(solver, hist, out: Path, mode, force_patches, qinf):
     from ..mesh2d.plot import plot_field, plot_mesh
-    from ..postprocess import _pyplot, log_values
-    from .post import _zoom
+    from ..postprocess import _pyplot, log_values, plot_probes
+    from .post import _thin_band, _zoom
     plt = _pyplot()
     zoom = _zoom(solver, 2.0)
     f = solver.fields()
-    plot_mesh(solver.mesh, out / "mesh.png", zoom=zoom)
-    plot_field(solver.mesh, f["Mach"], out / "Mach.png", title="Nombre de Mach", zoom=zoom,
-               cmap="jet", label="M")
-    plot_field(solver.mesh, f["p"], out / "p.png", title="Pression statique p (Pa)",
-               zoom=zoom, cmap="RdBu_r", label="Pa")
-    plot_field(solver.mesh, f["rho"], out / "rho.png", title="Masse volumique ρ (kg/m³)",
-               zoom=zoom, cmap="viridis", label="kg/m³")
-    plot_field(solver.mesh, f["T"], out / "T.png", title="Température T (K)", zoom=zoom,
-               cmap="inferno", label="K")
+    if not _thin_band(solver.mesh, zoom):       # L11 : tube de Sod, bande de 1 × 400 mailles
+        plot_mesh(solver.mesh, out / "mesh.png", zoom=zoom)
+        plot_field(solver.mesh, f["Mach"], out / "Mach.png", title="Nombre de Mach",
+                   zoom=zoom, cmap="jet", label="M")
+        plot_field(solver.mesh, f["p"], out / "p.png", title="Pression statique p (Pa)",
+                   zoom=zoom, cmap="RdBu_r", label="Pa")
+        plot_field(solver.mesh, f["rho"], out / "rho.png", title="Masse volumique ρ (kg/m³)",
+                   zoom=zoom, cmap="viridis", label="kg/m³")
+        plot_field(solver.mesh, f["T"], out / "T.png", title="Température T (K)",
+                   zoom=zoom, cmap="inferno", label="K")
     for name in force_patches:
         sl = solver.patch_slices[name]
         xf = solver.mesh.face_centers[solver.ni:][sl]
@@ -505,6 +510,8 @@ def plot_compressible(solver, hist, out: Path, mode, force_patches, qinf):
         plt.close(fig)
     if not hist:
         return
+    plot_probes(hist, "iteration" if mode == "steady" else "time", out / "probes.png",
+                float(np.max(f["U_mag"])), float(np.max(0.5 * f["rho"] * f["U_mag"] ** 2)))
     if mode == "steady":
         fig, ax = plt.subplots(figsize=(7, 4))
         it = [h["iteration"] for h in hist]

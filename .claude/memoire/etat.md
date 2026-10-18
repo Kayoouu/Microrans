@@ -1,27 +1,22 @@
-# État du projet (mis à jour le 2026-10-17)
+# État du projet (mis à jour le 2026-10-18)
 
 ## Où on en est
 
 - microrans : outil RANS / URANS 1D, 2D, 3D (périmètre réduit) avec mailleur, interface
   PySide6 et exécutables PyInstaller Windows / Linux (CI GitHub Actions).
-- Dernier lot : **C25** (2026-10-17) : garde-fou `forces_check = 1e-4` : l'arrêt sur les
-  résidus attend que les efforts des parois soient stables (amplitude sur min(100, it/2)
-  it) ; à tol 1e-5 seul, NACA : 0.6 à 1.3 % d'erreur ; avec, ≤ 5e-5 sur 36 historiques,
-  +5 % d'itérations (sphère ×2.2). Exemples NACA revenus à tol 1e-5. Avant : **limiteur
-  non orthogonal** (2026-10-16) : défaut `nonorth_limit = 1`
-  (sans limiteur) : NACA résidus à 1e-12 au lieu d'un plateau 1e-4, polaire 8 047 → 5 866
-  it, aucune divergence sur 5 cas non orthogonaux (jusqu'à 78°), efforts ≤ 0.11 % ;
-  exemples NACA `tol = 1e-7` (à 1e-5 : arrêt trop tôt, 0.16 %). Limite : pseudo_cfl plus
-  lent sans limiteur (garder 0.5). Avant : **G1 (C24), partie 2** (2026-10-15) : chiffres
-  du README remesurés après la correction. Partie 1 (2026-10-14) : flux de
-  Rhie-Chow du stationnaire sur la diagonale physique → SIMPLE / SIMPLEC = couplé à 1e-8,
-  quels que soient relax_U / pseudo_cfl ; NACA C_d +0.89 %, C_l −0.24 %. Avant : **audit 3, partie 1**
-  (2026-10-13) : campagnes sans régression, c17 (21 exemples honnêtes), C24, figures L8 à
-  L11. Avant : maillage en C (10 au 12 octobre), GCI (9), F4 à F1, audit 2 : `journal.md`.
+- Dernier lot : **G2, figures** (2026-10-18) : L8 sondes hors de convergence.png (figure
+  probes.png) ; L9 bruit d'arrondi des profils tracé constant avec mention (< 1e-9 |U|max ;
+  1e-9 à 1e-2 : taille relative) ; L10 tuyau montré en entier ; L11 bande (Sod) : figures
+  de champs omises ; 7 tests ; sorties identiques au bit près. Avant : **C25** (17 oct.) :
+  garde-fou `forces_check = 1e-4` (arrêt sur les résidus seulement si les efforts sont
+  stables ; ≤ 5e-5 d'erreur, +5 % d'itérations, sphère ×2.2) ; **limiteur non
+  orthogonal** (16) : défaut `nonorth_limit = 1`, plus de plateau des résidus (pseudo_cfl :
+  garder 0.5) ; **G1 / C24** (14-15) : Rhie-Chow sur la diagonale physique, SIMPLE =
+  couplé ; audit 3 partie 1 (13) ; maillage en C, GCI, F1 à F4, audit 2 : `journal.md`.
 - Exécutables de 643462f (C25, forces_check) : run https://github.com/Kayoouu/Microrans/actions/runs/39003896034
   (Windows : artefact 12090063710, Linux : 12090700287 ; expirent le 2027-01-15). CI verte
   (tests https://github.com/Kayoouu/Microrans/actions/runs/39003378859).
-- Suite de tests : 516 (514 réussis, 2 ignorés), 5 à 11 min en série sur la machine de session.
+- Suite de tests : 523 (521 réussis, 2 ignorés), 5 à 11 min en série sur la machine de session.
 - Objectif accepté le 2026-10-05 : jalon A (2D académique crédible), puis B (3D
   académique, petite géométrie) ; C (pré-industriel) non visé. Détail : `a_faire.md`.
 - Méthode outillée (2026-10-05) : skill `lot`, `tools/dev/`, hooks avant poussée et fin de
