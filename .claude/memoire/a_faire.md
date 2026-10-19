@@ -7,8 +7,10 @@ inutile (mesure à l'appui), l'écrire dans le journal et passer à la suivante.
 
 ## En cours
 
-Rien (audit 3 partie 2, `monitor_tol` mesuré et documenté, le 2026-10-19). Suivant :
-point 1 ci-dessous (reste de l'audit 3, partie 2).
+Rien — **travail en pause depuis le 2026-10-19 à la demande de l'utilisateur** (relance
+quotidienne désactivée). À la reprise : point 1 ci-dessous (reste de l'audit 3, partie 2 :
+étude O / C sans pseudo_cfl, critère d'arrêt compressible) ; le lundi suivant la reprise,
+campagnes c1, c6, c7, c8 d'abord.
 
 ## À faire
 

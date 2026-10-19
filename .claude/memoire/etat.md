@@ -2,6 +2,10 @@
 
 ## Où on en est
 
+- **EN PAUSE depuis le 2026-10-19** (demande de l'utilisateur : « On met en pause les
+  mises à jour pour l'instant ») : relance quotidienne `trig_01RCTjquBZw82GuKW83rPuSG`
+  désactivée (update_trigger, enabled = false). Ne rien reprendre sans nouvelle demande ;
+  pour reprendre : la réactiver (enabled = true), puis suivre a_faire.md.
 - microrans : outil RANS / URANS 1D, 2D, 3D (périmètre réduit) avec mailleur, interface
   PySide6 et exécutables PyInstaller Windows / Linux (CI GitHub Actions).
 - Dernier lot : **audit 3 partie 2, `monitor_tol`** (2026-10-19) : mesuré sur 24
