@@ -18,3 +18,6 @@ microrans_resultats/
 !.claude/memoire/
 !.claude/hooks/
 !.claude/skills/
+
+# fichiers temporaires de la campagne c8 (tools/audit), écrits dans le dossier des exemples
+microrans/examples/_audit_*.toml

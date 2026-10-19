@@ -7,8 +7,11 @@ inutile (mesure à l'appui), l'écrire dans le journal et passer à la suivante.
 
 ## En cours
 
-Rien (G2, figures L8 à L11, fait le 2026-10-18). Suivant : point 1 ci-dessous (audit 3,
-partie 2) ; lundi 19 : campagnes c1, c6, c7, c8 d'abord (dernières le 12).
+**Audit 3, partie 2 — `monitor_tol`** (2026-10-19, relance 03:53 ; estimé 1 lot) :
+campagnes c1, c6, c7, c8 (lundi) ; critère monitor_tol mesuré sur les 24 historiques du 17
+(extremum ? dérive lente ? composante nulle ?), confirmé par des calculs réels ; correction
+ou documentation selon la mesure. Fait quand : chiffres mesurés, test si le code change,
+docs (clé, README § 5.4, dépannage), suite et CI vertes, mémoire.
 
 ## À faire
 

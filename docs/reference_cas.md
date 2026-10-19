@@ -438,7 +438,7 @@ Contenu libre, sous la forme `nom = valeur`.
 | `max_dt` | pas de temps maximal si adjust_dt | aucun |  | incompressible seulement |
 | `max_iter` | itérations maximales (stationnaire) | 3000 | 5000 |  |
 | `mode` | steady (défaut) \| transient |  |  |  |
-| `monitor_tol` | arrêt quand les efforts varient de moins de monitor_tol | auto | auto |  |
+| `monitor_tol` | arrêt quand les efforts des parois ont varié de moins de monitor_tol (relatif) sur la fenêtre. Incompressible : chaque composante rapportée à elle-même ; erreur restante mesurée jusqu'à 2.8 × monitor_tol ; peut ne jamais se déclencher si une composante est nulle (corps symétrique) : arrêt alors sur tol. Compressible : écart rapporté à la plus grande composante (non mesuré) | auto | auto |  |
 | `monitor_window` | fenêtre (itérations) de monitor_tol | 100 | 200 |  |
 | `n_corr` | corrections de pression (défaut 2) | 2 |  | incompressible seulement |
 | `n_nonorth` | corrections non orthogonales (défaut 1) | 1 |  | incompressible seulement |

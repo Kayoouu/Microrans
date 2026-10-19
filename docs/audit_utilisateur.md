@@ -467,6 +467,23 @@ Chaque exemple stationnaire est lancé avec ses propres réglages, puis prolong�
 
 ## Observations
 
+- **`monitor_tol` mesuré** (2026-10-19, audit 3 partie 2) : critère appliqué après coup aux
+  24 historiques du 17 octobre (exemples, points de polaire ; efforts et résidus à chaque
+  itération, menés à 1e-11), confirmé par deux calculs réels (NACA : arrêt « efforts
+  stabilisés » à 792 it comme l'émulation, C_d à 2.3e-6 et C_l à 3.0e-6 de la référence ;
+  cylindre : pas d'arrêt par monitor_tol). Erreur restante à l'arrêt : 2.8e-5 pour 1e-5
+  (polaire, 14°), 1.6e-4 pour 1e-4 et 2.3e-3 pour 1e-3 (tuyau SST, convergence lente),
+  3.3e-4 pour 3e-4 : jusqu'à 2.8 fois monitor_tol. Le passage par un extremum, qui faussait
+  le premier garde-fou de C25 (1.3e-3), ne fausse pas ce critère (chaque composante est
+  jugée seule : l'autre dérive encore) ; une variante « norme de l'effort par paroi » le
+  ferait (12°, monitor_tol 1e-4 : 1.3e-3). Composante nulle (C_l du cylindre Re 20 :
+  8e-17) : le critère ne se déclenche jamais (1e-5 à 1e-3) ; sans conséquence sur le
+  résultat (arrêt sur tol avec forces_check). Variante écartée : fenêtre croissante
+  max(100, it/2), plancher 1e-3 × le plus grand effort, écart maximal : erreur ≤ 1.8e-5 à
+  1e-3 et fonctionne sur le cylindre, mais +65 à +74 % d'itérations quand c'est elle qui
+  arrête (NACA). Pas de changement du code ; clé, README § 5.4 et dépannage précisés.
+  Compressible (autre critère : écart rapporté à la plus grande composante, 200 it) : non
+  mesuré.
 - Après convergence, une itération coûte 4 à 10 fois plus cher (résidus au niveau de
   l'arrondi : solveurs linéaires au maximum d'itérations ?) : plaque compressible, 500
   itérations de prolongation en ≈ 300 s contre 266 itérations en 16 s (campagne 1) ;

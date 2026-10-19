@@ -22,10 +22,10 @@ d'un corps). Efforts et flux de chaleur totaux (sur 360°) ; Cd rapporté à
 [physics] reference_area (défaut : maître-couple π L²/4, L = reference_length = diamètre).
 
 Sorties supplémentaires ([output]) : probes = [[x, y], …] (sondes : Ux, Uy, p (, T) à
-chaque itération / pas de temps dans history.csv) ; [[output.lines]] name, start, end, n
-(profils line_<name>.csv/.png) ; average_from = t (instationnaire : moyennes et écarts-types
-Ux_mean, Ux_rms, p_mean…) ; animate = "vorticity" (| U_mag | p | T…), animate_every = N
-(instationnaire : animation_<grandeur>.gif, voir animation.py).
+chaque itération / pas de temps dans history.csv et probes.png) ; [[output.lines]] name,
+start, end, n (profils line_<name>.csv/.png) ; average_from = t (instationnaire : moyennes
+et écarts-types Ux_mean, Ux_rms, p_mean…) ; animate = "vorticity" (| U_mag | p | T…),
+animate_every = N (instationnaire : animation_<grandeur>.gif, voir animation.py).
 
 Scalaires passifs : [scalars.<nom>] diffusivity (ou schmidt), Sc_t, source, initial, scheme ;
 valeurs aux frontières [boundary.<patch>.scalars] <nom> = valeur (défaut : 0 en entrée,

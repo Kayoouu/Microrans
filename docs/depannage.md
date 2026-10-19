@@ -190,6 +190,14 @@ seul laissait les efforts à 0.6 à 1.3 % de leur valeur finale. Un « NON CONVE
 résidus sous `tol` signifie donc que les efforts bougeaient encore : augmenter `max_iter`.
 `forces_check = 0` revient à l'ancien critère (déconseillé).
 
+`monitor_tol` (arrêt quand les efforts ne bougent plus, journal : « convergé (efforts
+stabilisés) ») borne la variation des efforts sur la fenêtre, pas leur erreur : mesuré, l'erreur
+restante va jusqu'à 2.8 fois `monitor_tol` (calcul qui converge lentement). Pour une
+précision de 1e-3 sur les efforts, régler `monitor_tol = 3e-4` (erreur mesurée : 3.3e-4 au
+plus sur 24 calculs). Il peut ne jamais se déclencher si une composante d'effort est nulle
+(C_l d'un corps symétrique : cylindre Re 20, de 1e-5 à 1e-3 ; canal 3D, seulement à 1e-3) :
+le calcul s'arrête alors sur `tol` ou à `max_iter`.
+
 ## 4. « Convergé », mais résultat douteux
 
 ### y⁺ trop grand pour le traitement de paroi

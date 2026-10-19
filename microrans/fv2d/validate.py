@@ -334,7 +334,7 @@ _SOLVER_DOC = {
     # communs
     "max_iter": "itérations maximales (stationnaire)",
     "tol": "critère de convergence sur les résidus",
-    "monitor_tol": "arrêt quand les efforts varient de moins de monitor_tol",
+    "monitor_tol": "arrêt quand les efforts des parois ont varié de moins de monitor_tol (relatif) sur la fenêtre. Incompressible : chaque composante rapportée à elle-même ; erreur restante mesurée jusqu'à 2.8 × monitor_tol ; peut ne jamais se déclencher si une composante est nulle (corps symétrique) : arrêt alors sur tol. Compressible : écart rapporté à la plus grande composante (non mesuré)",
     "monitor_window": "fenêtre (itérations) de monitor_tol",
     "forces_check": "arrêt sur tol accepté seulement si les efforts des parois sont restés à moins de forces_check (relatif) de leur valeur sur min(monitor_window, it/2) itérations (défaut 1e-4 ; 0 : désactivé)",
     # compressible (fv2d/compressible.py, CompressibleSettings)

@@ -126,8 +126,12 @@ class Settings:
     relax_scalar: float = 1.0
     max_iter: int = 3000
     tol: float = 1e-5                     # résidus normalisés (OpenFOAM) de tous les champs
-    # critère complémentaire (comme les moniteurs de Fluent) : arrêt quand les efforts sur
-    # les parois varient de moins de monitor_tol (relatif) sur monitor_window itérations
+    # critère complémentaire (comme les moniteurs de Fluent) : arrêt quand chaque composante
+    # des efforts des parois a varié de moins de monitor_tol (relatif à elle-même) entre les
+    # deux bouts de la fenêtre de monitor_window itérations. Mesuré (2026-10-19, 24
+    # historiques, monitor_tol 1e-5 à 1e-3) : erreur restante jusqu'à 2.8 × monitor_tol
+    # (dérive lente) ; peut ne jamais se déclencher si une composante est nulle (C_l d'un
+    # corps symétrique : cylindre Re 20, de 1e-5 à 1e-3) : l'arrêt se fait alors sur tol
     monitor_tol: float | None = None
     monitor_window: int = 100
     # garde-fou (C25, 2026-10-17) : un arrêt sur les résidus (tol) n'est accepté que si

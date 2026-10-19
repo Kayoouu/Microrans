@@ -460,7 +460,14 @@ deux côtés, écart affiché). Sélection d'un matériel Intel précis : `backe
   (relatif) de sa valeur sur les 100 dernières itérations (garde-fou du 17 octobre 2026 :
   à `tol = 1e-5` seul, NACA 0012 SA, efforts encore à 0.6 à 1.3 % de leur valeur finale ;
   avec lui, 5e-5 au plus sur tous les exemples, +5 % d'itérations au total), ou sur la
-  stabilisation des efforts (`monitor_tol`).
+  stabilisation des efforts (`monitor_tol` : chaque composante a varié de moins de
+  `monitor_tol` entre les deux bouts de la fenêtre de 100 itérations). Mesuré le 19 octobre
+  2026 sur 24 calculs enregistrés (exemples, points de polaire) : erreur restante jusqu'à
+  2.8 fois `monitor_tol` (1e-5 : 2.8e-5 à 14° ; 1e-3 : 2.3e-3 sur le tuyau SST, qui
+  converge lentement) ; aucun arrêt faussé par un passage par un extremum (contrairement au
+  premier garde-fou de C25). `monitor_tol` peut ne jamais se déclencher quand une composante
+  d'effort est nulle (C_l d'un corps symétrique : cylindre Re 20, de 1e-5 à 1e-3) : l'arrêt
+  se fait alors sur `tol`.
 - **Maillages très fins et étirés** : la sous-relaxation implicite équivaut à un pas de
   pseudo-temps local ∝ Δy²/ν près des parois, d'où O(N²) itérations (canal Re_τ = 395 :
   1 250 itérations à 96 cellules, 4 900 à 192, > 8 000 à 384 — le solveur linéaire n'y est
