@@ -1,10 +1,14 @@
-# État du projet (mis à jour le 2026-10-18)
+# État du projet (mis à jour le 2026-10-19)
 
 ## Où on en est
 
 - microrans : outil RANS / URANS 1D, 2D, 3D (périmètre réduit) avec mailleur, interface
   PySide6 et exécutables PyInstaller Windows / Linux (CI GitHub Actions).
-- Dernier lot : **G2, figures** (2026-10-18) : L8 sondes hors de convergence.png (figure
+- Dernier lot : **audit 3 partie 2, `monitor_tol`** (2026-10-19) : mesuré sur 24
+  historiques + 2 calculs réels : pas d'arrêt faussé par un extremum ; erreur restante
+  jusqu'à 2.8 × monitor_tol ; ne se déclenche pas si une composante est nulle
+  (cylindre) ; pas de changement de code, docs précisées. Campagnes c1, c6, c7, c8 sans
+  régression. Avant : **G2, figures** (2026-10-18) : L8 sondes hors de convergence.png (figure
   probes.png) ; L9 bruit d'arrondi des profils tracé constant avec mention (< 1e-9 |U|max ;
   1e-9 à 1e-2 : taille relative) ; L10 tuyau montré en entier ; L11 bande (Sod) : figures
   de champs omises ; 7 tests ; sorties identiques au bit près. Avant : **C25** (17 oct.) :
@@ -13,9 +17,9 @@
   orthogonal** (16) : défaut `nonorth_limit = 1`, plus de plateau des résidus (pseudo_cfl :
   garder 0.5) ; **G1 / C24** (14-15) : Rhie-Chow sur la diagonale physique, SIMPLE =
   couplé ; audit 3 partie 1 (13) ; maillage en C, GCI, F1 à F4, audit 2 : `journal.md`.
-- Exécutables de e69803a (G2, figures) : run https://github.com/Kayoouu/Microrans/actions/runs/39097111987
-  (Windows : artefact 12125326823, Linux : 12124589493 ; expirent le 2027-01-16). CI verte
-  (tests https://github.com/Kayoouu/Microrans/actions/runs/39097108480).
+- Exécutables de 20b0f9d (monitor_tol, docs) : run https://github.com/Kayoouu/Microrans/actions/runs/39198781641
+  (Windows : artefact 12162609319, Linux : 12162997772 ; expirent le 2027-01-17). CI verte
+  (tests https://github.com/Kayoouu/Microrans/actions/runs/39198772733).
 - Suite de tests : 523 (521 réussis, 2 ignorés), 5 à 11 min en série sur la machine de session.
 - Objectif accepté le 2026-10-05 : jalon A (2D académique crédible), puis B (3D
   académique, petite géométrie) ; C (pré-industriel) non visé. Détail : `a_faire.md`.

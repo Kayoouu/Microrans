@@ -3,6 +3,33 @@
 Détail des chiffres : README (§ 6 validation, § 7 performances, § 8 limites) et messages de
 commit. Ce journal sert à retrouver ce qui a été fait, pourquoi, et ce qui a été constaté.
 
+## 2026-10-19 — Audit 3, partie 2 : `monitor_tol` mesuré ; campagnes du lundi
+
+- Relance quotidienne (03:53 UTC). Lundi : campagnes c1, c6, c7 (parallèle), puis c8 après
+  c6. CI verte au départ (5f6a312). Conteneur redémarré à 03:53.
+- c1 : 25 / 25 (code 0, tous convergés, aucune valeur non définie ni avertissement ;
+  polaire 448 s, mémoire max 1 151 Mo — mesh_naca_multi). c6 : 22 exemples identiques,
+  écarts seulement sur des chemins de fichiers (lines.*), Sod ignoré. c7 : 18 / 18 au bit
+  près. c8 à 20 it : écarts relatifs sur des grandeurs nulles comme le 12 ; menée à
+  convergence (4 000 it, tol 1e-30) : C_d ≤ 4e-6, C_m ≤ 1.0e-5, plaques 3.5e-7 / 8.3e-7
+  (comme le 12) ; C_l de T3A −1.33e-3 : 2.2e-4 relatif (2.9e-7 absolu).
+- monitor_tol, après coup sur les 24 historiques du 17 (g4/ex, g4/h_*) — scripts
+  scratchpad g6/moniteur*.py : erreur restante 1e-5 → 2.8e-5 (14°), 3e-5 → 3.0e-5,
+  1e-4 → 1.6e-4, 3e-4 → 3.3e-4, 1e-3 → 2.3e-3 (tuyau SST). Extremum : aucun arrêt faussé
+  (par composante) ; variante norme par paroi : 12°, 1e-4 → 1.3e-3 (faussée). Cylindre :
+  C_l 8e-17 bloque le critère (jamais déclenché). Variante fenêtre croissante max(100,
+  it/2) + plancher + écart maximal : erreur ≤ 1.8e-5 à 1e-3 mais +65 à +74 % d'itérations
+  (NACA 636 → 1 105 à 1e-4) : écartée. Calculs réels : NACA tol 1e-12 → arrêt « efforts »
+  792 it (= émulation), C_d 2.3e-6, C_l 3.0e-6 de la référence ; cylindre : pas d'arrêt
+  par monitor_tol (résidus 1e-12 à 418 it). Pas de changement de code ; clé (avec le
+  critère compressible, différent, non mesuré), README § 5.4, dépannage § 3, audit.
+- Erreur : `git add -A microrans` pendant c8 a pris un fichier temporaire de c8
+  (`microrans/examples/_audit_*.toml`) : retiré avant la poussée (amend local) ;
+  `.gitignore` complété.
+- Suite 521 réussis, 2 ignorés (14.8 min, machine chargée ; une 1re suite arrêtée pour
+  corriger le texte de la clé). Commit 20b0f9d, CI verte : tests
+  https://github.com/Kayoouu/Microrans/actions/runs/39198772733, exécutables 39198781641.
+
 ## 2026-10-18 — G2 : figures (L8 à L11)
 
 - Relance quotidienne (03:53 UTC). Dimanche ; campagnes du 12 (6 jours) : pas de campagne

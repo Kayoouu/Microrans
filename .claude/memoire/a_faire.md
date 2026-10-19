@@ -1,4 +1,4 @@
-# Liste de travail (ordre = priorité ; mise à jour le 2026-10-18 ; jalons A, B, C)
+# Liste de travail (ordre = priorité ; mise à jour le 2026-10-19 ; jalons A, B, C)
 
 Méthode pour chaque tâche : mesurer d'abord (profil, chiffres de départ), changer, mesurer
 côte à côte dans les mêmes conditions, tests, docs (README, chiffres), commit, CI verte,
@@ -7,11 +7,8 @@ inutile (mesure à l'appui), l'écrire dans le journal et passer à la suivante.
 
 ## En cours
 
-**Audit 3, partie 2 — `monitor_tol`** (2026-10-19, relance 03:53 ; estimé 1 lot) :
-campagnes c1, c6, c7, c8 (lundi) ; critère monitor_tol mesuré sur les 24 historiques du 17
-(extremum ? dérive lente ? composante nulle ?), confirmé par des calculs réels ; correction
-ou documentation selon la mesure. Fait quand : chiffres mesurés, test si le code change,
-docs (clé, README § 5.4, dépannage), suite et CI vertes, mémoire.
+Rien (audit 3 partie 2, `monitor_tol` mesuré et documenté, le 2026-10-19). Suivant :
+point 1 ci-dessous (reste de l'audit 3, partie 2).
 
 ## À faire
 
@@ -37,10 +34,10 @@ Windows par un humain sur un vrai PC (jamais fait : la CI vérifie seulement qu'
    Résultats). Convergence apparente trompeuse (C_l de l'O-grid, ordre apparent 5.8) à
    relire. Pseudo-temps (`pseudo_cfl`) sur maillage non orthogonal : lent sans
    limiteur (NACA 2 063 → > 3 000 it), lent aussi avec (résidus U_y 1e-4) : à comprendre ;
-   étude O / C (naca_o_c.py, ψ = 0.5 fixé) à refaire sans pseudo_cfl ? `monitor_tol` (arrêt
-   sur les efforts seuls, écart entre les bouts de la fenêtre) : même faiblesse possible au
-   passage d'un extremum que le premier garde-fou (non mesuré) ; compressible : pas de
-   garde-fou (critère à part). Puis audit 4 : le jalon A est atteint quand un audit complet trouve 0 résultat
+   étude O / C (naca_o_c.py, ψ = 0.5 fixé) à refaire sans pseudo_cfl (le README § 8.6 cite
+   encore ses chiffres, dont « ordre apparent 5.8 » en O). `monitor_tol` : fait le 19
+   (mesuré, pas de défaut d'extremum, documenté). Compressible : pas de garde-fou sur
+   l'arrêt par les résidus, et son monitor_tol (autre critère) n'est pas mesuré. Puis audit 4 : le jalon A est atteint quand un audit complet trouve 0 résultat
    faux silencieux.
 
 ### Jalon B — 3D académique, petite géométrie (≈ 1.5 à 3 mois de plus ; janvier–février 2027)
